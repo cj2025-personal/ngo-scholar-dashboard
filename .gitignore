@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+credentials.json
+service-account*.json
+
+# OS / editor
+.DS_Store
+Thumbs.db

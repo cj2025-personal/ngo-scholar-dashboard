@@ -1,0 +1,70 @@
+/* ============================================================
+   Archivyn Design Tokens · v1
+   Canonical sheet, shared verbatim across all four app repos:
+   user-dashboard/frontend · ngo-admin-app/ngo-admin-ui ·
+   scholar-dashboard/sd-ui · ngo-profile-app/frontend
+   Source of truth for color, type, radius, elevation, layout.
+   Do not fork values per-app — change in every repo or not at all.
+   ============================================================ */
+:root {
+  /* Brand core */
+  --ark-navy-ink: #172554;
+  --ark-navy: #1e3a8a;
+  --ark-blue: #2563eb;
+  --ark-blue-deep: #1e40af;
+  --ark-red: #b22234;         /* brand signature — stripe, key CTAs, kickers */
+  --ark-red-bright: #dc2626;  /* destructive / error semantics only */
+
+  /* Neutrals — paper & ink (navy-biased, never pure gray or black) */
+  --ark-bg: #f6f8fc;
+  --ark-surface: #ffffff;
+  --ark-surface-2: #eef3fb;
+  --ark-border: #d6dff0;
+  --ark-border-soft: #e7ecf6;
+  --ark-text: #172033;
+  --ark-text-muted: #344056;
+  --ark-text-faint: #64748b;
+
+  /* Semantic — one meaning, one color */
+  --ark-success: #16a34a;
+  --ark-success-strong: #15803d;
+  --ark-success-soft: #e5f6ec;
+  --ark-warning: #b45309;
+  --ark-warning-soft: #fdf1e2;
+  --ark-danger: #dc2626;
+  --ark-danger-soft: #fdeaec;
+  --ark-info: #2563eb;
+  --ark-info-strong: #1d4ed8;
+  --ark-info-soft: #e3f0fd;
+  --ark-navy-soft: #e3ebfd;
+
+  /* Scoped accents — fenced usage only */
+  --ark-community: #147a4b;        /* community shells only */
+  --ark-community-bright: #17814f;
+  --ark-community-soft: #e2f2e9;
+  --ark-bronze: #a87440;           /* Legends / Legacy heritage surfaces only */
+  --ark-bronze-bright: #c89b4a;
+
+  /* Shape */
+  --ark-radius-sm: 8px;
+  --ark-radius-control: 10px;   /* buttons, inputs */
+  --ark-radius-card: 12px;
+  --ark-radius-panel: 18px;
+  --ark-radius-modal: 24px;
+
+  /* Elevation — navy-tinted, never pure black */
+  --ark-shadow-sm: 0 1px 2px rgba(23, 37, 84, 0.05), 0 6px 18px -14px rgba(23, 37, 84, 0.14);
+  --ark-shadow-md: 0 2px 4px rgba(23, 37, 84, 0.06), 0 14px 34px -18px rgba(23, 37, 84, 0.25);
+  --ark-shadow-lg: 0 4px 8px rgba(23, 37, 84, 0.07), 0 28px 60px -24px rgba(23, 37, 84, 0.35);
+
+  /* Type — Geist for UI, Fraunces for editorial headlines & reading surfaces */
+  --ark-font-ui: "Geist", "Geist Sans", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --ark-font-serif: "Fraunces", Georgia, "Times New Roman", serif;
+
+  /* Layout constants */
+  --ark-sidebar-width: 236px;
+  --ark-topbar-height: 64px;
+  --ark-width-content: 1200px;  /* dashboards & directories */
+  --ark-width-reading: 760px;   /* reading & composing columns */
+  --ark-width-wide: 1440px;     /* wide admin tables */
+}

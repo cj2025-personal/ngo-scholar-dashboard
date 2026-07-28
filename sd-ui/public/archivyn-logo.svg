@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="200" viewBox="0 0 160 200">
+  <defs>
+    <linearGradient id="usL" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0E2756"/>
+      <stop offset="100%" stop-color="#0A1A3A"/>
+    </linearGradient>
+    <linearGradient id="usR" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4313C"/>
+      <stop offset="100%" stop-color="#B22234"/>
+    </linearGradient>
+    <linearGradient id="usBL" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1A3A6E"/>
+      <stop offset="100%" stop-color="#0E2756"/>
+    </linearGradient>
+    <linearGradient id="usBR" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E85060"/>
+      <stop offset="100%" stop-color="#B22234"/>
+    </linearGradient>
+  </defs>
+
+  <!-- LEFT FACET — Navy (shadow side) -->
+  <polygon points="80,8 8,180 80,130" fill="url(#usL)"/>
+
+  <!-- RIGHT FACET — Red (light catches here) -->
+  <polygon points="80,8 152,180 80,130" fill="url(#usR)"/>
+
+  <!-- BOTTOM-LEFT foot — Mid Navy -->
+  <polygon points="8,180 80,130 44,180" fill="url(#usBL)"/>
+
+  <!-- BOTTOM-RIGHT foot — Mid Red -->
+  <polygon points="152,180 80,130 116,180" fill="url(#usBR)"/>
+
+  <!-- WHITE CROSSBAR — unifying flag stripe -->
+  <rect x="28" y="126" width="104" height="9" rx="4.5" fill="#FFFFFF"/>
+
+  <!-- WHITE STAR at apex — single Union dot -->
+  <circle cx="80" cy="20" r="3" fill="#FFFFFF"/>
+
+  <!-- Top glint — light hitting the apex -->
+  <polygon points="80,8 88,32 80,26 72,32" fill="rgba(255,255,255,0.18)"/>
+
+  <!-- Inner ridge line -->
+  <line x1="80" y1="8" x2="80" y2="130" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+</svg>
