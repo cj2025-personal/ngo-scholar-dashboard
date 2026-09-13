@@ -48,7 +48,8 @@ function response(overrides = {}) {
 /* ── audiences ─────────────────────────────────────────────────────────── */
 
 test("an unknown audience falls back to the default rather than failing", () => {
-  assert.equal(normaliseAudience("students"), "students");
+  assert.equal(normaliseAudience("students"), "ages_15_18");
+  assert.equal(normaliseAudience("ages_8_11"), "ages_8_11");
   assert.equal(normaliseAudience("toddlers"), DEFAULT_AUDIENCE);
   assert.equal(normaliseAudience(undefined), DEFAULT_AUDIENCE);
   assert.ok(AUDIENCES[DEFAULT_AUDIENCE].brief.length > 20);
@@ -86,10 +87,10 @@ test("the prompt carries the paper, the audience brief and the scholar's name", 
     scholar: { name: "Ada Lovelace", field: "computing" },
     source: { title: "Notes on the Engine", year: 1843, origin: "harvested" },
     text: PAPER,
-    audience: "students",
+    audience: "ages_15_18",
   });
   assert.match(p, /Ada Lovelace \(computing\)/);
-  assert.match(p, /students aged roughly 14 to 18/);
+  assert.match(p, /students aged 15 to 18/);
   assert.match(p, /Notes on the Engine \(1843\)/);
   assert.match(p, /=== PAPER BEGINS ===\n[\s\S]+\n=== PAPER ENDS ===/);
   assert.ok(!p.includes("opening portion"));

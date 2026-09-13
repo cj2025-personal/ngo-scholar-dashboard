@@ -49,7 +49,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page).toHaveURL(/\/editorial\/new\?source=/);
   await expect(page.getByLabel("Paper")).toHaveValue(/src-e2e-1$/);
   await expect(page.locator(".ch-msg.is-agent").first()).toContainText("What shall we write");
-  await page.getByLabel("Reader").selectOption("general");
+  await page.getByLabel("Reader age").selectOption("ages_15_18");
   await page.getByPlaceholder(/Describe the article you want/).fill("Keep it to what the boards did in the second drought.");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".ch-msg.is-user").first()).toContainText("second drought");
@@ -62,6 +62,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   expect(beatCount).toBeGreaterThanOrEqual(2);
   await expect(outline1.locator(".ch-beat").first().locator(".block-chip").first()).toHaveText(/^p\d+$/);
   await expect(page.getByLabel("Paper")).toBeDisabled();
+  await expect(page.getByLabel("Reader age")).toBeDisabled();
 
   /* A follow-up replans it; the first outline is superseded, the second is live. */
   await page.getByPlaceholder(/Reply with what to change/).fill("Lead with the limitations.");

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 
-import { DRAFT_AUDIENCES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
+import { DEFAULT_AUDIENCE, DRAFT_AUDIENCES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 
 /**
  * New story, as a conversation.
@@ -76,7 +76,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
   const router = useRouter();
   const [inventory, setInventory] = useState(null);
   const [paper, setPaper] = useState(initialSource);
-  const [audience, setAudience] = useState(DRAFT_AUDIENCES[0].value);
+  const [audience, setAudience] = useState(DEFAULT_AUDIENCE);
   const [messages, setMessages] = useState([]);
   const [job, setJob] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -112,7 +112,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       push({ role: "agent", text: inv.nudge || "Nothing is ready to draft from yet. Add a paper you hold the rights to and come back." });
       return;
     }
-    push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? Pick the paper and the reader below, then tell me what the article should be: what to focus on, what to leave out, the angle you want. I will read the paper and propose an outline before a word is drafted.` });
+    push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? Pick the paper and the reader's age below, then tell me what the article should be: what to focus on, what to leave out, the angle you want. I will read the paper and propose an outline before a word is drafted.` });
   }, [me?.name, push, resumeJobId]);
 
   useEffect(() => {
@@ -156,7 +156,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       const j = r.data.job;
       setJob(j);
       setPaper(j.source ? `${j.source.origin}:${j.source.id}` : null);
-      setAudience(j.audience || DRAFT_AUDIENCES[0].value);
+      setAudience(j.audience || DEFAULT_AUDIENCE);
       if (j.brief) push({ role: "user", text: j.brief });
       if (j.storyId) { router.replace(`/editorial/${j.storyId}`); return; }
       if (j.status === "awaiting_outline") { showOutline(j, { replans: j.replans || 0 }); return; }
@@ -263,9 +263,9 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
             </select>
           </label>
           <label className="ch-opt">
-            <span>Reader</span>
-            <select aria-label="Reader" value={audience} disabled={locked} onChange={(e) => setAudience(e.target.value)}>
-              {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+            <span>Reader age</span>
+            <select aria-label="Reader age" value={audience} disabled={locked} onChange={(e) => setAudience(e.target.value)}>
+              {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label} · reads at grade {a.grade}</option>)}
             </select>
           </label>
           {locked ? <span className="st-todo-detail ch-locked">Paper and reader are set for this draft. <button type="button" className="st-link" onClick={() => { if (stopRef.current) stopRef.current(); setJob(null); setBusy(false); setMessages((cur) => cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m))); }}>Start another</button></span> : null}

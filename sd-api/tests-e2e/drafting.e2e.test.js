@@ -237,7 +237,7 @@ test("the same request again is the same job, not a second bill", async () => {
 });
 
 test("with outline approval the job pauses, the scholar cuts a section, and the draft becomes a story", async () => {
-  const created = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-2", audience: "students", brief: "focus on the limitations", approveOutline: true } });
+  const created = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-2", audience: "ages_15_18", brief: "focus on the limitations", approveOutline: true } });
   assert.equal(created.status, 202, JSON.stringify(created.data));
   const jobId = created.data.job.id;
   assert.equal(created.data.job.approveOutline, true);
@@ -293,7 +293,7 @@ test("with outline approval the job pauses, the scholar cuts a section, and the 
   assert.equal(story.bodyBlocks.filter((b) => b.type === "subheading").length, beats.length, "one heading per approved section, the cut one gone");
   assert.ok(story.bodyBlocks.some((b) => b.type === "subheading" && b.html === "Opening, renamed"));
   assert.equal(story.provenance.sourceId, "src-e2e-2");
-  assert.equal(story.provenance.audience, "students");
+  assert.equal(story.provenance.audience, "ages_15_18");
   assert.ok(story.bodyBlocks.filter((b) => b.type === "paragraph").every((b) => b.traceable === true && b.sourceRefs.length >= 1 && b.fidelity.verdict === "supported"));
   const stored = await db.collection("scholar_editorials").findOne({ slug: story.slug });
   assert.equal(stored.published_by, null, "the machine did not publish");
@@ -340,7 +340,7 @@ test("saving the draft into a story stores provenance, links the job, and return
   assert.ok(drafted.every((b) => b.traceable === true && b.overlap >= 0.99));
   state.firstDrafted = drafted[0];
 
-  const job = await db.collection("scholar_draft_jobs").findOne({ idempotency_key: { $exists: true } });
+  const job = await db.collection("scholar_draft_jobs").findOne({ _id: new ObjectId(state.jobId) });
   assert.equal(job.status, "published");
   assert.equal(String(job.story_id), story.id);
   assert.equal(job.events[job.events.length - 1].type, "draft_taken_into_story");

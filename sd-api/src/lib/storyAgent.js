@@ -28,6 +28,7 @@
  * takes the model, the judge and the image maker as injected functions.
  */
 
+const { AUDIENCES, normaliseAudience } = require("./audiences");
 const AGENT_VERSION = "story-agent-2026.1";
 const MAX_STEPS = 12;
 const MAX_TOOL_CALLS = 24;
@@ -309,7 +310,7 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
   const usage = [];
 
   const opening = [
-    `The reader this article is written for: ${audience}.`,
+    `The reader this article is written for: ${AUDIENCES[normaliseAudience(audience)].brief}`,
     "",
     "THE DRAFT:",
     renderState(working),

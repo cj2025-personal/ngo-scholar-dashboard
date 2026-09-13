@@ -2944,3 +2944,11 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .del-error { color: var(--burgundy); }
 .sc-elist-actions .del-btn { margin-left: 4px; }
 .st-story-actions { display: flex; align-items: center; gap: 10px; }
+
+/* The chat fits the viewport with room under the composer; the box is a box. */
+.ch-wrap { height: calc(100dvh - var(--ark-topbar-height) - 8px); }
+.ch-composer { padding: 14px 0 22px; gap: 10px; }
+.ch-composer .ag-box { background: var(--sd-surface); border: 1.5px solid var(--sd-line); border-radius: 14px; padding: 10px 10px 10px 14px; box-shadow: var(--sd-sh-sm); }
+.ch-composer .ag-input { min-height: 44px; }
+.ch-opt select { max-width: 360px; }
+.ag-box { background: var(--sd-surface); }

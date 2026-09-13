@@ -172,7 +172,7 @@ export default function StoryWorkspace({ initialStory = null }) {
   const plainTextContent = useMemo(() => getPlainTextFromBlocks(form.bodyBlocks), [form.bodyBlocks]);
   const totalWords = useMemo(() => plainTextContent.split(/\s+/).filter(Boolean).length, [plainTextContent]);
   const readingTime = Math.max(1, Math.ceil(totalWords / 200 || 1));
-  const audience = form.provenance?.audience || "general";
+  const audience = form.provenance?.audience || "adults";
   const prose = useMemo(() => form.bodyBlocks.filter((b) => b.type === "paragraph").map((b) => plainText(b.html)).join("\n\n"), [form.bodyBlocks]);
   const assessment = useMemo(() => (reviewMode ? assessForAudience(prose, audience) : null), [reviewMode, prose, audience]);
   const summary = useMemo(() => summariseBlocks(form.bodyBlocks), [form.bodyBlocks]);

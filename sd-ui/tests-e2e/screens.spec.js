@@ -19,7 +19,8 @@ test("capture the current screens", async ({ page, context, browser }) => {
   fs.mkdirSync(OUT, { recursive: true });
   const state = readState();
   await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
-  await page.setViewportSize({ width: 1440, height: 900 });
+  const [vw, vh] = (process.env.SCREENS_VIEWPORT || "1440x900").split("x").map(Number);
+  await page.setViewportSize({ width: vw, height: vh });
   const shot = (name) => page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: true });
 
   const anon = await browser.newPage();

@@ -27,22 +27,8 @@
 
 const PROMPT_VERSION = "2026-09-12.v1";
 
-/** Who the draft is for. The scholar picks; the reader-level brief changes. */
-const AUDIENCES = {
-  general: {
-    label: "General reader",
-    brief:
-      "an interested adult with no background in the field — a curious newspaper reader. " +
-      "Plain language; define any technical term the first time it appears.",
-  },
-  students: {
-    label: "Secondary students",
-    brief:
-      "students aged roughly 14 to 18. Short sentences and concrete examples. Define every " +
-      "technical term in the sentence that introduces it. Do not talk down.",
-  },
-};
-const DEFAULT_AUDIENCE = "general";
+/** Who the draft is for, by age. One table shared with the readability gate and the UI. */
+const { AUDIENCES, DEFAULT_AUDIENCE, normaliseAudience } = require("./audiences");
 
 const LIMITS = {
   /* ~9,000 words is well inside the model's window; the cap is about cost and
@@ -75,10 +61,6 @@ const RESPONSE_SCHEMA = {
   },
   required: ["title", "deck", "blocks"],
 };
-
-function normaliseAudience(value) {
-  return Object.prototype.hasOwnProperty.call(AUDIENCES, value) ? value : DEFAULT_AUDIENCE;
-}
 
 /**
  * The source, trimmed to budget.

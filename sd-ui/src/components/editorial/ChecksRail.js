@@ -1,6 +1,6 @@
 "use client";
 
-import { AUDIENCE_TARGETS } from "@/lib/readability";
+import { AUDIENCE_TARGETS, normaliseAudience } from "@/lib/readability";
 
 /**
  * The checks on this draft, as it stands right now.
@@ -39,7 +39,7 @@ function Meter({ assessment }) {
 
 export default function ChecksRail({ blocks, assessment, audience, warnings, onGoTo }) {
   const s = summariseBlocks(blocks);
-  const target = AUDIENCE_TARGETS[audience] || AUDIENCE_TARGETS.general;
+  const target = AUDIENCE_TARGETS[normaliseAudience(audience)];
   const firstAttention = blocks.findIndex((b) => b.fidelity && b.fidelity.verdict !== "supported" && Array.isArray(b.sourceRefs) && b.sourceRefs.length);
   return (
     <div className="ck-wrap">

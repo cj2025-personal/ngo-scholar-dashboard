@@ -192,7 +192,7 @@ test("a draft too hard for its audience loops through draft_blocks once with a n
   assert.equal(steps.filter((s) => s === "draft_blocks").length, 6, "three sections, drafted twice");
   assert.ok(model.calls.some((p) => /measured at reading grade/.test(p)), "the retry prompt names the measured grade");
   assert.equal(r.readability.verdict, "fail");
-  assert.ok(r.warnings.some((w) => /grades above the level for secondary students/.test(w)));
+  assert.ok(r.warnings.some((w) => /grades above the level for readers aged 15 to 18/.test(w)));
   assert.equal(r.calls.filter((c) => c.step === "draft_blocks").length, 6);
   assert.equal(r.calls.filter((c) => c.step === "judge_fidelity").length, 6);
 });

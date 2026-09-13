@@ -2,7 +2,7 @@
 
 import { FaCheck, FaEye, FaTriangleExclamation } from "react-icons/fa6";
 
-import { AUDIENCE_TARGETS } from "@/lib/readability";
+import { AUDIENCE_TARGETS, normaliseAudience } from "@/lib/readability";
 import { summariseBlocks } from "@/components/editorial/ChecksRail";
 
 /**
@@ -16,7 +16,7 @@ import { summariseBlocks } from "@/components/editorial/ChecksRail";
  */
 export default function PublishCheck({ blocks, assessment, audience, author, provenance, onClose, onPublish, onSchedule, onGoTo, busy }) {
   const s = summariseBlocks(blocks);
-  const target = AUDIENCE_TARGETS[audience] || AUDIENCE_TARGETS.general;
+  const target = AUDIENCE_TARGETS[normaliseAudience(audience)];
   const firstAttention = blocks.findIndex((b) => b.fidelity && b.fidelity.verdict !== "supported" && Array.isArray(b.sourceRefs) && b.sourceRefs.length);
   const firstLost = blocks.findIndex((b) => b.traceable === false);
   const levelOk = !assessment || assessment.verdict !== "fail";

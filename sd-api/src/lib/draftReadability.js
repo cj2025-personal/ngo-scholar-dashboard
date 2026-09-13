@@ -32,17 +32,12 @@
 const { measureReadability, RELIABLE_WORD_FLOOR } = require("./readability");
 
 /**
- * Where each audience should read, and how far above that it may sit.
- *
- * `students` is secondary school, roughly grades 9–12, targeted at the low end
- * because the draft is an introduction, not a set text. `general` is the
- * newspaper reader: grade 10 is where broadsheet feature writing measures.
+ * Where each audience should read, and how far above that it may sit: the
+ * grade and tolerance on the shared audience table (`audiences.js`), keyed
+ * by age band. Older keys (`general`, `students`) are accepted as aliases.
  */
-const AUDIENCE_TARGETS = {
-  general: { grade: 10, maxAbove: 3.0, label: "a general reader" },
-  students: { grade: 9, maxAbove: 2.0, label: "secondary students" },
-};
-const DEFAULT_AUDIENCE = "general";
+const { AUDIENCES, DEFAULT_AUDIENCE, normaliseAudience } = require("./audiences");
+const AUDIENCE_TARGETS = Object.fromEntries(Object.entries(AUDIENCES).map(([k, a]) => [k, { grade: a.grade, maxAbove: a.maxAbove, label: a.readers }]));
 
 /** Under this many words, one more grade of tolerance. */
 const SHORT_TEXT_WORDS = 300;
@@ -60,7 +55,7 @@ const VERDICT = { PASS: "pass", WARN: "warn", FAIL: "fail" };
  * @returns {{verdict: "pass"|"warn"|"fail", audience: string, targetGrade: number, fkGrade: number|null, drift: number|null, tolerance: number, reliable: boolean, words: number, reason: string|null}}
  */
 function assessDraftReadability({ text, audience }) {
-  const key = Object.prototype.hasOwnProperty.call(AUDIENCE_TARGETS, audience) ? audience : DEFAULT_AUDIENCE;
+  const key = normaliseAudience(audience);
   const target = AUDIENCE_TARGETS[key];
   const m = measureReadability(text);
 
@@ -105,7 +100,7 @@ function assessDraftReadability({ text, audience }) {
  */
 function simplificationNote(assessment) {
   if (!assessment || assessment.verdict !== VERDICT.FAIL) return null;
-  const t = AUDIENCE_TARGETS[assessment.audience] || AUDIENCE_TARGETS[DEFAULT_AUDIENCE];
+  const t = AUDIENCE_TARGETS[normaliseAudience(assessment.audience)] || AUDIENCE_TARGETS[DEFAULT_AUDIENCE];
   return (
     `Your previous draft measured at reading grade ${assessment.fkGrade}; the target for ${t.label} is grade ${t.grade}. ` +
     "Shorten sentences to 15–20 words, prefer one- and two-syllable words, and define each technical term in " +

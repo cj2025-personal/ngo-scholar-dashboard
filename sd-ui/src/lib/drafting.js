@@ -45,11 +45,14 @@ export async function getDraftSources() {
   return request("/api/drafting/sources", { method: "GET" });
 }
 
-/** The reader the draft is written for. Mirrors the server's list; the server decides. */
+/** The reader the draft is written for, by age. Mirrors the server's table; the server decides. */
 export const DRAFT_AUDIENCES = [
-  { value: "general", label: "General reader" },
-  { value: "students", label: "Secondary students" },
+  { value: "ages_8_11", label: "Ages 8–11", grade: 4 },
+  { value: "ages_12_14", label: "Ages 12–14", grade: 7 },
+  { value: "ages_15_18", label: "Ages 15–18", grade: 9 },
+  { value: "adults", label: "Adults", grade: 10 },
 ];
+export const DEFAULT_AUDIENCE = "adults";
 
 /**
  * Draft an article from one source marked ready — the synchronous path.

@@ -24,6 +24,7 @@
  * prompt problem.
  */
 
+const { isAudience } = require("./audiences");
 const composer = require("./draftComposer");
 
 const EVAL_VERSION = "draft-evals-2026.1";
@@ -107,7 +108,7 @@ function validateRow(row, index) {
   if (!row || typeof row !== "object") return [`row ${index}: not an object`];
   if (typeof row.id !== "string" || !row.id) problems.push(`row ${index}: missing id`);
   if (typeof row.text !== "string" || row.text.split(/\s+/).length < 200) problems.push(`row ${row.id || index}: text under 200 words`);
-  if (row.audience && !composer.AUDIENCES[row.audience]) problems.push(`row ${row.id || index}: unknown audience ${row.audience}`);
+  if (row.audience && !isAudience(row.audience)) problems.push(`row ${row.id || index}: unknown audience ${row.audience}`);
   return problems;
 }
 

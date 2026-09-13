@@ -7,9 +7,20 @@
 export const RELIABLE_WORD_FLOOR = 80;
 
 export const AUDIENCE_TARGETS = {
-  general: { grade: 10, maxAbove: 3.0, label: "a general reader" },
-  students: { grade: 9, maxAbove: 2.0, label: "secondary students" },
+  ages_8_11: { grade: 4, maxAbove: 1.5, label: "readers aged 8 to 11" },
+  ages_12_14: { grade: 7, maxAbove: 2.0, label: "readers aged 12 to 14" },
+  ages_15_18: { grade: 9, maxAbove: 2.0, label: "readers aged 15 to 18" },
+  adults: { grade: 10, maxAbove: 3.0, label: "adult readers" },
 };
+
+/* Keys from before the age bands, still on older stories. */
+const ALIASES = { general: "adults", students: "ages_15_18" };
+
+export function normaliseAudience(value) {
+  if (Object.prototype.hasOwnProperty.call(AUDIENCE_TARGETS, value)) return value;
+  if (Object.prototype.hasOwnProperty.call(ALIASES, value)) return ALIASES[value];
+  return "adults";
+}
 
 function countSyllables(word) {
   const w = String(word || "").toLowerCase().replace(/[^a-z]/g, "");
@@ -31,7 +42,7 @@ export function measureReadability(text) {
 
 /** Where the draft sits against its audience: the numbers the meter draws. */
 export function assessForAudience(text, audience) {
-  const target = AUDIENCE_TARGETS[audience] || AUDIENCE_TARGETS.general;
+  const target = AUDIENCE_TARGETS[normaliseAudience(audience)];
   const m = measureReadability(text);
   if (!m) return { target, fkGrade: null, drift: null, tolerance: target.maxAbove, verdict: "warn", reliable: false, words: 0 };
   const tolerance = target.maxAbove + (m.words < 300 ? 1 : 0);
