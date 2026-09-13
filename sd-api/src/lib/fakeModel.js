@@ -84,9 +84,65 @@ function answerComposer(prompt) {
   });
 }
 
+/**
+ * The story agent's tool loop, answered from the instruction.
+ *
+ * Round one reads "THE SCHOLAR ASKS:" and emits the tool calls a sensible
+ * agent would; round two (after the tool results come back) finishes with a
+ * summary. Deterministic, so the browser and API suites can assert on it.
+ */
+function answerAgent(contents) {
+  const last = contents[contents.length - 1];
+  const hasResponses = (last?.parts || []).some((p) => p.functionResponse);
+  const usageOf = (n) => ({ input: 400 + n, output: 60, total: 460 + n });
+  if (hasResponses) {
+    const results = last.parts.map((p) => String(p.functionResponse?.response?.result || ""));
+    const refused = results.filter((r) => r.startsWith("refused")).length;
+    const fc = { name: "finish", args: { summary: refused ? `Made the changes I could; ${refused} step${refused === 1 ? " was" : "s were"} refused by the rules.` : "Done as asked." } };
+    return { text: "", functionCalls: [fc], parts: [{ functionCall: fc }], usage: usageOf(1), modelVersion: MODEL_VERSION, resourceName: "fake/model" };
+  }
+  const opening = String(contents[0]?.parts?.[0]?.text || "");
+  const ask = (opening.split("THE SCHOLAR ASKS:")[1] || "").trim();
+  const low = ask.toLowerCase();
+  const blockNum = (re) => { const m = low.match(re); return m ? Number(m[1]) : null; };
+  const blockLine = (n) => (opening.match(new RegExp(`^\\[${n}\\] \\(([a-z]+)\\)[^:]*: (.+)$`, "m")) || []);
+  const firstPassage = (opening.match(/^\[(p\d+)\] (.+)$/m) || []);
+  const calls = [];
+  if (/^add (an )?(image|illustration|picture)/.test(low) || /add (an )?(image|illustration|picture)/.test(low)) {
+    const after = blockNum(/after (?:block|paragraph) (\d+)/) ?? 1;
+    calls.push({ name: "add_image", args: { after, description: ask.replace(/.*(image|illustration|picture) (of|showing) /i, ""), caption: `Illustration: ${ask.replace(/.*(image|illustration|picture) (of|showing) /i, "")}`, alt: "Illustration" } });
+  } else if (/shorten|tighten|cut down/.test(low)) {
+    const n = blockNum(/(?:block|paragraph) (\d+)/) ?? 2;
+    const [, , text] = blockLine(n);
+    const cites = (opening.match(new RegExp(`^\\[${n}\\] \\([a-z]+\\) cites ([p\\d,]+)`, "m")) || [])[1];
+    const first = String(text || "").split(/(?<=[.!?])\s+/)[0] || "Shortened.";
+    calls.push({ name: "replace_block", args: { index: n, text: first, passage_ids: cites ? cites.split(",") : [firstPassage[1] || "p1"] } });
+  } else if (/delete|remove|drop/.test(low)) {
+    const n = blockNum(/(?:block|paragraph) (\d+)/) ?? 2;
+    calls.push({ name: "delete_block", args: { index: n } });
+  } else if (/title/.test(low)) {
+    calls.push({ name: "set_heading_fields", args: { title: ask.replace(/.*title (to|as) /i, "").replace(/^["“]|["”]$/g, "") } });
+  } else if (/^say as (me|myself)|my own view|my view/.test(low)) {
+    calls.push({ name: "insert_block", args: { after: 999, kind: "paragraph", text: ask.replace(/^.*?:\s*/, ""), passage_ids: [], own_view: true } });
+  } else if (/add|mention|include/.test(low)) {
+    /* Add a sentence from the paper: cite the first passage that matches a word of the ask. */
+    const words = low.split(/\W+/).filter((w) => w.length > 5);
+    const passages = [...opening.matchAll(/^\[(p\d+)\] (.+)$/gm)].map((m) => ({ id: m[1], text: m[2] }));
+    const hit = passages.find((p) => words.some((w) => p.text.toLowerCase().includes(w))) || passages[0];
+    if (!hit) calls.push({ name: "finish", args: { summary: "The paper has no passages to draw on." } });
+    else calls.push({ name: "insert_block", args: { after: blockNum(/after (?:block|paragraph) (\d+)/) ?? 1, kind: "paragraph", text: hit.text.split(/(?<=[.!?])\s+/).slice(0, 2).join(" "), passage_ids: [hit.id] } });
+  } else if (/first person|as me/.test(low)) {
+    calls.push({ name: "replace_block", args: { index: 2, text: "I think this is the best part.", passage_ids: [firstPassage[1] || "p1"] } });
+  } else {
+    calls.push({ name: "finish", args: { summary: "I did not understand what to change; try naming a block number." } });
+  }
+  return { text: "", functionCalls: calls, parts: calls.map((fc) => ({ functionCall: fc })), usage: usageOf(2), modelVersion: MODEL_VERSION, resourceName: "fake/model" };
+}
+
 /** Same signature as `vertex.generateContent`. */
-async function generateContent({ prompt }) {
-  const p = String(prompt || "");
+async function generateContent({ prompt, contents = null, tools = null }) {
+  if (tools && Array.isArray(contents)) return answerAgent(contents);
+  const p = String(prompt || (contents ? contents.map((c) => (c.parts || []).map((x) => x.text || "").join("\n")).join("\n") : ""));
   let text;
   if (p.includes("PARAGRAPHS TO CHECK:")) text = answerJudge(p);
   else if (p.includes("=== PAPER, IN NUMBERED PASSAGES ===")) text = answerOutline(p);

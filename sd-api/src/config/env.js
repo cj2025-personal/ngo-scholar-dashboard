@@ -76,6 +76,12 @@ const env = {
       null,
     location: process.env.GCP_LOCATION || process.env.VERTEX_LOCATION || "us-central1",
   },
+  /* Illustrations on request, through Vertex Imagen. Off by default until a
+     deployment turns it on; the agent then refuses add_image with a reason. */
+  images: {
+    enabled: String(process.env.DRAFTING_IMAGES ?? "false").toLowerCase() === "true",
+    model: process.env.IMAGE_MODEL || "imagen-3.0-generate-002",
+  },
   /* The drafting job queue. `enabled` is the kill switch; `worker` lets a
      deployment serve the API without running the queue (a second replica, or
      a local dev instance pointed at shared data). */

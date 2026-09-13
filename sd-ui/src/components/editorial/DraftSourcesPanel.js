@@ -102,18 +102,20 @@ export default function DraftSourcesPanel({ onDraft = null, draftingKey = null, 
   const [loadError, setLoadError] = useState("");
   const [audience, setAudience] = useState(DRAFT_AUDIENCES[0].value);
 
-  const load = useCallback(async () => {
-    const res = await getDraftSources();
-    if (!res.ok) {
-      setLoadError(res.error);
-      return;
-    }
-    setLoadError("");
-    setInventory(res.data);
+  const load = useCallback(() => {
+    getDraftSources().then((res) => {
+      if (!res.ok) {
+        setLoadError(res.error);
+        return;
+      }
+      setLoadError("");
+      setInventory(res.data);
+    });
   }, []);
 
   useEffect(() => {
-    load();
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   const all = inventory ? [...inventory.draftable, ...inventory.citable, ...inventory.unusable] : [];

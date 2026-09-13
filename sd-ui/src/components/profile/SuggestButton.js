@@ -44,7 +44,9 @@ export default function SuggestButton({ sectionKey, label, currentText = "" }) {
   const modalRef = useRef(null);
   const triggerRef = useRef(null);
   const stateRef = useRef(state);
-  stateRef.current = state;
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   function resetForm() {
     setKind("correction");

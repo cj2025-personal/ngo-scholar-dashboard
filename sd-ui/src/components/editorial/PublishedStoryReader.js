@@ -1,3 +1,6 @@
+import Link from "next/link";
+import ReaderBody from "@/components/editorial/ReaderBody";
+
 function buildPublicImageUrl(url) {
   if (!url) {
     return "";
@@ -69,62 +72,6 @@ function formatDate(value) {
   }).format(date);
 }
 
-function renderBodyBlock(block, index) {
-  if (block.type === "image") {
-    return (
-      <figure
-        key={`${block.imageId || index}-${index}`}
-        className={`reader-image-block reader-image-width-${block.width || "body"}`}
-      >
-        <img
-          src={buildPublicImageUrl(block.url)}
-          alt={block.alt || block.filename || "Story image"}
-          className="reader-inline-image"
-        />
-        {block.caption ? <figcaption>{block.caption}</figcaption> : null}
-      </figure>
-    );
-  }
-
-  if (block.type === "heading") {
-    return (
-      <h2
-        key={`heading-${index}`}
-        className="reader-heading"
-        dangerouslySetInnerHTML={{ __html: block.html || "" }}
-      />
-    );
-  }
-
-  if (block.type === "subheading") {
-    return (
-      <h3
-        key={`subheading-${index}`}
-        className="reader-subheading"
-        dangerouslySetInnerHTML={{ __html: block.html || "" }}
-      />
-    );
-  }
-
-  if (block.type === "quote") {
-    return (
-      <blockquote
-        key={`quote-${index}`}
-        className="reader-quote"
-        dangerouslySetInnerHTML={{ __html: block.html || "" }}
-      />
-    );
-  }
-
-  return (
-    <p
-      key={`paragraph-${index}`}
-      className="reader-paragraph"
-      dangerouslySetInnerHTML={{ __html: block.html || "" }}
-    />
-  );
-}
-
 export default function PublishedStoryReader({ story }) {
   const publishedDate = formatDate(story?.publishedAt || story?.updatedAt);
   const coverImageUrl = buildPublicImageUrl(story?.coverImage?.url);
@@ -142,9 +89,9 @@ export default function PublishedStoryReader({ story }) {
         <header className="public-story-header">
           <div className="public-story-brand">
             <span className="eyebrow">Archivyn Stories</span>
-            <a href="/" className="public-story-brand-link">
+            <Link href="/" className="public-story-brand-link">
               Scholar Dashboard
-            </a>
+            </Link>
           </div>
 
           <div className="public-story-headline">
@@ -206,9 +153,7 @@ export default function PublishedStoryReader({ story }) {
           />
         ) : null}
 
-        <div className="public-story-body">
-          {story?.bodyBlocks?.map((block, index) => renderBodyBlock(block, index))}
-        </div>
+        <ReaderBody story={story} />
       </article>
     </main>
   );

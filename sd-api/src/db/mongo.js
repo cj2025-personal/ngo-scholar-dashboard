@@ -15,6 +15,9 @@ const COLLECTIONS = {
   /* One row per requested draft: idempotent, lease-locked, with its own
      event log. Owned here; listed in the shared manifest. */
   draftJobs: "scholar_draft_jobs",
+  /* One row per instruction the scholar gives the story agent: the ask, the
+     tool calls, the proposed change, and whether it was accepted. */
+  storyTurns: "scholar_story_turns",
 };
 
 let clientPromise;
@@ -223,6 +226,10 @@ async function ensureIndexes() {
       await draftJobs.createIndex(
         { profile_id: 1, created_at: -1 },
         { name: "idx_scholar_draft_jobs_profile_created" },
+      );
+      await db.collection(COLLECTIONS.storyTurns).createIndex(
+        { story_id: 1, created_at: -1 },
+        { name: "idx_scholar_story_turns_story_created" },
       );
     })();
   }

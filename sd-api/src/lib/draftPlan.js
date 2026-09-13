@@ -109,11 +109,12 @@ const OUTLINE_SCHEMA = {
   required: ["title", "deck", "beats"],
 };
 
-function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = false, audience }) {
+function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = false, audience, brief = null }) {
   const aud = composer.AUDIENCES[composer.normaliseAudience(audience)];
   const name = scholar.name || "the scholar";
   return [
     `Plan an article about the paper below, by ${name}, for ${aud.brief}`,
+    ...(brief ? ["", `The scholar's brief for this article: "${String(brief).trim()}". Follow it where the paper supports it; where it asks for something the paper does not say, leave that out.`] : []),
     "",
     "Return:",
     "- title: under 12 words, specific to what the paper found, no colon-and-subtitle pattern.",

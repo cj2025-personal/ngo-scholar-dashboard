@@ -36,6 +36,9 @@ const HEARTBEAT_MS = 30_000;
 const STATUS = {
   QUEUED: "queued",
   RUNNING: "running",
+  /* The outline is proposed; the scholar approves, edits or cuts sections
+     before any prose is written. Only when the job asked for it. */
+  AWAITING_OUTLINE: "awaiting_outline",
   AWAITING_REVIEW: "awaiting_review",
   PUBLISHED: "published",
   DISCARDED: "discarded",
@@ -46,7 +49,7 @@ const STATUS = {
 const TERMINAL = new Set([STATUS.PUBLISHED, STATUS.DISCARDED, STATUS.FAILED]);
 
 /** The steps a worker reports, in order. Names are stable: the UI shows them. */
-const STEPS = ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "assemble", "verify"];
+const STEPS = ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "assemble", "verify", "create_story"];
 
 /**
  * Every move and who may make it. "worker" is the process holding the lease;
@@ -54,7 +57,13 @@ const STEPS = ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", 
  */
 const TRANSITIONS = [
   { from: STATUS.QUEUED, to: STATUS.RUNNING, actors: ["worker"] },
+  { from: STATUS.RUNNING, to: STATUS.AWAITING_OUTLINE, actors: ["worker"] },
+  /* Approving the outline puts the job back in the queue for the draft phase. */
+  { from: STATUS.AWAITING_OUTLINE, to: STATUS.QUEUED, actors: ["scholar"] },
+  { from: STATUS.AWAITING_OUTLINE, to: STATUS.DISCARDED, actors: ["scholar"] },
   { from: STATUS.RUNNING, to: STATUS.AWAITING_REVIEW, actors: ["worker"] },
+  /* The draft became a story on the server: the job is closed by the worker. */
+  { from: STATUS.RUNNING, to: STATUS.PUBLISHED, actors: ["worker"] },
   { from: STATUS.RUNNING, to: STATUS.FAILED, actors: ["worker"] },
   /* A lease that lapses mid-run goes back to queued for another worker. */
   { from: STATUS.RUNNING, to: STATUS.QUEUED, actors: ["system"] },

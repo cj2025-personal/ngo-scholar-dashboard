@@ -6,7 +6,7 @@ const { requireAuth } = require("../middleware/auth.middleware");
 const { canonicalScholarId } = require("../lib/identity");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
 const { listDraftSources, draftFromSource } = require("../services/drafting.service");
-const { createDraftJob, getDraftJob, listDraftJobs, listJobEvents, resumeJob } = require("../services/draftJob.service");
+const { createDraftJob, approveOutline, getDraftJob, listDraftJobs, listJobEvents, resumeJob } = require("../services/draftJob.service");
 const { STATUS, TERMINAL } = require("../lib/draftJob");
 
 const router = express.Router();
@@ -101,18 +101,35 @@ router.post(
   draftLimiter,
   asyncHandler(async (req, res) => {
     const profileId = requireProfile(req);
-    const { origin, sourceId, audience } = req.body || {};
+    const { origin, sourceId, audience, brief, approveOutline: wantsOutline, createStory } = req.body || {};
     if (origin !== "harvested" && origin !== "contributed") {
       throw new ApiError(400, "Source origin must be harvested or contributed.");
     }
     if (typeof sourceId !== "string" || !sourceId || sourceId.length > 200) {
       throw new ApiError(400, "Source id is invalid.");
     }
+    if (brief !== undefined && brief !== null && (typeof brief !== "string" || brief.length > 1000)) {
+      throw new ApiError(400, "A brief is a short sentence or two, under 1,000 characters.");
+    }
     const result = await createDraftJob({
       profileId, origin, sourceId,
       audience: typeof audience === "string" ? audience : undefined,
+      brief: typeof brief === "string" ? brief : null,
+      approveOutline: Boolean(wantsOutline),
+      createStory: createStory === undefined ? true : Boolean(createStory),
     });
     res.status(result.reused ? 200 : 202).json(result);
+  }),
+);
+
+/** Approve the proposed outline, edited or not; drafting resumes from it. */
+router.post(
+  "/jobs/:jobId/outline",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const profileId = requireProfile(req);
+    const outline = req.body && typeof req.body.outline === "object" ? req.body.outline : null;
+    res.status(200).json(await approveOutline({ jobId: req.params.jobId, profileId, outline }));
   }),
 );
 
@@ -177,7 +194,7 @@ router.get(
       res.write(`event: ${type}\n`);
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
-    const settled = (status) => status === STATUS.AWAITING_REVIEW || TERMINAL.has(status);
+    const settled = (status) => status === STATUS.AWAITING_REVIEW || status === STATUS.AWAITING_OUTLINE || TERMINAL.has(status);
     const finish = (snapshot) => {
       send("done", snapshot.job);
       closed = true;

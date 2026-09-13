@@ -67,7 +67,8 @@ async function startApi(extraEnv = {}) {
       MONGODB_DB: DB_NAME,
       LLM_PROVIDER: "fake",
       DRAFTING_POLL_MS: "150",
-      DRAFT_DAILY_CAP: "3",
+      DRAFT_DAILY_CAP: "4",
+      DRAFTING_IMAGES: "true",
       CORS_ORIGIN: "http://localhost:3000",
       GCP_PROJECT_ID: "",
       GCP_SERVICE_ACCOUNT_JSON: "",
@@ -179,13 +180,13 @@ test("the inventory shows what may be drafted from, and refuses an unauthenticat
 });
 
 test("a quotable-only source is refused as a draft job with the panel's own sentence", async () => {
-  const { status, data } = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-q", audience: "general" } });
+  const { status, data } = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-q", audience: "general", createStory: false } });
   assert.equal(status, 403);
   assert.match(data.error, /short quotes only/);
 });
 
 test("a draft job is created, streamed to completion, and parked for review", async () => {
-  const created = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-1", audience: "general" } });
+  const created = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-1", audience: "general", createStory: false } });
   assert.equal(created.status, 202, JSON.stringify(created.data));
   assert.equal(created.data.reused, false);
   const job = created.data.job;
@@ -225,7 +226,7 @@ test("a draft job is created, streamed to completion, and parked for review", as
 });
 
 test("the same request again is the same job, not a second bill", async () => {
-  const again = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-1", audience: "general" } });
+  const again = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-1", audience: "general", createStory: false } });
   assert.equal(again.status, 200);
   assert.equal(again.data.reused, true);
   assert.equal(again.data.job.id, state.jobId);
@@ -233,6 +234,57 @@ test("the same request again is the same job, not a second bill", async () => {
 
   const replay = await readEvents(`/api/drafting/jobs/${state.jobId}/events?after=0`);
   assert.equal(replay[replay.length - 1].event, "done", "a settled job streams its log and closes");
+});
+
+test("with outline approval the job pauses, the scholar cuts a section, and the draft becomes a story", async () => {
+  const created = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-2", audience: "students", brief: "focus on the limitations", approveOutline: true } });
+  assert.equal(created.status, 202, JSON.stringify(created.data));
+  const jobId = created.data.job.id;
+  assert.equal(created.data.job.approveOutline, true);
+  assert.equal(created.data.job.brief, "focus on the limitations");
+
+  const frames = await readEvents(`/api/drafting/jobs/${jobId}/events`);
+  const paused = frames[frames.length - 1].data;
+  assert.equal(paused.status, "awaiting_outline");
+  assert.ok(frames.some((f) => f.event === "outline_ready"));
+  assert.ok(paused.outline && paused.outline.beats.length >= 2, JSON.stringify(paused.outline));
+  assert.ok(paused.passages.length >= 4, "the passage list is on the job for the outline screen");
+  assert.equal(paused.draft, null, "no prose yet");
+
+  /* The scholar cuts the last section and renames the first. */
+  const beats = paused.outline.beats.slice(0, -1).map((b, i) => ({ ...b, heading: i === 0 ? "Opening, renamed" : b.heading }));
+  const bad = await call("POST", `/api/drafting/jobs/${jobId}/outline`, { body: { outline: { beats: [{ heading: "x", passageIds: ["p999"] }] } } });
+  assert.equal(bad.status, 400, "an outline that cites no real passage is refused");
+  const approved = await call("POST", `/api/drafting/jobs/${jobId}/outline`, { body: { outline: { title: paused.outline.title, deck: paused.outline.deck, beats } } });
+  assert.equal(approved.status, 200, JSON.stringify(approved.data));
+  assert.equal(approved.data.job.status, "queued");
+  assert.equal(approved.data.job.outlineApproved.beats.length, beats.length);
+  const twice = await call("POST", `/api/drafting/jobs/${jobId}/outline`, { body: {} });
+  assert.equal(twice.status, 409, "an outline is approved once");
+
+  const lastId = Number(frames.filter((f) => f.id).pop().id);
+  const frames2 = await readEvents(`/api/drafting/jobs/${jobId}/events?after=${lastId}`);
+  const done = frames2[frames2.length - 1].data;
+  assert.equal(done.status, "published", "taken into a story by the worker");
+  assert.ok(done.storyId, "the story id is on the job");
+  assert.ok(frames2.some((f) => f.event === "progress" && f.data.step === "plan_outline" && f.data.approved === true), "the approved outline was used, not replanned");
+  assert.ok(frames2.some((f) => f.event === "progress" && f.data.step === "create_story"));
+
+  const story = (await call("GET", `/api/editorial-stories/${done.storyId}`)).data.story;
+  assert.equal(story.status, "draft");
+  assert.equal(story.bodyBlocks.filter((b) => b.type === "subheading").length, beats.length, "one heading per approved section, the cut one gone");
+  assert.ok(story.bodyBlocks.some((b) => b.type === "subheading" && b.html === "Opening, renamed"));
+  assert.equal(story.provenance.sourceId, "src-e2e-2");
+  assert.equal(story.provenance.audience, "students");
+  assert.ok(story.bodyBlocks.filter((b) => b.type === "paragraph").every((b) => b.traceable === true && b.sourceRefs.length >= 1 && b.fidelity.verdict === "supported"));
+  const stored = await db.collection("scholar_editorials").findOne({ slug: story.slug });
+  assert.equal(stored.published_by, null, "the machine did not publish");
+  assert.match(stored.created_by, /^drafter:/);
+
+  const passages = await call("GET", `/api/editorial-stories/${done.storyId}/passages`);
+  assert.equal(passages.status, 200);
+  assert.equal(passages.data.passages[0].id, "p1");
+  state.outlineStoryId = done.storyId;
 });
 
 test("saving the draft into a story stores provenance, links the job, and returns chips", async () => {
@@ -331,18 +383,106 @@ test("the public reads the story with its byline and its source line, and never 
 
   const missing = await fetch(`${base}/api/editorial-stories/public/slug/does-not-exist`);
   assert.equal(missing.status, 404);
+
+  /* The Sources toggle: the passages behind a published story, with no session. */
+  const passages = await fetch(`${base}/api/editorial-stories/public/slug/${state.slug}/passages`);
+  assert.equal(passages.status, 200);
+  const { passages: list } = await passages.json();
+  assert.ok(list.length >= 4);
+  assert.equal(list[0].id, "p1");
+  assert.match(list[0].text, /Adaptive antenna arrays/);
+});
+
+test("the scholar edits by instruction: a proposal with checks, accepted onto the story", async () => {
+  const before = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  const paragraphs = before.bodyBlocks.map((b, i) => ({ b, n: i + 1 })).filter(({ b }) => b.type === "paragraph");
+  const target = paragraphs[1] || paragraphs[0];
+
+  const asked = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: `shorten paragraph ${target.n}` } });
+  assert.equal(asked.status, 200, JSON.stringify(asked.data));
+  const turn = asked.data.turn;
+  assert.equal(turn.status, "proposed");
+  assert.ok(turn.summary.length > 0);
+  assert.ok(turn.calls.some((c) => c.name === "replace_block" && /^ok/.test(c.result)), JSON.stringify(turn.calls));
+  assert.equal(turn.changes.length, 1);
+  assert.equal(turn.changes[0].kind, "changed");
+  assert.equal(turn.changes[0].index, target.n);
+  assert.equal(turn.checks.paragraphsChanged, 1);
+  assert.equal(turn.checks.supported, 1, "the fact-checker judged the changed paragraph");
+  assert.ok(turn.proposal.blocks.length === before.bodyBlocks.length);
+  const untouched = turn.proposal.blocks.filter((b, i) => b.type !== "image" && i + 1 !== target.n);
+  assert.ok(untouched.every((b, k) => b.html === before.bodyBlocks.filter((x, i) => x.type !== "image" && i + 1 !== target.n)[k].html), "untouched blocks are byte-identical");
+
+  const stillBefore = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  assert.equal(stillBefore.bodyBlocks[target.n - 1].html, before.bodyBlocks[target.n - 1].html, "nothing changes until accepted");
+
+  const accepted = await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${turn.id}/accept`, { body: {} });
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.data));
+  assert.equal(accepted.data.turn.status, "accepted");
+  const after = accepted.data.story;
+  assert.equal(after.bodyBlocks[target.n - 1].html, turn.proposal.blocks[target.n - 1].html);
+  assert.ok(after.bodyBlocks[target.n - 1].sourceRefs.length >= 1, "the rewritten block keeps a citation");
+  assert.equal(after.bodyBlocks[target.n - 1].traceable, true, "its own text is the new baseline for the chip");
+  assert.equal(after.bodyBlocks[target.n - 1].fidelity.verdict, "supported");
+
+  const again = await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${turn.id}/accept`, { body: {} });
+  assert.equal(again.status, 409, "a proposal is applied once");
+  const list = await call("GET", `/api/editorial-stories/${state.storyId}/agent/turns`);
+  assert.equal(list.data.turns[0].status, "accepted");
+  assert.equal(list.data.turns[0].proposal, undefined, "resolved turns do not carry their proposal");
+});
+
+test("the agent adds an illustration by instruction; rejecting discards the generated image", async () => {
+  const asked = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: "add an illustration of a four-element antenna array on a mast after paragraph 1" } });
+  assert.equal(asked.status, 200, JSON.stringify(asked.data));
+  const turn = asked.data.turn;
+  assert.ok(turn.calls.some((c) => c.name === "add_image" && /^ok/.test(c.result)), JSON.stringify(turn.calls));
+  assert.equal(turn.checks.imagesGenerated, 1);
+  const img = turn.proposal.blocks.find((b) => b.type === "image" && b.generated);
+  assert.ok(img && img.imageId && img.url, "the illustration was generated and uploaded as an inline image");
+  assert.match(img.caption, /^Illustration:/, "labelled as an illustration, never as a figure");
+  const served = await fetch(`${base}${img.url}`, { headers: { Cookie: `sd_session=${cookie}` } });
+  assert.equal(served.status, 200);
+  assert.match(served.headers.get("content-type") || "", /image\/png/);
+
+  const rejected = await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${turn.id}/reject`, { body: {} });
+  assert.equal(rejected.status, 200);
+  assert.equal(rejected.data.turn.status, "rejected");
+  const asset = await db.collection("editorial_story_images").findOne({ _id: new (require("mongodb").ObjectId)(img.imageId) });
+  assert.equal(asset.status, "deleted", "a rejected illustration is deleted");
+  const story = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  assert.ok(!story.bodyBlocks.some((b) => b.type === "image"), "the story never received the image");
+});
+
+test("the agent refuses first person and a stale proposal cannot be applied", async () => {
+  const asked = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: "rewrite it as me, in the first person" } });
+  assert.equal(asked.status, 200, JSON.stringify(asked.data));
+  assert.ok(asked.data.turn.calls.some((c) => /first-person/.test(c.result)), JSON.stringify(asked.data.turn.calls));
+  assert.equal(asked.data.turn.changes.length, 0);
+  assert.match(asked.data.turn.summary, /refused/);
+
+  const proposal = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: "delete paragraph 2" } });
+  assert.equal(proposal.status, 200);
+  const form = new FormData();
+  form.set("subtitle", "Edited by hand in between");
+  form.set("inlineImageKeys", "[]"); form.set("retainImageIds", "[]"); form.set("status", "published");
+  const edited = await call("PATCH", `/api/editorial-stories/${state.storyId}`, { form });
+  assert.equal(edited.status, 200);
+  const stale = await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${proposal.data.turn.id}/accept`, { body: {} });
+  assert.equal(stale.status, 409);
+  assert.match(stale.data.error, /changed after this proposal/);
 });
 
 test("the daily cap holds, and a failed draft says something the scholar can act on", async () => {
-  const second = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-2", audience: "students" } });
+  const second = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-2", audience: "students", createStory: false } });
   assert.equal(second.status, 202);
   await readEvents(`/api/drafting/jobs/${second.data.job.id}/events`);
-  const third = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-3", audience: "general" } });
+  const third = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-3", audience: "general", createStory: false } });
   assert.equal(third.status, 202);
   await readEvents(`/api/drafting/jobs/${third.data.job.id}/events`);
-  const fourth = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-3", audience: "students" } });
+  const fourth = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-3", audience: "students", createStory: false } });
   assert.equal(fourth.status, 429);
-  assert.match(fourth.data.error, /daily limit is 3/);
+  assert.match(fourth.data.error, /daily limit is 4/);
 
   /* Discard the third so the list shows a scholar's choice, not only the machine's. */
   const discarded = await call("POST", `/api/drafting/jobs/${third.data.job.id}/resume`, { body: { action: "discard" } });
@@ -353,7 +493,7 @@ test("the daily cap holds, and a failed draft says something the scholar can act
 
   const list = await call("GET", "/api/drafting/jobs");
   assert.equal(list.status, 200);
-  assert.deepEqual(list.data.jobs.map((j) => j.status).sort(), ["awaiting_review", "discarded", "published"]);
+  assert.deepEqual(list.data.jobs.map((j) => j.status).sort(), ["awaiting_review", "discarded", "published", "published"], "the outline job became a story too");
 });
 
 test("a first-person draft is refused end to end, with a sentence", async () => {
@@ -367,7 +507,7 @@ test("a first-person draft is refused end to end, with a sentence", async () => 
   base = bad.url;
   cookie = voiceTokens.token;
   try {
-    const created = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-3", audience: "general" } });
+    const created = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-3", audience: "general", createStory: false } });
     assert.equal(created.status, 202, JSON.stringify(created.data));
     const frames = await readEvents(`/api/drafting/jobs/${created.data.job.id}/events`);
     const done = frames[frames.length - 1].data;
@@ -392,7 +532,7 @@ test("in pilot mode a scholar outside the list sees the inventory but cannot dra
     assert.equal(data.rollout, "pilot");
     assert.match(data.gateReason, /rolled out gradually/);
     assert.equal(data.counts.draftable, 3, "the inventory is still shown");
-    const refused = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-1", audience: "general" } });
+    const refused = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-1", audience: "general", createStory: false } });
     assert.equal(refused.status, 403);
   } finally {
     base = prev;

@@ -75,5 +75,9 @@ test("every failure becomes a sentence with something the scholar can do", () =>
 
 test("constants are the documented shape", () => {
   assert.ok(HEARTBEAT_MS * 2 < LOCK_MS, "heartbeat must fit twice inside the lock");
-  assert.deepEqual(STEPS, ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "assemble", "verify"]);
+  assert.deepEqual(STEPS, ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "assemble", "verify", "create_story"]);
+  assert.equal(canTransition({ from: STATUS.RUNNING, to: STATUS.AWAITING_OUTLINE, actor: "worker" }).ok, true);
+  assert.equal(canTransition({ from: STATUS.AWAITING_OUTLINE, to: STATUS.QUEUED, actor: "scholar" }).ok, true, "approving the outline re-queues");
+  assert.equal(canTransition({ from: STATUS.AWAITING_OUTLINE, to: STATUS.QUEUED, actor: "worker" }).ok, false);
+  assert.equal(canTransition({ from: STATUS.RUNNING, to: STATUS.PUBLISHED, actor: "worker" }).ok, true, "a draft that became a story closes the job");
 });

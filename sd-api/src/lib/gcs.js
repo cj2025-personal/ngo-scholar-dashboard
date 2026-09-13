@@ -64,9 +64,47 @@ function buildStorageOptions() {
   return options;
 }
 
+/**
+ * An in-memory stand-in for Cloud Storage, selected with the fake model.
+ *
+ * The end-to-end suites upload the illustrations the story agent generates
+ * and stream them back through the image routes; they must not need a
+ * bucket to do it. Same surface the service uses: bucket name, save,
+ * metadata, delete, read stream. Never selected in production.
+ */
+function createFakeStorage(bucketName) {
+  const { Readable } = require("stream");
+  const files = new Map();
+  const bucket = {
+    name: bucketName,
+    file(name) {
+      return {
+        async save(buffer, options = {}) {
+          files.set(name, { buffer: Buffer.from(buffer), contentType: options.contentType || "application/octet-stream" });
+        },
+        async getMetadata() {
+          const f = files.get(name);
+          return [{ generation: "1", metageneration: "1", etag: "fake", md5Hash: null, crc32c: null, cacheControl: null, contentType: f?.contentType, size: f ? f.buffer.length : 0 }];
+        },
+        async delete() {
+          files.delete(name);
+        },
+        createReadStream() {
+          const f = files.get(name);
+          return Readable.from(f ? [f.buffer] : []);
+        },
+      };
+    },
+  };
+  return { bucket: () => bucket };
+}
+
 function getStorageClient() {
   if (!storageClient) {
-    storageClient = new Storage(buildStorageOptions());
+    storageClient =
+      env.llm?.provider === "fake" && !env.isProduction
+        ? createFakeStorage(env.gcpEditorialImagesBucket)
+        : new Storage(buildStorageOptions());
   }
 
   return storageClient;

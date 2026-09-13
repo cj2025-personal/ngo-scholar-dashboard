@@ -110,23 +110,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * @returns {Promise<{text: string, usage: {input: number|null, output: number|null, total: number|null}, modelVersion: string|null, resourceName: string}>}
  */
 async function generateContent({
-  prompt,
+  prompt = null,
+  /* A full conversation, for tool-calling loops: [{role: "user"|"model", parts: [...]}].
+     When given, `prompt` is ignored. */
+  contents = null,
   systemInstruction = null,
   responseSchema = null,
+  /* Gemini function declarations: [{functionDeclarations: [{name, description, parameters}]}]. */
+  tools = null,
+  toolConfig = null,
   temperature = 0.4,
   maxOutputTokens = 4096,
   timeoutMs = 90_000,
 }) {
   const missing = describeMissingConfig();
   if (missing) throw new Error(`Drafting is not configured: ${missing}`);
-  if (isFake()) return require("./fakeModel").generateContent({ prompt, systemInstruction, responseSchema });
+  if (isFake()) return require("./fakeModel").generateContent({ prompt, contents, systemInstruction, responseSchema, tools });
 
   const resourceName = resolveResourceName();
   const url = buildUrl(resourceName);
   const token = await getAccessToken();
 
   const body = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    contents: Array.isArray(contents) && contents.length ? contents : [{ role: "user", parts: [{ text: String(prompt || "") }] }],
     generationConfig: {
       temperature,
       topP: 0.95,
@@ -135,6 +141,8 @@ async function generateContent({
       ...(responseSchema ? { responseMimeType: "application/json", responseSchema } : {}),
     },
     ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
+    ...(tools ? { tools } : {}),
+    ...(toolConfig ? { toolConfig } : {}),
   };
 
   let lastError = null;
@@ -172,8 +180,10 @@ async function generateContent({
     }
 
     const payload = await response.json();
-    const text = (payload?.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
-    if (!text.trim()) {
+    const parts = payload?.candidates?.[0]?.content?.parts || [];
+    const text = parts.map((p) => p.text || "").join("");
+    const functionCalls = parts.filter((p) => p.functionCall && p.functionCall.name).map((p) => ({ name: p.functionCall.name, args: p.functionCall.args || {} }));
+    if (!text.trim() && functionCalls.length === 0) {
       const reason = payload?.candidates?.[0]?.finishReason || payload?.promptFeedback?.blockReason || "empty";
       throw new Error(`Vertex returned no text (${reason}).`);
     }
@@ -182,6 +192,9 @@ async function generateContent({
 
     return {
       text,
+      functionCalls,
+      /* The model turn as sent back, so a tool loop can append it verbatim. */
+      parts,
       usage: { input: count(u.promptTokenCount), output: count(u.candidatesTokenCount), total: count(u.totalTokenCount) },
       modelVersion: typeof payload?.modelVersion === "string" ? payload.modelVersion : null,
       resourceName,
@@ -191,4 +204,4 @@ async function generateContent({
   throw lastError || new Error("Vertex request failed.");
 }
 
-module.exports = { generateContent, isConfigured, describeMissingConfig, resolveResourceName };
+module.exports = { generateContent, getAccessToken, isConfigured, describeMissingConfig, resolveResourceName };

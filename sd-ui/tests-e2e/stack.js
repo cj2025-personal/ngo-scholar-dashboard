@@ -56,6 +56,7 @@ async function start() {
       LLM_PROVIDER: "fake",
       DRAFTING_POLL_MS: "150",
       DRAFT_DAILY_CAP: "10",
+      DRAFTING_IMAGES: "true",
       CORS_ORIGIN: `http://localhost:${process.env.E2E_UI_PORT || 3103},http://127.0.0.1:${process.env.E2E_UI_PORT || 3103}`,
       GCP_PROJECT_ID: "",
       GCP_SERVICE_ACCOUNT_JSON: "",

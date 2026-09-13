@@ -150,6 +150,8 @@ function storyProvenanceFromJob(job) {
     source_id: job.source.id,
     source_title: job.source.title || null,
     source_year: job.source.year ?? null,
+    /* Who the draft was written for; the story agent keeps editing for them. */
+    audience: job.audience || null,
     prompt_version: job.prompt_version || null,
     graph_version: job.graph_version || null,
     drafted_at: job.finished_at || job.created_at || null,

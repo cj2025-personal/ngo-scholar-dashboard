@@ -165,7 +165,11 @@ function normalizeRawBodyBlocks(blocks, fallbackContent = "") {
         currentHtml: html,
       });
 
-      return provenance ? { type, html, provenance } : { type, html };
+      /* A block the scholar asked the agent to write as their own view carries
+         no citation on purpose, and says so, so the reader's chip can say
+         "author" rather than nothing. */
+      const ownView = Boolean(block?.ownView) && !provenance;
+      return { type, html, ...(provenance ? { provenance } : {}), ...(ownView ? { own_view: true } : {}) };
     })
     .filter((block) => {
       if (block.type === "image") {
@@ -707,6 +711,7 @@ function resolveBodyBlocksWithImages({
         type: block.type,
         html: block.html,
         ...(block.provenance ? { provenance: block.provenance } : {}),
+        ...(block.own_view ? { own_view: true } : {}),
       });
       continue;
     }
@@ -787,6 +792,7 @@ async function resolveStoryProvenance(db, provenance) {
   const base = {
     origin: provenance.origin,
     sourceId: provenance.source_id,
+    audience: provenance.audience || null,
     draftedAt: provenance.drafted_at || null,
     promptVersion: provenance.prompt_version || null,
   };
@@ -889,6 +895,7 @@ function mapStoryDocument(story, author = null, provenance = null) {
               type: normalizeBlockType(block.type),
               html: typeof block.html === "string" ? block.html : "",
               ...presentBlockProvenance(block.provenance),
+              ...(block.own_view ? { ownView: true } : {}),
             };
           })
           .filter(Boolean)
@@ -906,6 +913,8 @@ function mapStoryDocument(story, author = null, provenance = null) {
     /* The source the draft was drawn from, resolved at read time like the
        byline. Null for a story written by hand. */
     provenance,
+    /* What the drafter said about its own draft, for the Checks rail. */
+    draftWarnings: Array.isArray(story.draft_warnings) ? story.draft_warnings : [],
     subtitle: story.subtitle || "",
     excerpt: buildExcerpt(story.excerpt, plainTextContent),
     content: plainTextContent,
@@ -1653,7 +1662,127 @@ async function streamPublishedEditorialImage({ fileId, res }) {
   });
 }
 
+/**
+ * Apply a revision the scholar accepted from the story agent.
+ *
+ * Takes the agent's block list directly — no multipart, no upload keys —
+ * and runs it through the same normalisation, provenance measurement and
+ * image bookkeeping as a save from the composer, so a story revised by
+ * instruction is indistinguishable in the database from one edited by hand.
+ * Images the agent generated were uploaded when the proposal was made; they
+ * arrive here as `newImages` and become part of the story only now.
+ */
+async function applyStoryRevision({ storyId, scholarId, profileId, user, fields = {}, blocks, newImages = [] }) {
+  const db = await getDb();
+  const collection = getStoryCollection(db);
+  const assetCollection = getImageAssetCollection(db);
+  const existingStory = await findOwnedStory({ storyId, scholarId, profileId });
+  const existingImages = [...(Array.isArray(existingStory.images) ? existingStory.images : []), ...newImages];
+
+  const rawBlocks = normalizeRawBodyBlocks(
+    (blocks || []).map((b) =>
+      b.type === "image"
+        ? { type: "image", imageId: b.imageId, caption: b.caption || "", alt: b.alt || "", width: b.width || "body" }
+        : {
+            type: b.type, html: b.html,
+            sourceRefs: b.sourceRefs,
+            /* A block the agent wrote has no drafted text yet; its own text is
+               the baseline the chip will measure the scholar's edits against. */
+            draftedText: b.draftedText || (Array.isArray(b.sourceRefs) && b.sourceRefs.length ? stripInlineHtml(b.html) : ""),
+            fidelity: b.fidelity, ownView: b.ownView,
+          },
+    ),
+  );
+  const { bodyBlocks, referencedImageIds } = resolveBodyBlocksWithImages({ rawBlocks, existingImages, uploadedInlineByKey: new Map() });
+  const plainTextContent = buildPlainTextContentFromBlocks(bodyBlocks);
+  const title = normalizeString(fields.title) || existingStory.title || "Untitled story";
+  const subtitle = fields.subtitle !== undefined ? normalizeString(fields.subtitle) : existingStory.subtitle || "";
+  const excerpt = buildExcerpt(fields.excerpt !== undefined ? fields.excerpt : existingStory.excerpt, plainTextContent);
+  const now = new Date();
+  const updatedBy = user?.login_email || scholarId;
+
+  const nextImages = existingImages.filter((img) => img.kind === "cover" || referencedImageIds.has(String(img.file_id)));
+  const removedImages = existingImages.filter((img) => img.kind !== "cover" && !referencedImageIds.has(String(img.file_id)));
+
+  await collection.updateOne(
+    { _id: existingStory._id },
+    { $set: { title, subtitle, excerpt, content: plainTextContent, body_blocks: bodyBlocks, images: nextImages, updated_by: updatedBy, updatedAt: now, editor_version: 4 } },
+  );
+
+  try {
+    await syncAssetDocuments({
+      assetCollection, imageIds: nextImages.map((image) => image.file_id), storyId: existingStory._id, storySlug: existingStory.slug,
+      status: existingStory.status, effectiveStatus: getEffectivePublicationStatus({ ...existingStory, updatedAt: now }, now), updatedBy,
+    });
+    const removedAssets = await fetchAssetDocumentsByImageIds(assetCollection, removedImages.map((image) => image.file_id));
+    await markAssetDocumentsDeleted({ assetCollection, assets: removedAssets, updatedBy });
+  } catch (error) {
+    console.error("Failed to sync editorial images after an agent revision:", error);
+  }
+
+  const updated = await collection.findOne({ _id: existingStory._id });
+  const [author, provenance] = await Promise.all([resolveStoryAuthor(db, updated.profile_id), resolveStoryProvenance(db, updated.provenance)]);
+  return serializeMongoValue({ story: mapStoryDocument(updated, author, provenance) });
+}
+
+/**
+ * A draft story from a finished draft job, created by the worker.
+ *
+ * Status "draft", never anything else: this is the machine putting its
+ * first draft where the scholar will find it, not a publication. The byline
+ * still resolves from the curated record at read time; `published_by` stays
+ * empty until a person publishes.
+ */
+async function createStoryFromDraft({ job, draft }) {
+  const db = await getDb();
+  const collection = getStoryCollection(db);
+  const storyId = new ObjectId();
+  const title = normalizeString(draft.title) || "Untitled draft";
+  const slug = await buildUniqueSlug(collection, title);
+  const rawBlocks = normalizeRawBodyBlocks(
+    (draft.bodyBlocks || []).map((b) => ({
+      type: b.type, html: b.html,
+      sourceRefs: b.sourceRefs, fidelity: b.fidelity,
+      draftedText: stripInlineHtml(b.html),
+    })),
+  );
+  const { bodyBlocks } = resolveBodyBlocksWithImages({ rawBlocks, existingImages: [], uploadedInlineByKey: new Map() });
+  const plainTextContent = buildPlainTextContentFromBlocks(bodyBlocks);
+  const now = new Date();
+  await collection.insertOne({
+    _id: storyId,
+    scholar_id: job.profile_id,
+    profile_id: job.profile_id,
+    authorId: job.profile_id,
+    login_email: null,
+    title,
+    subtitle: normalizeString(draft.subtitle),
+    excerpt: buildExcerpt(draft.excerpt, plainTextContent),
+    content: plainTextContent,
+    body_blocks: bodyBlocks,
+    slug,
+    status: "draft",
+    images: [],
+    created_by: `drafter:${job.graph_version || "draft-graph"}`,
+    updated_by: `drafter:${job.graph_version || "draft-graph"}`,
+    createdAt: now,
+    updatedAt: now,
+    published_at: null,
+    scheduled_for: null,
+    unpublished_at: null,
+    published_by: null,
+    provenance: storyProvenanceFromJob(job),
+    draft_warnings: draft.warnings || [],
+    draft_readability: draft.readability || null,
+    source: "drafter",
+    editor_version: 4,
+  });
+  return { storyId, slug };
+}
+
 module.exports = {
+  applyStoryRevision,
+  createStoryFromDraft,
   createEditorialStory,
   getEditorialStory,
   getPublishedStoryBySlug,
@@ -1661,4 +1790,14 @@ module.exports = {
   streamEditorialImage,
   streamPublishedEditorialImage,
   updateEditorialStory,
+  /* For the story agent, which uploads what it generates through the same
+     path as the composer's inline images. */
+  findOwnedStory,
+  mapStoryDocument,
+  resolveStoryProvenance,
+  uploadBufferToCloudStorage,
+  insertAssetDocuments,
+  markAssetDocumentsDeleted,
+  fetchAssetDocumentsByImageIds,
+  streamAssetToResponse,
 };

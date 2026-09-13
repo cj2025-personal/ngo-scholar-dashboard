@@ -1,31 +1,30 @@
 import Topbar from "@/components/scholar/Topbar";
-import HomeFeed from "@/components/scholar/HomeFeed";
-import DiscoveryRail from "@/components/scholar/DiscoveryRail";
-import { getDashboardData } from "@/lib/dashboard";
+import StudioHome from "@/components/scholar/StudioHome";
+import { getDraftJobsServer, getDraftSourcesServer } from "@/lib/drafting-server";
+import { getEditorialStories } from "@/lib/editorial";
+import { getScholarProfile } from "@/lib/profile";
+
+export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const dashboard = await getDashboardData();
-  const profile = dashboard?.profile || {};
-  const institution =
-    (dashboard?.profileDetails || []).find((detail) => detail.label === "Institution")
-      ?.value ||
-    (Array.isArray(profile.tags) ? profile.tags[1] : "") ||
-    "";
+  const [profileData, sources, jobsResult, storiesResult] = await Promise.all([
+    getScholarProfile(),
+    getDraftSourcesServer(),
+    getDraftJobsServer(10),
+    getEditorialStories("all"),
+  ]);
+
+  const profile = profileData?.profile || {};
   const me = {
     initials: profile.initials || "SC",
     name: profile.name || "Scholar",
-    institution,
+    institution: profile.institution || "",
   };
 
   return (
     <div className="sc-shell">
       <Topbar activeHref="/" me={me} />
-      <div className="sc-wrap">
-        <main className="sc-feed">
-          <HomeFeed dashboard={dashboard} me={me} />
-        </main>
-        <DiscoveryRail dashboard={dashboard} />
-      </div>
+      <StudioHome me={me} sources={sources} jobs={jobsResult?.jobs || []} stories={storiesResult?.stories || []} />
     </div>
   );
 }

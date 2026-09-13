@@ -67,13 +67,61 @@ export async function draftFromSource({ origin, sourceId, audience }) {
 
 /* ── jobs ────────────────────────────────────────────────────────────────── */
 
-/** Start a draft job. 202 with `{ job, reused }`; `reused` means an identical request already ran. */
-export async function createDraftJob({ origin, sourceId, audience }) {
+/**
+ * Start a draft job. 202 with `{ job, reused }`; `reused` means an identical
+ * request already ran. With `approveOutline` the job pauses at
+ * `awaiting_outline`; with `createStory` (the default) the finished draft
+ * becomes a draft story and the job carries its `storyId`.
+ */
+export async function createDraftJob({ origin, sourceId, audience, brief = null, approveOutline = false, createStory = true }) {
   return request("/api/drafting/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ origin, sourceId, audience }),
+    body: JSON.stringify({ origin, sourceId, audience, brief, approveOutline, createStory }),
   });
+}
+
+/** Approve the outline, edited or not. Drafting resumes from it. */
+export async function approveDraftOutline(jobId, outline) {
+  return request(`/api/drafting/jobs/${encodeURIComponent(jobId)}/outline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outline }),
+  });
+}
+
+/* ── the story agent ─────────────────────────────────────────────────────── */
+
+/** Tell the agent what to change. Returns `{ turn }` with a proposal to accept or reject. */
+export async function askStoryAgent(storyId, instruction) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/agent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction }),
+  });
+}
+
+export async function listStoryTurns(storyId) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/agent/turns`, { method: "GET" });
+}
+
+/** `action` is "accept" (applies the proposal; returns the updated story) or "reject". */
+export async function resolveStoryTurn(storyId, turnId, action) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/agent/turns/${encodeURIComponent(turnId)}/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+}
+
+/** The passages of the story's source paper, numbered as the chips cite them. */
+export async function getStoryPassages(storyId) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/passages`, { method: "GET" });
+}
+
+/** The same, for a published story, with no session. */
+export async function getPublicStoryPassages(slug) {
+  return request(`/api/editorial-stories/public/slug/${encodeURIComponent(slug)}/passages`, { method: "GET" });
 }
 
 export async function getDraftJob(jobId) {
@@ -89,9 +137,9 @@ export async function resumeDraftJob(jobId, { action, storyId = null }) {
   });
 }
 
-/** A job is settled when the scholar can act on it: draft ready, or it ended. */
+/** A job is settled when the scholar can act on it: outline or draft ready, or it ended. */
 export function isSettled(job) {
-  return Boolean(job && (job.status === "awaiting_review" || job.terminal));
+  return Boolean(job && (job.status === "awaiting_review" || job.status === "awaiting_outline" || job.terminal));
 }
 
 /**
@@ -105,7 +153,7 @@ export function isSettled(job) {
  * @param {string} jobId
  * @param {{ onProgress?: (e: {step: string, message: string}) => void, onSettled: (job: object) => void, onError?: (message: string) => void }} handlers
  */
-export function watchDraftJob(jobId, { onProgress = () => {}, onSettled, onError = () => {} }) {
+export function watchDraftJob(jobId, { onProgress = () => {}, onSettled, onError = () => {}, after = 0 }) {
   let stopped = false;
   let source = null;
   let pollTimer = null;
@@ -142,7 +190,7 @@ export function watchDraftJob(jobId, { onProgress = () => {}, onSettled, onError
 
   let gotAnyFrame = false;
   try {
-    source = new EventSource(`${AUTH_API_URL}/api/drafting/jobs/${encodeURIComponent(jobId)}/events`, { withCredentials: true });
+    source = new EventSource(`${AUTH_API_URL}/api/drafting/jobs/${encodeURIComponent(jobId)}/events${after ? `?after=${after}` : ""}`, { withCredentials: true });
   } catch {
     poll();
     return stop;
@@ -180,6 +228,7 @@ const STEP_LABELS = {
   judge_fidelity: "Checking the draft against the paper…",
   assemble: "Assembling the draft…",
   verify: "Checking reading level…",
+  create_story: "Opening the draft in your workspace…",
 };
 
 export function stepLabel(step) {

@@ -15,13 +15,14 @@ import {
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
 
+/* Five areas, in the order a scholar meets them: what needs me, what we hold
+   of my work, what I have written, what has been recorded, who I am. "What
+   this platform already says about me" (/content) is reached from Studio and
+   Profile rather than the bar, so the bar stays about the work. */
 const NAV = [
-  { label: "Home", href: "/" },
-  /* Ahead of Editorial on purpose: a scholar's first question is what this
-     platform already says about them, not what they have written. Most of it
-     they did not write. */
-  { label: "My content", href: "/content" },
-  { label: "Editorial", href: "/editorial" },
+  { label: "Studio", href: "/" },
+  { label: "Papers", href: "/papers" },
+  { label: "Stories", href: "/editorial" },
   { label: "Podcasts", href: "/podcasts" },
   { label: "Profile", href: "/profile" },
 ];
@@ -131,14 +132,14 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
 
       <label className="sc-search">
         <FaMagnifyingGlass size={14} aria-hidden />
-        <input placeholder="Search scholars, papers, topics…" aria-label="Search" />
+        <input placeholder="Search your papers, stories…" aria-label="Search" />
       </label>
 
       <span className="sc-spacer" />
 
       <Link href="/editorial/new" className="sc-write">
         <FaPen size={14} aria-hidden />
-        Write
+        New story
       </Link>
       <button type="button" className="sc-iconbtn" aria-label="Notifications">
         <FaRegBell size={17} aria-hidden />
