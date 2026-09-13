@@ -90,6 +90,30 @@ export async function approveDraftOutline(jobId, outline) {
   });
 }
 
+/** Answer the proposed outline with a follow-up; the job replans from it. */
+export async function replanDraftOutline(jobId, instruction) {
+  return request(`/api/drafting/jobs/${encodeURIComponent(jobId)}/replan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction }),
+  });
+}
+
+/** The scholar's draft jobs, newest first. */
+export async function listDraftJobs(limit = 20) {
+  return request(`/api/drafting/jobs?limit=${encodeURIComponent(limit)}`, { method: "GET" });
+}
+
+/** Discard a draft job that is waiting on the scholar (outline or review) or still queued. */
+export async function discardDraftJob(jobId) {
+  return resumeDraftJob(jobId, { action: "discard" });
+}
+
+/** Delete a story, draft or published. Gone from every read at once; the owner only. */
+export async function deleteStory(storyId) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}`, { method: "DELETE" });
+}
+
 /* ── the story agent ─────────────────────────────────────────────────────── */
 
 /** Tell the agent what to change. Returns `{ turn }` with a proposal to accept or reject. */

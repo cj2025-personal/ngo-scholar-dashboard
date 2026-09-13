@@ -20,6 +20,7 @@ import AgentPanel from "@/components/editorial/AgentPanel";
 import SourceRail from "@/components/editorial/SourceRail";
 import ChecksRail, { summariseBlocks } from "@/components/editorial/ChecksRail";
 import PublishCheck from "@/components/editorial/PublishCheck";
+import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
 import { createDraftJob, getStoryPassages, watchDraftJob } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { assessForAudience } from "@/lib/readability";
@@ -376,6 +377,7 @@ export default function StoryWorkspace({ initialStory = null }) {
             <button type="button" className="sc-write-secondary" onClick={() => submitStory("scheduled")} disabled={isSaving}>Schedule</button>
             {form.id && form.status !== "draft" ? <button type="button" className="sc-write-secondary" onClick={() => submitStory("draft")} disabled={isSaving}>Unpublish</button> : null}
             {form.publicUrl ? <a href={form.publicUrl} className="sc-write-link" target="_blank" rel="noreferrer">View live story <FaArrowUpRightFromSquare size={11} aria-hidden /></a> : null}
+            {form.id ? <span style={{ marginLeft: "auto" }}><DeleteStoryButton storyId={form.id} title={form.title} redirectTo="/editorial" /></span> : null}
           </div>
         </div>
       </details>

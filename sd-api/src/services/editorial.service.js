@@ -60,7 +60,8 @@ function buildScholarStoryFilters({ scholarId, profileId }) {
      with a service that keyed rows to `authorId` in the `users` namespace.
      Nothing writes that shape here, so matching on it could only ever return
      another service's rows. */
-  return [ownedByScholarFilter(profileId)];
+  /* A deleted story is gone from every owner-facing read; only the row remains. */
+  return [{ ...ownedByScholarFilter(profileId), status: { $ne: "deleted" } }];
 }
 
 function getStoryCollection(db) {
@@ -1167,6 +1168,36 @@ function resolvePublishedAt({
   return null;
 }
 
+/**
+ * Delete a story: a soft delete that takes it out of every read, public
+ * included, and releases its images. The row stays so a draft job that
+ * points at it keeps pointing somewhere. Only the owner can delete; the
+ * agent never calls this.
+ */
+async function deleteEditorialStory({ storyId, scholarId, profileId, user }) {
+  const story = await findOwnedStory({ storyId, scholarId, profileId });
+  const db = await getDb();
+  const collection = getStoryCollection(db);
+  const assetCollection = getImageAssetCollection(db);
+  const now = new Date();
+  const deletedBy = user?.login_email || scholarId;
+
+  await collection.updateOne(
+    { _id: story._id },
+    { $set: { status: "deleted", deleted_at: now, deleted_by: deletedBy, updated_by: deletedBy, updatedAt: now, previous_status: story.status } },
+  );
+
+  try {
+    const images = Array.isArray(story.images) ? story.images : [];
+    const assets = await fetchAssetDocumentsByImageIds(assetCollection, images.map((image) => image.file_id));
+    await markAssetDocumentsDeleted({ assetCollection, assets, updatedBy: deletedBy });
+  } catch (error) {
+    console.error("Failed to release images of a deleted story:", error);
+  }
+
+  return { ok: true, storyId: String(story._id), previousStatus: story.status };
+}
+
 async function listEditorialStories({ scholarId, profileId, status = "all" }) {
   const db = await getDb();
   const stories = await getStoryCollection(db)
@@ -1782,6 +1813,7 @@ async function createStoryFromDraft({ job, draft }) {
 
 module.exports = {
   applyStoryRevision,
+  deleteEditorialStory,
   createStoryFromDraft,
   createEditorialStory,
   getEditorialStory,

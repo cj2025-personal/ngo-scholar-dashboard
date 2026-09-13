@@ -21,7 +21,7 @@ const { spawn } = require("child_process");
 const crypto = require("crypto");
 const path = require("path");
 
-const { MongoClient } = require("mongodb");
+const { MongoClient, ObjectId } = require("mongodb");
 const { MongoMemoryServer } = require("mongodb-memory-server");
 
 const API_DIR = path.resolve(__dirname, "..");
@@ -251,18 +251,36 @@ test("with outline approval the job pauses, the scholar cuts a section, and the 
   assert.ok(paused.passages.length >= 4, "the passage list is on the job for the outline screen");
   assert.equal(paused.draft, null, "no prose yet");
 
+  /* A follow-up instead of an approval: the outline is replanned from it. */
+  const empty = await call("POST", `/api/drafting/jobs/${jobId}/replan`, { body: { instruction: "  " } });
+  assert.equal(empty.status, 400, "a follow-up has to say something");
+  const replan = await call("POST", `/api/drafting/jobs/${jobId}/replan`, { body: { instruction: "lead with the limitations and keep it to three sections" } });
+  assert.equal(replan.status, 202, JSON.stringify(replan.data));
+  assert.equal(replan.data.job.status, "queued");
+  assert.match(replan.data.job.brief, /^focus on the limitations\nThen the scholar asked: lead with the limitations/);
+  assert.equal(replan.data.job.replans, 1);
+  assert.equal(replan.data.job.outline, null, "the old outline is gone until the new one lands");
+  const framesR = await readEvents(`/api/drafting/jobs/${jobId}/events?after=${Number(frames.filter((f) => f.id).pop().id)}`);
+  const paused2 = framesR[framesR.length - 1].data;
+  assert.equal(paused2.status, "awaiting_outline", "back with a new outline");
+  assert.ok(framesR.some((f) => f.event === "outline_replanned"), "the follow-up is on the record");
+  assert.ok(framesR.some((f) => f.event === "outline_ready"));
+  assert.ok(paused2.outline && paused2.outline.beats.length >= 2, JSON.stringify(paused2.outline));
+
   /* The scholar cuts the last section and renames the first. */
-  const beats = paused.outline.beats.slice(0, -1).map((b, i) => ({ ...b, heading: i === 0 ? "Opening, renamed" : b.heading }));
+  const beats = paused2.outline.beats.slice(0, -1).map((b, i) => ({ ...b, heading: i === 0 ? "Opening, renamed" : b.heading }));
   const bad = await call("POST", `/api/drafting/jobs/${jobId}/outline`, { body: { outline: { beats: [{ heading: "x", passageIds: ["p999"] }] } } });
   assert.equal(bad.status, 400, "an outline that cites no real passage is refused");
-  const approved = await call("POST", `/api/drafting/jobs/${jobId}/outline`, { body: { outline: { title: paused.outline.title, deck: paused.outline.deck, beats } } });
+  const approved = await call("POST", `/api/drafting/jobs/${jobId}/outline`, { body: { outline: { title: paused2.outline.title, deck: paused2.outline.deck, beats } } });
   assert.equal(approved.status, 200, JSON.stringify(approved.data));
   assert.equal(approved.data.job.status, "queued");
   assert.equal(approved.data.job.outlineApproved.beats.length, beats.length);
   const twice = await call("POST", `/api/drafting/jobs/${jobId}/outline`, { body: {} });
   assert.equal(twice.status, 409, "an outline is approved once");
+  const late = await call("POST", `/api/drafting/jobs/${jobId}/replan`, { body: { instruction: "too late" } });
+  assert.equal(late.status, 409, "an approved outline cannot be replanned");
 
-  const lastId = Number(frames.filter((f) => f.id).pop().id);
+  const lastId = Number(framesR.filter((f) => f.id).pop().id);
   const frames2 = await readEvents(`/api/drafting/jobs/${jobId}/events?after=${lastId}`);
   const done = frames2[frames2.length - 1].data;
   assert.equal(done.status, "published", "taken into a story by the worker");
@@ -471,6 +489,36 @@ test("the agent refuses first person and a stale proposal cannot be applied", as
   const stale = await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${proposal.data.turn.id}/accept`, { body: {} });
   assert.equal(stale.status, 409);
   assert.match(stale.data.error, /changed after this proposal/);
+});
+
+test("the scholar deletes a draft and a published story: gone from every read, and only the owner can", async () => {
+  const draftId = state.outlineStoryId;
+  const anon = await call("DELETE", `/api/editorial-stories/${draftId}`, { cookieValue: "nope" });
+  assert.equal(anon.status, 401);
+  const gone = await call("DELETE", `/api/editorial-stories/${draftId}`);
+  assert.equal(gone.status, 200, JSON.stringify(gone.data));
+  assert.equal(gone.data.previousStatus, "draft");
+  assert.equal((await call("GET", `/api/editorial-stories/${draftId}`)).status, 404, "not readable by its owner");
+  assert.equal((await call("DELETE", `/api/editorial-stories/${draftId}`)).status, 404, "deleting twice is a miss");
+  assert.equal((await call("POST", `/api/editorial-stories/${draftId}/agent`, { body: { instruction: "shorten paragraph 2" } })).status, 404, "the agent cannot touch it");
+  const list = await call("GET", "/api/editorial-stories?status=all");
+  assert.ok(!list.data.stories.some((s) => s.id === draftId), "not listed");
+  const row = await db.collection("scholar_editorials").findOne({ _id: new ObjectId(draftId) });
+  assert.equal(row.status, "deleted");
+  assert.ok(row.deleted_at instanceof Date);
+  assert.equal(row.deleted_by, EMAIL);
+
+  /* The published one: off the public site the moment it is deleted. */
+  const live = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  assert.equal(live.status, "published");
+  assert.equal((await call("GET", `/api/editorial-stories/public/slug/${live.slug}`, { cookieValue: "" })).status, 200);
+  const removed = await call("DELETE", `/api/editorial-stories/${state.storyId}`);
+  assert.equal(removed.status, 200, JSON.stringify(removed.data));
+  assert.equal(removed.data.previousStatus, "published");
+  assert.equal((await call("GET", `/api/editorial-stories/public/slug/${live.slug}`, { cookieValue: "" })).status, 404, "the public link is dead");
+  assert.equal((await call("GET", `/api/editorial-stories/public/slug/${live.slug}/passages`, { cookieValue: "" })).status, 404);
+  const assets = await db.collection("scholar_editorial_image_assets").find({ story_id: new ObjectId(state.storyId), status: "active" }).toArray();
+  assert.equal(assets.length, 0, "no image of a deleted story stays active");
 });
 
 test("the daily cap holds, and a failed draft says something the scholar can act on", async () => {

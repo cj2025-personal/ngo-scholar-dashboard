@@ -7,6 +7,8 @@ import {
   FaPen,
 } from "react-icons/fa6";
 
+import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
+
 const IMG_BASE = process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
 
 function formatDate(value) {
@@ -54,6 +56,7 @@ function StoryRow({ story, kind }) {
               <FaArrowUpRightFromSquare size={12} aria-hidden /> View live
             </Link>
           ) : null}
+          <DeleteStoryButton storyId={story.id} title={story.title} />
         </div>
       </div>
       {cover ? (

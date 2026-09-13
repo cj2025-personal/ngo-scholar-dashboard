@@ -6,7 +6,7 @@ const { requireAuth } = require("../middleware/auth.middleware");
 const { canonicalScholarId } = require("../lib/identity");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
 const { listDraftSources, draftFromSource } = require("../services/drafting.service");
-const { createDraftJob, approveOutline, getDraftJob, listDraftJobs, listJobEvents, resumeJob } = require("../services/draftJob.service");
+const { createDraftJob, approveOutline, replanOutline, getDraftJob, listDraftJobs, listJobEvents, resumeJob } = require("../services/draftJob.service");
 const { STATUS, TERMINAL } = require("../lib/draftJob");
 
 const router = express.Router();
@@ -130,6 +130,17 @@ router.post(
     const profileId = requireProfile(req);
     const outline = req.body && typeof req.body.outline === "object" ? req.body.outline : null;
     res.status(200).json(await approveOutline({ jobId: req.params.jobId, profileId, outline }));
+  }),
+);
+
+/** Answer the proposed outline with a follow-up: the job replans from it. */
+router.post(
+  "/jobs/:jobId/replan",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const profileId = requireProfile(req);
+    const instruction = req.body && typeof req.body.instruction === "string" ? req.body.instruction : "";
+    res.status(202).json(await replanOutline({ jobId: req.params.jobId, profileId, instruction }));
   }),
 );
 

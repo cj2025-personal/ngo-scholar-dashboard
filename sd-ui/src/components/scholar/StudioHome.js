@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { FaArrowRight, FaUpload, FaWandMagicSparkles } from "react-icons/fa6";
 
+import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
+import DiscardJobButton from "@/components/editorial/DiscardJobButton";
+
 /**
  * Studio: what needs the scholar today, then their stories, then their papers.
  *
@@ -50,11 +53,11 @@ export default function StudioHome({ me, sources, jobs, stories }) {
   const todos = [];
   for (const job of jobs || []) {
     if (job.status === "awaiting_outline") {
-      todos.push({ tone: "warn", lead: "An outline is waiting for your approval", detail: `“${shortTitle(job.outline?.title || job.source?.title)}” · ${job.outline?.beats?.length || 0} sections proposed · ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Review outline" });
+      todos.push({ tone: "warn", lead: "An outline is waiting for your approval", detail: `“${shortTitle(job.outline?.title || job.source?.title)}” · ${job.outline?.beats?.length || 0} sections proposed · ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Review outline", jobId: job.id });
     } else if (job.status === "awaiting_review" && !job.storyId) {
-      todos.push({ tone: "warn", lead: "A draft is waiting for you", detail: `From “${shortTitle(job.source?.title)}” · ${timeAgo(job.finishedAt)}`, href: `/editorial/new`, cta: "Open" });
+      todos.push({ tone: "warn", lead: "A draft is waiting for you", detail: `From “${shortTitle(job.source?.title)}” · ${timeAgo(job.finishedAt)}`, href: `/editorial/new`, cta: "Open", jobId: job.id });
     } else if (job.status === "running" || job.status === "queued") {
-      todos.push({ tone: "navy", lead: "A draft is being written", detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Watch" });
+      todos.push({ tone: "navy", lead: "A draft is being written", detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Watch", jobId: job.status === "queued" ? job.id : null });
     }
   }
   const reviewing = (stories || []).filter((s) => s.status === "draft" && s.provenance);
@@ -92,6 +95,7 @@ export default function StudioHome({ me, sources, jobs, stories }) {
                   <span className="st-todo-lead">{t.lead}</span>
                   <div className="st-todo-detail">{t.detail}</div>
                 </div>
+                {t.jobId ? <DiscardJobButton jobId={t.jobId} /> : null}
                 <Link href={t.href} className={t.tone === "warn" ? "sc-write-secondary st-btn-primary" : "sc-write-secondary st-btn"}>
                   {t.icon ? <FaWandMagicSparkles size={11} aria-hidden /> : null} {t.cta}
                 </Link>
@@ -117,8 +121,11 @@ export default function StudioHome({ me, sources, jobs, stories }) {
                     {s.provenance?.title ? ` · drawn from “${shortTitle(s.provenance.title, 48)}”` : " · written by hand"}
                   </div>
                 </div>
-                <span className={`sc-status is-${s.status === "draft" && s.provenance ? "draft" : s.status}`}>
-                  {s.status === "draft" && s.provenance ? "In review" : s.status === "draft" ? "Draft" : s.status === "scheduled" ? "Scheduled" : "Published"}
+                <span className="st-story-actions">
+                  <span className={`sc-status is-${s.status === "draft" && s.provenance ? "draft" : s.status}`}>
+                    {s.status === "draft" && s.provenance ? "In review" : s.status === "draft" ? "Draft" : s.status === "scheduled" ? "Scheduled" : "Published"}
+                  </span>
+                  <DeleteStoryButton storyId={s.id} title={s.title} compact />
                 </span>
               </div>
             ))

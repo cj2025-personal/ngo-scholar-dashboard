@@ -6,6 +6,7 @@ const { ApiError } = require("../lib/api-error");
 const { requireAuth } = require("../middleware/auth.middleware");
 const {
   createEditorialStory,
+  deleteEditorialStory,
   getEditorialStory,
   getPublishedStoryBySlug,
   listEditorialStories,
@@ -134,6 +135,20 @@ router.patch(
     });
 
     res.status(200).json(result);
+  }),
+);
+
+/** Delete a story: the owner only, and it is gone from every read at once. */
+router.delete(
+  "/:storyId",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await deleteEditorialStory({
+      storyId: req.params.storyId,
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
+      user: req.auth.user,
+    }));
   }),
 );
 

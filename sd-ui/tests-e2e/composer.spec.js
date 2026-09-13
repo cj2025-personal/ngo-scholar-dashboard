@@ -45,28 +45,38 @@ test("from a paper to a published story, with the agent editing by instruction",
   const paperRow = page.locator(".pp-table tbody tr", { hasText: "Adaptive nulling" });
   await paperRow.getByRole("link", { name: "Start a story" }).click();
 
-  /* New story, step 1: the paper is preselected. */
+  /* New story is a conversation. The paper is preselected from Papers. */
   await expect(page).toHaveURL(/\/editorial\/new\?source=/);
-  await expect(page.locator(".nsf-source.on")).toContainText("Adaptive nulling");
-  await page.locator(".nsf-actions").getByRole("button", { name: "Next" }).click();
+  await expect(page.getByLabel("Paper")).toHaveValue(/src-e2e-1$/);
+  await expect(page.locator(".ch-msg.is-agent").first()).toContainText("What shall we write");
+  await page.getByLabel("Reader").selectOption("general");
+  await page.getByPlaceholder(/Describe the article you want/).fill("Keep it to what the boards did in the second drought.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".ch-msg.is-user").first()).toContainText("second drought");
 
-  /* Step 2: the reader and a brief. */
-  await expect(page.locator(".nsf-choice.on")).toContainText("General");
-  await page.getByPlaceholder(/Focus on why/).fill("Keep it to what the boards did in the second drought.");
-  await page.getByRole("button", { name: "Propose an outline" }).click();
-
-  /* Step 3: the outline, with the passages behind each section; the scholar cuts one. */
-  await expect(page.getByRole("heading", { name: "Here is how the article would go" })).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator(".nsf-brief-text")).toContainText("second drought");
-  await expect(page.getByLabel("Working title")).toHaveValue(/^What the paper found/);
-  const beats = page.locator(".nsf-beat");
-  const beatCount = await beats.count();
+  /* The agent answers with an outline: sections and the passages behind each. */
+  const outline1 = page.locator(".ch-msg.is-outline").first();
+  await expect(outline1).toBeVisible({ timeout: 60_000 });
+  await expect(outline1.locator(".ch-outline-title")).toHaveText(/^What the paper found/);
+  const beatCount = await outline1.locator(".ch-beat").count();
   expect(beatCount).toBeGreaterThanOrEqual(2);
-  await expect(beats.first().locator(".block-chip").first()).toHaveText(/^p\d+$/);
-  await beats.last().locator(".nsf-cut").click();
-  await expect(page.locator(".nsf-beat.is-cut")).toHaveCount(1);
-  await expect(page.locator(".nsf-actions .st-todo-detail")).toContainText(`${beatCount - 1} section`);
-  await page.getByRole("button", { name: "Approve and draft" }).click();
+  await expect(outline1.locator(".ch-beat").first().locator(".block-chip").first()).toHaveText(/^p\d+$/);
+  await expect(page.getByLabel("Paper")).toBeDisabled();
+
+  /* A follow-up replans it; the first outline is superseded, the second is live. */
+  await page.getByPlaceholder(/Reply with what to change/).fill("Lead with the limitations.");
+  await page.getByRole("button", { name: "Send" }).click();
+  const outline2 = page.locator(".ch-msg.is-outline").nth(1);
+  await expect(outline2).toBeVisible({ timeout: 60_000 });
+  await expect(outline1.locator(".ag-resolved")).toHaveText("Replaced by the outline below");
+  await expect(outline2.locator(".ch-text")).toContainText("replanned");
+  await expect(outline1.getByRole("button", { name: /Approve and draft/ })).toHaveCount(0);
+
+  /* The scholar cuts the last section and approves. */
+  await outline2.locator(".ch-beat").last().locator(".nsf-cut").click();
+  await expect(outline2.locator(".ch-beat.is-cut")).toHaveCount(1);
+  await outline2.getByRole("button", { name: /Approve and draft/ }).click();
+  await expect(page.locator(".ch-msg.is-user").last()).toContainText("Approved");
 
   /* Step 4 runs on the server; the draft is a story before the page moves. */
   await expect(page).toHaveURL(/\/editorial\/[0-9a-f]{24}$/, { timeout: 120_000 });
@@ -159,6 +169,17 @@ test("from a paper to a published story, with the agent editing by instruction",
   await mark.click();
   await expect(reader.locator(".reader-pop-passage p").first()).not.toHaveText(/^\s*$/);
   await expect(reader.locator(".reader-pop-link")).toHaveAttribute("href", "https://pmc.example/src-e2e-1");
+
+  /* Delete it from the list: gone for the scholar, and the public link dies. */
+  await page.goto("/editorial");
+  const row = page.locator(".sc-elist-row", { hasText: "What the paper found" }).first();
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Delete" }).click();
+  await expect(row.getByRole("alertdialog")).toContainText("cannot be undone");
+  await row.locator(".del-yes").click();
+  await expect(page.locator(".sc-elist-row", { hasText: "What the paper found" })).toHaveCount(0, { timeout: 20_000 });
+  const dead = await reader.goto(publicPath);
+  expect(dead.status()).toBe(404);
   await anonymous.close();
 });
 
