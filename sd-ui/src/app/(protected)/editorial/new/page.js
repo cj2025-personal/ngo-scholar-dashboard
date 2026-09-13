@@ -24,7 +24,7 @@ export default async function NewEditorialStoryPage({ searchParams }) {
   const resumeJobId = typeof params?.job === "string" ? params.job : null;
 
   return (
-    <div className="sc-shell">
+    <div className={blank ? "sc-shell" : "sc-shell sc-shell--fill"}>
       <Topbar activeHref="/editorial" me={me} />
       {blank ? (
         <div className="sc-editorial">

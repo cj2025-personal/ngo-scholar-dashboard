@@ -2945,10 +2945,21 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .sc-elist-actions .del-btn { margin-left: 4px; }
 .st-story-actions { display: flex; align-items: center; gap: 10px; }
 
-/* The chat fits the viewport with room under the composer; the box is a box. */
-.ch-wrap { height: calc(100dvh - var(--ark-topbar-height) - 8px); }
-.ch-composer { padding: 14px 0 22px; gap: 10px; }
+/* The composer is not a panel: it takes the page's own colour, so it has no
+   edges to be cut off at the column's sides, and the typing box is the only
+   card in it. A short fade above keeps the thread from butting into it. */
+.sc-shell--fill { display: flex; flex-direction: column; height: 100dvh; }
+.sc-shell--fill .ch-wrap { flex: 1; min-height: 0; height: auto; }
+.ch-wrap { height: calc(100dvh - var(--ark-topbar-height)); min-height: 420px; padding: 20px 24px 0; }
+.ch-composer { border-top: 0; background: var(--paper); padding: 10px 0 18px; gap: 10px; }
+.ch-composer::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 26px; background: linear-gradient(to top, var(--paper), rgba(246, 248, 252, 0)); pointer-events: none; }
 .ch-composer .ag-box { background: var(--sd-surface); border: 1.5px solid var(--sd-line); border-radius: 14px; padding: 10px 10px 10px 14px; box-shadow: var(--sd-sh-sm); }
 .ch-composer .ag-input { min-height: 44px; }
-.ch-opt select { max-width: 360px; }
-.ag-box { background: var(--sd-surface); }
+.ch-opt select { max-width: 340px; }
+@media (max-height: 660px) {
+  .ch-wrap { padding-top: 12px; }
+  .ch-head { padding-bottom: 10px; }
+  .ch-head .st-h1 { font-size: 21px; }
+  .ch-thread { padding: 14px 4px; gap: 12px; }
+  .ch-composer { padding-bottom: 12px; }
+}
