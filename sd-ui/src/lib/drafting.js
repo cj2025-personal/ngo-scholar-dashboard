@@ -112,6 +112,24 @@ export async function discardDraftJob(jobId) {
   return resumeDraftJob(jobId, { action: "discard" });
 }
 
+/** Every version of a story: what changed, when, and by whom. No bodies. */
+export async function listStoryRevisions(storyId, limit = 30) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/revisions?limit=${encodeURIComponent(limit)}`, { method: "GET" });
+}
+
+/**
+ * Put an earlier version back. It lands as a NEW version, so the restore can
+ * itself be undone. `baseVersion` is the version the editor is showing; if the
+ * story has moved on since, the restore is refused rather than overwriting.
+ */
+export async function restoreStoryRevision(storyId, version, baseVersion = null) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/revisions/${encodeURIComponent(version)}/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ baseVersion }),
+  });
+}
+
 /** Delete a story, draft or published. Gone from every read at once; the owner only. */
 export async function deleteStory(storyId) {
   return request(`/api/editorial-stories/${encodeURIComponent(storyId)}`, { method: "DELETE" });

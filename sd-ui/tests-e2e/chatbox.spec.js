@@ -36,18 +36,26 @@ for (const size of SIZES) {
     const b = await box.boundingBox();
     const h = await hint.boundingBox();
 
-    /* Nothing of the composer is below the fold, hint row included. */
+    /* Nothing of the composer is below the fold. The keyboard hints are hidden
+       on a touch screen, where there is no keyboard to hint at, so they are
+       checked only where they are shown. */
     expect(Math.round(c.y + c.height)).toBeLessThanOrEqual(size.height);
-    expect(Math.round(h.y + h.height)).toBeLessThanOrEqual(size.height);
+    if (h) expect(Math.round(h.y + h.height)).toBeLessThanOrEqual(size.height);
 
     /* The typing box keeps a real gutter on both sides of the window. */
     expect(b.x).toBeGreaterThanOrEqual(12);
     expect(Math.round(b.x + b.width)).toBeLessThanOrEqual(size.width - 12);
 
-    /* The composer carries the page's own colour, so it has no panel edges. */
-    const bg = await composer.evaluate((el) => getComputedStyle(el).backgroundColor);
+    /* The complaint was a slab of white with its sides sliced off. So the
+       composer must either carry the page's own colour, in which case it has
+       no edges at all, or be an obvious card with rounded corners. What it
+       may not be is a flat rectangle whose edges look like a mistake. */
+    const look = await composer.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { bg: s.backgroundColor, radius: parseFloat(s.borderTopLeftRadius) || 0 };
+    });
     const pageBg = await page.evaluate(() => getComputedStyle(document.querySelector(".sc-shell")).backgroundColor);
-    expect(bg).toBe(pageBg);
+    expect(look.bg === pageBg || look.radius >= 8).toBe(true);
 
     /* And the page never scrolls sideways. */
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

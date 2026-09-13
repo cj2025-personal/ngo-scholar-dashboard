@@ -73,7 +73,7 @@ function ChangeRow({ change }) {
   );
 }
 
-function Proposal({ turn, onAccept, onReject, busy }) {
+function Proposal({ turn, onAccept, onReject, busy, blocked = false }) {
   const c = turn.checks || {};
   const pending = turn.status === "proposed" && turn.changes.length > 0;
   return (
@@ -98,9 +98,9 @@ function Proposal({ turn, onAccept, onReject, busy }) {
       {turn.warnings?.length ? <ul className="ag-warnings">{turn.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul> : null}
       {pending ? (
         <div className="ag-actions">
-          <button type="button" className="sc-write-publish st-btn-primary" disabled={busy} onClick={onAccept}><FaCheck size={11} aria-hidden /> Accept</button>
+          <button type="button" className="sc-write-publish st-btn-primary" disabled={busy || blocked} onClick={onAccept}><FaCheck size={11} aria-hidden /> Accept</button>
           <button type="button" className="sc-write-secondary st-btn" disabled={busy} onClick={onReject}><FaXmark size={11} aria-hidden /> Reject</button>
-          <span className="ag-actions-hint">Nothing changes until you accept</span>
+          <span className="ag-actions-hint">{blocked ? "Save your edits first" : "Nothing changes until you accept"}</span>
         </div>
       ) : null}
     </div>
@@ -122,7 +122,7 @@ function Working() {
   );
 }
 
-export default function AgentPanel({ storyId, context = null, onStoryChanged, onProposalPending }) {
+export default function AgentPanel({ storyId, context = null, dirty = false, onStoryChanged, onProposalPending }) {
   const [turns, setTurns] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
@@ -151,6 +151,10 @@ export default function AgentPanel({ storyId, context = null, onStoryChanged, on
     el.style.height = `${Math.min(160, el.scrollHeight)}px`;
   }, []);
 
+  /* The agent reads the story as saved. Acting while there is unsaved typing
+     would either ignore it or overwrite it, so the composer waits. A draft
+     autosaves within a couple of seconds, so this is usually invisible. */
+  const blocked = dirty;
   const contextUsable = Boolean(context && context.type !== "image" && context.index);
   const mentionsBlock = (text) => /(?:block|paragraph|section|heading)\s+\d+/i.test(text);
 
@@ -202,7 +206,7 @@ export default function AgentPanel({ storyId, context = null, onStoryChanged, on
               <div className="ag-reply-body">
                 <Steps calls={t.calls} />
                 {t.summary ? <div className="ag-summary">{t.summary}</div> : null}
-                <Proposal turn={t} busy={busy} onAccept={() => resolve(t, "accept")} onReject={() => resolve(t, "reject")} />
+                <Proposal turn={t} busy={busy} blocked={blocked} onAccept={() => resolve(t, "accept")} onReject={() => resolve(t, "reject")} />
               </div>
             </div>
           </div>
@@ -226,17 +230,17 @@ export default function AgentPanel({ storyId, context = null, onStoryChanged, on
             ref={inputRef}
             className="ag-input"
             rows={1}
-            placeholder={pending ? "Accept or reject the proposal above first" : "What should change?"}
+            placeholder={blocked ? "Save your edits first, so the agent works from the current text" : pending ? "Accept or reject the proposal above first" : "What should change?"}
             value={instruction}
-            disabled={busy || Boolean(pending)}
+            disabled={busy || Boolean(pending) || blocked}
             onChange={(e) => { setInstruction(e.target.value); grow(); }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
           />
-          <button type="submit" className="sc-write-publish ag-send" disabled={busy || Boolean(pending) || !instruction.trim()} aria-label="Send"><FaPaperPlane size={12} aria-hidden /></button>
+          <button type="submit" className="sc-write-publish ag-send" disabled={busy || Boolean(pending) || blocked || !instruction.trim()} aria-label="Send"><FaPaperPlane size={12} aria-hidden /></button>
         </div>
         <div className="ag-hint">
           <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
-          <span>{pending ? "One proposal at a time" : "Nothing is saved until you accept"}</span>
+          <span>{blocked ? "Waiting for your edits to save" : pending ? "One proposal at a time" : "Nothing is saved until you accept"}</span>
         </div>
       </form>
     </div>

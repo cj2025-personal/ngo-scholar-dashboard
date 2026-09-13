@@ -107,6 +107,20 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.locator(".ck-item").first()).toBeVisible();
   await expect(page.locator(".sc-write-attention")).toHaveCount(0);
 
+  /* Inline editing: the scholar types straight into the article, the draft
+     saves itself, and the agent will not act until it has. */
+  await expect(page.locator(".sc-write-saved")).toHaveText(/^v\d+$/);
+  await firstParagraph.locator(".block-editor-surface").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" Written by hand.");
+  await expect(page.locator(".sc-write-saved")).toHaveText(/Unsaved/);
+
+  await page.getByRole("tab", { name: "Agent" }).click();
+  await expect(page.getByPlaceholder(/Save your edits first/)).toBeDisabled();
+  await expect(page.locator(".sc-write-saved")).toHaveText("Saved", { timeout: 25_000 });
+  await expect(page.getByPlaceholder("What should change?")).toBeEnabled();
+  await expect(page.locator(".block-row").filter({ hasText: "Written by hand." })).toHaveCount(1);
+
   /* Agent: an instruction becomes a proposal; nothing lands until Accept. */
   await page.getByRole("tab", { name: "Agent" }).click();
   await expect(page.locator(".ag-example").first()).toBeVisible();
@@ -130,6 +144,16 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(proposal.locator(".ag-resolved")).toHaveText("Accepted");
   await expect(page.locator(".block-row").nth(1).locator(".block-editor-surface")).toHaveText(proposed);
   await expect(page.locator(".block-row").nth(1).locator(".block-chip")).not.toHaveClass(/is-lost/);
+
+  /* Every version is on the record, and an earlier one can be put back. */
+  await page.getByRole("tab", { name: "History" }).click();
+  await expect(page.locator(".hist-item").first()).toBeVisible();
+  const versions = await page.locator(".hist-item").count();
+  expect(versions).toBeGreaterThanOrEqual(3);
+  await expect(page.locator(".hist-badge.is-drafter")).toHaveCount(1);
+  await expect(page.locator(".hist-badge.is-agent").first()).toBeVisible();
+  await expect(page.locator(".hist-item.is-current")).toHaveCount(1);
+  await page.getByRole("tab", { name: "Agent" }).click();
 
   /* An illustration by instruction, then rejected: it never touches the story. */
   const rowsBefore = await page.locator(".block-row").count();

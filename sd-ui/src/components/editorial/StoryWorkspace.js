@@ -21,6 +21,7 @@ import SourceRail from "@/components/editorial/SourceRail";
 import ChecksRail, { summariseBlocks } from "@/components/editorial/ChecksRail";
 import PublishCheck from "@/components/editorial/PublishCheck";
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
+import HistoryRail from "@/components/editorial/HistoryRail";
 import { createDraftJob, getStoryPassages, watchDraftJob } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { assessForAudience } from "@/lib/readability";
@@ -59,6 +60,9 @@ function storyToForm(story) {
     coverPreviewUrl: "",
     retainedImageIds,
     updatedAt: story?.updatedAt || null,
+    /* What a save is made against. The server refuses a save made against an
+       older version rather than letting it overwrite what landed since. */
+    version: story?.version ?? 1,
     /* Resolved at read time by the API; null for a story written by hand. */
     provenance: story?.provenance || null,
     author: story?.author || null,
@@ -157,6 +161,12 @@ export default function StoryWorkspace({ initialStory = null }) {
   const [passages, setPassages] = useState(null);
   const [showPublishCheck, setShowPublishCheck] = useState(false);
   const [proposalPending, setProposalPending] = useState(false);
+  const [conflict, setConflict] = useState("");
+  const [savedAt, setSavedAt] = useState(null);
+  /* A signature of everything a save would send. Compared against the last
+     saved one to know whether there is unsaved work, which gates autosave,
+     the navigation guard, and whether the agent may act. */
+  const savedSignatureRef = useRef(null);
 
   const reviewMode = Boolean(form.provenance && form.id);
 
@@ -177,6 +187,17 @@ export default function StoryWorkspace({ initialStory = null }) {
   const assessment = useMemo(() => (reviewMode ? assessForAudience(prose, audience) : null), [reviewMode, prose, audience]);
   const summary = useMemo(() => summariseBlocks(form.bodyBlocks), [form.bodyBlocks]);
   const sections = useMemo(() => (reviewMode ? sectionsOf(form.bodyBlocks) : []), [reviewMode, form.bodyBlocks]);
+  const signature = useMemo(() => JSON.stringify({
+    title: form.title,
+    subtitle: form.subtitle,
+    excerpt: form.excerpt,
+    scheduledFor: form.scheduledFor,
+    cover: form.coverImageId || (form.coverFile ? "pending" : null),
+    blocks: form.bodyBlocks.map((b) => [b.type, b.html || "", b.caption || "", b.alt || "", b.width || "", b.imageId || ""]),
+  }), [form]);
+  if (savedSignatureRef.current === null) savedSignatureRef.current = signature;
+  const dirty = savedSignatureRef.current !== signature;
+
   const activeBlock = form.bodyBlocks.find((b) => b.id === activeBlockId) || null;
   const agentContext = useMemo(() => {
     const i = form.bodyBlocks.findIndex((b) => b.id === activeBlockId);
@@ -214,10 +235,33 @@ export default function StoryWorkspace({ initialStory = null }) {
     });
   }, [form.bodyBlocks]);
 
+  /* Autosave, drafts only.
+     A published story is live, so its text never changes without the scholar
+     pressing Save. A draft is theirs alone, so it saves itself shortly after
+     they stop typing. It stands down while a proposal is waiting, because
+     saving would put the story a version ahead of what the agent proposed
+     against and the accept would then be refused. */
+  const canAutosave = Boolean(form.id) && form.status === "draft" && !conflict && !proposalPending;
+  useEffect(() => {
+    if (!canAutosave || !dirty || isSaving) return undefined;
+    const t = setTimeout(() => { submitStory("draft", { auto: true }); }, 2500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canAutosave, dirty, isSaving, signature]);
+
+  /* Closing the tab with work that was never saved. */
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = (event) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   /* The agent accepted a proposal: the API returned the story as saved. */
   const handleStoryChanged = useCallback((story) => {
     releasePreviewUrl();
     const next = storyToForm(story);
+    savedSignatureRef.current = null;
     setForm(next);
     setActiveBlockId(next.bodyBlocks[0]?.id || null);
     setFeedback("The change is in. Read it once more before you publish.");
@@ -294,9 +338,9 @@ export default function StoryWorkspace({ initialStory = null }) {
   }
 
   /* ── save ─────────────────────────────────────────────────────────────── */
-  async function submitStory(nextStatus) {
+  async function submitStory(nextStatus, { auto = false } = {}) {
     setError("");
-    setFeedback("");
+    if (!auto) setFeedback("");
     setIsSaving(true);
     const { serializedBlocks, inlineImages, inlineImageKeys, retainedInlineImageIds } = collectInlineImagePayload(form.bodyBlocks);
     const retainedIds = [...(form.coverImageId ? [form.coverImageId] : []), ...retainedInlineImageIds];
@@ -310,6 +354,7 @@ export default function StoryWorkspace({ initialStory = null }) {
     payload.set("status", nextStatus);
     payload.set("scheduledFor", nextStatus === "scheduled" ? form.scheduledFor : "");
     payload.set("retainImageIds", JSON.stringify(retainedIds));
+    if (form.id && form.version) payload.set("baseVersion", String(form.version));
     if (pendingDraftJob?.id) payload.set("draftJobId", pendingDraftJob.id);
     if (form.coverFile) payload.append("coverImage", form.coverFile);
     for (const image of inlineImages) payload.append("inlineImages", image);
@@ -318,14 +363,38 @@ export default function StoryWorkspace({ initialStory = null }) {
     const method = form.id ? "PATCH" : "POST";
     try {
       const response = await fetch(endpoint, { method, body: payload, credentials: "include" });
+      if (response.status === 409) {
+        /* Someone else's version landed first. Nothing was written, so the
+           scholar's text is still in front of them; they choose what to do. */
+        setConflict(await readError(response));
+        return false;
+      }
       if (!response.ok) { setError(await readError(response)); return false; }
       const result = await response.json();
       const savedStory = result?.story;
       if (!savedStory) { setError("Story save failed."); return false; }
+      setSavedAt(new Date());
+      if (auto) {
+        /* An autosave must never touch the body. Re-rendering a block would
+           reset the editable element's HTML and throw the caret to the top
+           while the scholar is still typing. Only what a save returns about
+           the story itself is taken. */
+        savedSignatureRef.current = signature;
+        setForm((current) => ({
+          ...current,
+          version: savedStory.version ?? current.version,
+          updatedAt: savedStory.updatedAt || current.updatedAt,
+          status: savedStory.status || current.status,
+          effectiveStatus: savedStory.effectiveStatus || current.effectiveStatus,
+          publicUrl: savedStory.publicUrl ?? current.publicUrl,
+        }));
+        return true;
+      }
       releasePreviewUrl();
       const nextForm = storyToForm(savedStory);
+      savedSignatureRef.current = null;
       setForm(nextForm);
-      setActiveBlockId(nextForm.bodyBlocks[0]?.id || null);
+      setActiveBlockId((current) => (nextForm.bodyBlocks.some((b) => b.id === current) ? current : nextForm.bodyBlocks[0]?.id || null));
       setFeedback(nextStatus === "published" ? "Story published." : nextStatus === "scheduled" ? "Story scheduled." : "Draft saved.");
       if (pendingDraftJob) setPendingDraftJob(null);
       if (!form.id) router.replace(`/editorial/${savedStory.id}`);
@@ -399,17 +468,26 @@ export default function StoryWorkspace({ initialStory = null }) {
           </span>
         </div>
         <div className="sc-write-bar-right">
+          <span className="sc-write-saved">
+            {isSaving ? "Saving…" : dirty ? (form.status === "draft" ? "Unsaved · saving shortly" : "Unsaved changes") : savedAt ? "Saved" : `v${form.version}`}
+          </span>
           {reviewMode && summary.attention > 0 ? <span className="sc-write-attention">{summary.attention} paragraph{summary.attention === 1 ? "" : "s"} need{summary.attention === 1 ? "s" : ""} your attention</span> : null}
           <button type="button" className="sc-write-ghost" onClick={() => setMode(mode === "write" ? "preview" : "write")}>{mode === "write" ? "Preview" : "Keep writing"}</button>
           <button type="button" className="sc-write-secondary" onClick={() => submitStory("draft")} disabled={isSaving || proposalPending}>{isSaving ? "Saving…" : "Save draft"}</button>
           {reviewMode ? (
-            <button type="button" className="sc-write-publish" onClick={() => setShowPublishCheck(true)} disabled={isSaving || proposalPending}>Publish check</button>
+            <button type="button" className="sc-write-publish" onClick={() => setShowPublishCheck(true)} disabled={isSaving || proposalPending || dirty}>Publish check</button>
           ) : (
             <button type="button" className="sc-write-publish" onClick={() => submitStory("published")} disabled={isSaving}>Publish</button>
           )}
         </div>
       </div>
 
+      {conflict ? (
+        <p className="sc-write-msg is-error">
+          {conflict}{" "}
+          <button type="button" className="del-yes" onClick={() => window.location.reload()}>Reload the current version</button>
+        </p>
+      ) : null}
       {error ? <p className="sc-write-msg is-error">{error}</p> : null}
       {feedback ? <p className="sc-write-msg is-ok">{feedback}</p> : null}
       {proposalPending ? <p className="sc-write-msg is-ok">The agent has proposed a change. Accept or reject it in the Agent tab before saving.</p> : null}
@@ -447,14 +525,15 @@ export default function StoryWorkspace({ initialStory = null }) {
 
           <aside className={railTab === "agent" ? "ws-right is-agent" : "ws-right"}>
             <div className="ws-tabs" role="tablist">
-              {[["source", "Source"], ["checks", "Checks"], ["agent", "Agent"]].map(([id, label]) => (
+              {[["source", "Source"], ["checks", "Checks"], ["agent", "Agent"], ["history", "History"]].map(([id, label]) => (
                 <button key={id} type="button" role="tab" aria-selected={railTab === id} className={railTab === id ? "ws-tab on" : "ws-tab"} onClick={() => setRailTab(id)}>{label}</button>
               ))}
             </div>
             <div className="ws-rail-body">
               {railTab === "source" ? <SourceRail block={activeBlock} passages={passages} provenance={form.provenance} /> : null}
               {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} onGoTo={(i) => goToBlock(i, "source")} /> : null}
-              {railTab === "agent" ? <AgentPanel storyId={form.id} context={agentContext} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : null}
+              {railTab === "history" ? <HistoryRail storyId={form.id} version={form.version} dirty={dirty} onRestored={() => window.location.reload()} /> : null}
+              {railTab === "agent" ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : null}
             </div>
           </aside>
         </div>
