@@ -184,6 +184,15 @@ function normalizeRawBodyBlocks(blocks, fallbackContent = "") {
   return normalized.length > 0 ? normalized : createEmptyParagraphBlock();
 }
 
+/** Stored blocks, in the shape a client sends, provenance included. */
+function storedBlocksToInput(blocks) {
+  return (Array.isArray(blocks) ? blocks : []).map((b) =>
+    b.type === "image"
+      ? { type: "image", imageId: b.image_file_id ? String(b.image_file_id) : null, caption: b.caption || "", alt: b.alt_text || "", width: b.width }
+      : { type: b.type, html: typeof b.html === "string" ? b.html : "", ...presentBlockProvenance(b.provenance), ...(b.own_view ? { ownView: true } : {}) },
+  );
+}
+
 function parseBodyBlocksInput(bodyBlocks, fallbackContent = "") {
   if (Array.isArray(bodyBlocks)) {
     return normalizeRawBodyBlocks(bodyBlocks, fallbackContent);
@@ -925,6 +934,17 @@ function mapStoryDocument(story, author = null, provenance = null) {
     effectiveStatus: getEffectivePublicationStatus(story, now),
     /* What a save must be made against. The editor sends it back. */
     version: storyVersion.versionOf(story),
+    /* The stored evidence ledger, summarised. Null until the story is public. */
+    evidence: story.evidence?.manifest
+      ? {
+          signed: Boolean(story.evidence.signed),
+          keyId: story.evidence.key_id || null,
+          generatedAt: story.evidence.generated_at || null,
+          version: story.evidence.manifest.story?.version ?? null,
+          stale: (story.evidence.manifest.story?.version ?? null) !== storyVersion.versionOf(story),
+          totals: story.evidence.manifest.totals || null,
+        }
+      : null,
     slug: story.slug || slugify(title),
     createdAt: story.createdAt || null,
     updatedAt: story.updatedAt || null,
@@ -1206,6 +1226,20 @@ async function appendRevision(db, { storyId, profileId, story, version, source, 
 }
 
 /**
+ * After a write that leaves a story public, rebuild its evidence ledger.
+ * Derived data: it never fails the write it follows, and never bumps the
+ * version, so the editor's next save is not refused by our own bookkeeping.
+ */
+async function refreshEvidenceAfterWrite(db, storyId) {
+  try {
+    const { refreshStoryEvidence } = require("./evidence.service");
+    await refreshStoryEvidence(db, storyId);
+  } catch (error) {
+    console.error("[ledger] could not refresh the evidence ledger:", error.message);
+  }
+}
+
+/**
  * The one way this service changes a story's content.
  *
  * The write is conditional on the version the caller read. If the story moved
@@ -1298,6 +1332,7 @@ async function restoreStoryRevision({ storyId, version, scholarId, profileId, us
     note: `Restored version ${wanted}`,
     baseVersion,
   });
+  await refreshEvidenceAfterWrite(db, story._id);
 
   const updated = await getStoryCollection(db).findOne({ _id: story._id });
   const [author, provenance] = await Promise.all([
@@ -1552,10 +1587,14 @@ async function updateEditorialStory({
     title || "Untitled story",
     existingStory._id,
   );
+  /* A save that sends no body, such as publishing or changing the subtitle,
+     keeps the body it has. The stored blocks carry provenance in the stored
+     shape, so they are put back into the shape a client sends before they
+     are parsed again; parsing them as stored silently stripped every chip. */
   const rawBlocks =
     body.bodyBlocks !== undefined || body.content !== undefined
       ? parseBodyBlocksInput(body.bodyBlocks, body.content || "")
-      : parseBodyBlocksInput(existingStory.body_blocks, existingStory.content || "");
+      : parseBodyBlocksInput(storedBlocksToInput(existingStory.body_blocks), existingStory.content || "");
   const inlineImageKeys = parseOrderedKeys(body.inlineImageKeys);
   const now = new Date();
   let uploadedAssetDocuments = [];
@@ -1704,6 +1743,7 @@ async function updateEditorialStory({
       baseVersion: storyVersion.parseBaseVersion(body.baseVersion),
     });
     storyUpdated = true;
+    await refreshEvidenceAfterWrite(db, existingStory._id);
     await linkDraftJob({ draftJobId: body.draftJobId, profileId, storyId: existingStory._id });
   } catch (error) {
     if (!storyUpdated) {
@@ -1890,6 +1930,7 @@ async function applyStoryRevision({ storyId, scholarId, profileId, user, fields 
     note: note || null,
     baseVersion,
   });
+  await refreshEvidenceAfterWrite(db, existingStory._id);
 
   try {
     await syncAssetDocuments({
@@ -1993,7 +2034,9 @@ module.exports = {
      path as the composer's inline images. */
   findOwnedStory,
   mapStoryDocument,
+  resolveStoryAuthor,
   resolveStoryProvenance,
+  buildPublicStoryQuery,
   uploadBufferToCloudStorage,
   insertAssetDocuments,
   markAssetDocumentsDeleted,

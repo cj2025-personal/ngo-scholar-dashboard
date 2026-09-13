@@ -60,9 +60,43 @@ function answerSection(prompt) {
   return JSON.stringify({ paragraphs, quote: s1[0] && s1[0].length >= 12 ? { text: s1[0], passage_id: first.id } : null });
 }
 
+/**
+ * Claims, one per sentence, each supported by the passage sentence that
+ * shares most of its words. The drafter lifts sentences verbatim, so every
+ * claim finds its evidence; the ledger and the reader's highlights then
+ * exercise the real path. FAKE_MODEL_UNSUPPORTED_CLAIM=1 marks the last
+ * claim of every paragraph unsupported, to drive the partial path.
+ */
 function answerJudge(prompt) {
-  const indexes = [...prompt.matchAll(/^\((\d+)\) /gm)].map((m) => Number(m[1]));
-  return JSON.stringify({ paragraphs: indexes.map((index) => ({ index, verdict: "supported", unsupported_claims: [], reasons: [] })) });
+  const passages = passagesIn(prompt, "PASSAGES FROM THE PAPER:");
+  const body = prompt.slice(prompt.indexOf("PARAGRAPHS TO CHECK:"));
+  const rows = [...body.matchAll(/^\((\d+)\) (.+)$/gm)].map((m) => ({ index: Number(m[1]), text: m[2] }));
+  const words = (t) => new Set(String(t).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3));
+  const evidenceFor = (claim) => {
+    const cw = words(claim);
+    let best = null;
+    for (const p of passages) {
+      for (const sentence of sentences(p.text)) {
+        const sw = words(sentence);
+        const shared = [...cw].filter((w) => sw.has(w)).length;
+        const score = cw.size ? shared / cw.size : 0;
+        if (!best || score > best.score) best = { score, id: p.id, sentence };
+      }
+    }
+    return best && best.score >= 0.4 ? best : null;
+  };
+  return JSON.stringify({
+    paragraphs: rows.map(({ index, text }) => {
+      const claims = sentences(text).map((sentence, k, all) => {
+        const ev = evidenceFor(sentence);
+        const forceBad = process.env.FAKE_MODEL_UNSUPPORTED_CLAIM === "1" && k === all.length - 1;
+        return ev && !forceBad
+          ? { text: sentence, verdict: "supported", passage_ids: [ev.id], evidence: ev.sentence }
+          : { text: sentence, verdict: "unsupported", passage_ids: [], evidence: "" };
+      });
+      return { index, claims };
+    }),
+  });
 }
 
 function answerComposer(prompt) {

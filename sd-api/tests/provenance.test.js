@@ -49,6 +49,18 @@ test("stored provenance carries refs, drafted text, verdict and a measured trace
   assert.equal(p.traceable, true);
   assert.equal(p.fidelity.verdict, "partial");
   assert.deepEqual(p.fidelity.unsupportedClaims, ["fourteen decibels", "42"]);
+  assert.equal(p.fidelity.claims, undefined, "no claims given, none invented");
+  const withClaims = normalizeBlockProvenance({
+    sourceRefs: [{ passageId: "p1" }], draftedText: DRAFTED, currentHtml: DRAFTED,
+    fidelity: { verdict: "partial", unsupportedClaims: [], claims: [
+      { text: "eleven decibels", verdict: "supported", passageIds: ["p1", "bogus id"], evidence: "by eleven decibels" },
+      { text: "", verdict: "supported", passageIds: ["p1"], evidence: "dropped: no text" },
+      { text: "fourteen", verdict: "nonsense", passageIds: [], evidence: "" },
+    ] },
+  });
+  assert.equal(withClaims.fidelity.claims.length, 2);
+  assert.deepEqual(withClaims.fidelity.claims[0].passageIds, ["p1"], "only well-formed passage ids are kept");
+  assert.equal(withClaims.fidelity.claims[1].verdict, "unsupported", "an unknown verdict is unsupported");
   assert.equal(normalizeBlockProvenance({ sourceRefs: [{ passageId: "p1" }], draftedText: DRAFTED, fidelity: { verdict: "maybe" }, currentHtml: DRAFTED }).fidelity, null);
 
   const noDraft = normalizeBlockProvenance({ sourceRefs: [{ passageId: "p1" }], draftedText: "", currentHtml: DRAFTED });

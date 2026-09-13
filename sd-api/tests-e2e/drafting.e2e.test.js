@@ -386,6 +386,7 @@ test("a machine identity cannot publish; a person can, and is recorded", async (
   assert.equal(published.status, 200, JSON.stringify(published.data));
   assert.equal(published.data.story.status, "published");
   assert.equal(published.data.story.publicUrl, `/stories/${state.slug}`);
+  assert.ok(published.data.story.bodyBlocks.some((b) => b.sourceRefs?.length && b.fidelity), "a save that sends no body keeps every chip and verdict");
   const stored = await db.collection("scholar_editorials").findOne({ slug: state.slug });
   assert.equal(stored.published_by, EMAIL);
   assert.equal(stored.provenance.source_id, "src-e2e-1");
@@ -414,7 +415,9 @@ test("the public reads the story with its byline and its source line, and never 
 test("the scholar edits by instruction: a proposal with checks, accepted onto the story", async () => {
   const before = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
   const paragraphs = before.bodyBlocks.map((b, i) => ({ b, n: i + 1 })).filter(({ b }) => b.type === "paragraph");
-  const target = paragraphs[1] || paragraphs[0];
+  /* A paragraph still drawn from the paper. The one the scholar rewrote from
+     scratch two scenarios ago is, correctly, not supported by anything. */
+  const target = paragraphs.find(({ b }) => b.traceable === true && b.sourceRefs?.length) || paragraphs[0];
 
   const asked = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: `shorten paragraph ${target.n}` } });
   assert.equal(asked.status, 200, JSON.stringify(asked.data));
@@ -489,6 +492,68 @@ test("the agent refuses first person and a stale proposal cannot be applied", as
   const stale = await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${proposal.data.turn.id}/accept`, { body: {} });
   assert.equal(stale.status, 409);
   assert.match(stale.data.error, /changed after this proposal/);
+});
+
+test("a published story carries a signed evidence ledger anyone can verify, and tampering breaks it", async () => {
+  /* The story was published two scenarios ago; its ledger was built then. */
+  const own = await call("GET", `/api/editorial-stories/${state.storyId}`);
+  assert.equal(own.status, 200);
+  assert.ok(own.data.story.evidence, "a public story carries a ledger summary");
+  assert.equal(own.data.story.evidence.signed, true);
+  assert.equal(own.data.story.evidence.stale, false, "the ledger is for the current version");
+  assert.ok(own.data.story.evidence.totals.claims >= 1, JSON.stringify(own.data.story.evidence.totals));
+
+  /* Anyone can fetch it, without a session. */
+  const pub = await call("GET", `/api/editorial-stories/public/slug/${state.slug}/evidence`, { cookieValue: "" });
+  assert.equal(pub.status, 200, JSON.stringify(pub.data));
+  const { manifest, signature, keyId, publicKey } = pub.data;
+  assert.equal(pub.data.signed, true);
+  assert.match(keyId, /^ed25519-/);
+  assert.match(publicKey, /BEGIN PUBLIC KEY/);
+  assert.equal(manifest.story.slug, state.slug);
+  assert.equal(manifest.approval.by, EMAIL, "the person who made the current version is named");
+  assert.ok(manifest.history.some((h) => h.source === "agent" && h.turn_id), "the agent's accepted turn is in the chain");
+  assert.ok(manifest.history[0].version === 1, "history starts at the first version");
+  const drafted = manifest.paragraphs.filter((p) => p.kind === "paragraph" && p.cited.length);
+  assert.ok(drafted.length >= 2);
+  assert.ok(drafted.every((p) => p.claims.length >= 1), "every drafted paragraph carries its claims");
+  assert.ok(drafted.every((p) => p.claims.every((c) => c.verdict !== "supported" || (c.passage_ids.length && c.evidence))), "a supported claim names its passage and quotes it");
+  assert.ok(manifest.passages.every((p) => /^[0-9a-f]{64}$/.test(p.hash) && !("text" in p)), "passages travel as hashes, never text");
+  assert.match(pub.data.summary, /claims? checked against the paper/);
+
+  /* The published key verifies it; a verifier needs nothing from us. */
+  const key = await call("GET", "/api/editorial-stories/public/evidence/key", { cookieValue: "" });
+  assert.equal(key.data.keyId, keyId);
+  const { verify: verifyOffline, checkPassages } = require("../src/lib/evidenceLedger");
+  assert.deepEqual(verifyOffline(manifest, signature, key.data.publicKey), { valid: true, reason: null });
+
+  /* And the passages we serve are the ones the claims were judged against. */
+  const passages = await call("GET", `/api/editorial-stories/public/slug/${state.slug}/passages`, { cookieValue: "" });
+  const check = checkPassages(manifest, passages.data.passages);
+  assert.equal(check.mismatched.length, 0, JSON.stringify(check));
+  assert.equal(check.missing.length, 0);
+  assert.ok(check.matched >= 1);
+
+  /* The convenience endpoint agrees, and refuses a manifest that was altered. */
+  const ok = await call("POST", "/api/editorial-stories/public/evidence/verify", { body: { manifest, signature }, cookieValue: "" });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.data.valid, true, JSON.stringify(ok.data));
+  const tampered = JSON.parse(JSON.stringify(manifest));
+  tampered.paragraphs.find((p) => p.claims.length).claims[0].text = "the array cured the common cold";
+  const bad = await call("POST", "/api/editorial-stories/public/evidence/verify", { body: { manifest: tampered, signature }, cookieValue: "" });
+  assert.equal(bad.data.valid, false);
+
+  /* The scholar's own view of a draft is a preview: built, signed, not stored. */
+  const preview = await call("GET", `/api/editorial-stories/${state.outlineStoryId}/evidence`);
+  assert.equal(preview.status, 200, JSON.stringify(preview.data));
+  assert.equal(preview.data.preview, true);
+  assert.equal(preview.data.stored, false);
+  assert.equal(preview.data.passagesCheck.mismatched.length, 0);
+
+  /* A draft has no public ledger. */
+  const draftDoc = await db.collection("scholar_editorials").findOne({ _id: new ObjectId(state.outlineStoryId) });
+  const none = await call("GET", `/api/editorial-stories/public/slug/${draftDoc.slug}/evidence`, { cookieValue: "" });
+  assert.equal(none.status, 404);
 });
 
 test("a stale save is refused rather than overwriting, and an earlier version can be put back", async () => {

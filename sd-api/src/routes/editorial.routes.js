@@ -17,6 +17,8 @@ const {
   updateEditorialStory,
 } = require("../services/editorial.service");
 const { askStoryAgent, listStoryTurns, resolveStoryTurn, streamProposalImage, storyPassages, publicStoryPassages } = require("../services/storyAgent.service");
+const evidence = require("../services/evidence.service");
+const { getDb } = require("../db/mongo");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
 
 const router = express.Router();
@@ -182,6 +184,45 @@ router.post(
       profileId: req.auth.user.profile_id,
       user: req.auth.user,
       baseVersion: req.body?.baseVersion ?? null,
+    }));
+  }),
+);
+
+/* ── the evidence ledger ─────────────────────────────────────────────────── */
+
+/** The key anyone needs to verify what this deployment signed. */
+router.get(
+  "/public/evidence/key",
+  asyncHandler(async (_req, res) => {
+    res.status(200).json(evidence.publicKey());
+  }),
+);
+
+/** Verify a manifest and signature. Anyone may; the key is public. */
+router.post(
+  "/public/evidence/verify",
+  asyncHandler(async (req, res) => {
+    res.status(200).json(evidence.verifyEvidence({ manifest: req.body?.manifest, signature: req.body?.signature }));
+  }),
+);
+
+/** Public: everything a published story rests on, signed. */
+router.get(
+  "/public/slug/:slug/evidence",
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await evidence.getPublicEvidence(await getDb(), req.params.slug));
+  }),
+);
+
+/** The scholar's own story's ledger, built fresh; a preview until it is public. */
+router.get(
+  "/:storyId/evidence",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await evidence.getOwnerEvidence(await getDb(), {
+      storyId: req.params.storyId,
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
     }));
   }),
 );

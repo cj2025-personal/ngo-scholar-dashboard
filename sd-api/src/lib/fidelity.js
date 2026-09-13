@@ -6,15 +6,27 @@
  * the same instructions in the same call would be the drafter marking its
  * own work, which is the pattern this whole plan is written against. So the
  * judge is a second prompt with a different job: it is handed the passages a
- * section cited and the paragraphs the section produced, and asked, claim by
- * claim, whether each paragraph is entailed. It never sees the drafter's
- * instructions and has no stake in the draft passing.
+ * section cited and the paragraphs the section produced, and asked to find
+ * the claims in each paragraph and check each one. It never sees the
+ * drafter's instructions and has no stake in the draft passing.
+ *
+ * ── Claims, not paragraphs ──────────────────────────────────────────────────
+ * The unit of judgement is the claim: one factual assertion about the study,
+ * its method, its result, or the world. A paragraph is the sum of its claims.
+ * This matters twice over. First, a reader can be shown which sentence rests
+ * on which sentence of the paper, which is the evidence ledger. Second, it
+ * stops the judge punishing what is not a claim at all: a definition of a
+ * term in plain words, a transition, a restatement of the topic. Before, "an
+ * area of weak signal" glossing the word "null" was marked as unsupported,
+ * and a warning that fires on accurate writing is a warning people learn to
+ * ignore.
  *
  * ── Verdicts, and what they do ──────────────────────────────────────────────
- *   supported    every factual claim is stated by, or follows directly from,
- *                the cited passages.
- *   partial      most is, but at least one claim is not.
- *   unsupported  the paragraph's substance is not in the passages.
+ *   supported    every claim is stated by, or follows directly from, the
+ *                cited passages. A paragraph with no claims is supported,
+ *                because there is nothing to dispute.
+ *   partial      at least one claim is, and at least one is not.
+ *   unsupported  no claim is.
  *
  * The graph treats anything short of `supported` as grounds to redraft that
  * section with the unsupported claims named. After the retries a paragraph
@@ -27,26 +39,36 @@
  * No citation → unsupported, without a model call. A missing verdict from
  * the judge → unsupported, because silence is not support. One judge call
  * per section, not per paragraph: the passages are shared and the verdicts
- * come back indexed.
+ * come back indexed. The paragraph verdict is derived here from the claims,
+ * never taken from the model, so the rule above is the rule that applies.
  */
 
-const FIDELITY_VERSION = "fidelity-judge-2026.1";
+const FIDELITY_VERSION = "fidelity-judge-2026.2";
 
 const VERDICT = { SUPPORTED: "supported", PARTIAL: "partial", UNSUPPORTED: "unsupported" };
 
+/** Bounds on what is stored per paragraph. Past these, the judge is confused, not thorough. */
+const CLAIM_LIMITS = { perParagraph: 12, textChars: 300, evidenceChars: 400, passages: 6 };
+
 const JUDGE_SYSTEM = [
   "You are a fact-checker. You are given numbered passages from a research paper and numbered paragraphs",
-  "written about that paper by someone else. For each paragraph decide whether every factual claim in it is",
-  "stated by, or follows directly from, the passages it cites.",
+  "written about that paper by someone else. For each paragraph, list its claims and check each one against",
+  "the passages that paragraph cites.",
+  "",
+  "What counts as a claim: one factual assertion about the study, its method, its result, its numbers, its",
+  "authors, or the world. A sentence may hold more than one claim; split them.",
+  "What does not count as a claim, and must not be listed: defining or explaining a term in plain words,",
+  "a sentence that only introduces or frames the topic, a transition, a restatement of what the paper is",
+  "about, or an attribution such as \"the authors note\". Rephrasing and simplifying are not claims either.",
   "",
   "Rules:",
   "- Judge only against the passages shown. Outside knowledge does not count as support, even if true.",
-  "- Rephrasing, simplifying and defining terms are fine. Adding a number, a cause, a comparison, a",
-  "  consequence, or a motive the passages do not state is not.",
-  "- \"supported\": every claim is grounded. \"partial\": most are, at least one is not. \"unsupported\":",
-  "  the substance of the paragraph is not in the passages.",
-  "- For partial and unsupported, list each unsupported claim as a short quotation of the paragraph's own",
-  "  words, so the writer can find it.",
+  "- A claim is \"supported\" if it is stated by, or follows directly from, a cited passage. Adding a number,",
+  "  a cause, a comparison, a consequence, a prediction, or a motive the passages do not state is",
+  "  \"unsupported\".",
+  "- For every claim give the passage ids that support it and quote, verbatim, the passage sentence that",
+  "  does. For an unsupported claim give an empty list and an empty quote.",
+  "- Quote the claim in the paragraph's own words, so the writer can find it.",
   "- Return only the JSON described by the schema.",
 ].join("\n");
 
@@ -59,11 +81,21 @@ const JUDGE_SCHEMA = {
         type: "OBJECT",
         properties: {
           index: { type: "INTEGER" },
-          verdict: { type: "STRING", enum: ["supported", "partial", "unsupported"] },
-          unsupported_claims: { type: "ARRAY", items: { type: "STRING" } },
-          reasons: { type: "ARRAY", items: { type: "STRING" } },
+          claims: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                text: { type: "STRING" },
+                verdict: { type: "STRING", enum: ["supported", "unsupported"] },
+                passage_ids: { type: "ARRAY", items: { type: "STRING" } },
+                evidence: { type: "STRING" },
+              },
+              required: ["text", "verdict", "passage_ids", "evidence"],
+            },
+          },
         },
-        required: ["index", "verdict", "unsupported_claims", "reasons"],
+        required: ["index", "claims"],
       },
     },
   },
@@ -83,11 +115,43 @@ function buildJudgePrompt({ paragraphs, passages }) {
     "PARAGRAPHS TO CHECK:",
     ...paragraphs.map((p) => `(${p.index}) ${p.text}`),
     "",
-    `Return a verdict for each of the ${paragraphs.length} paragraph(s), by index.`,
+    `Return the claims, each checked, for each of the ${paragraphs.length} paragraph(s), by index.`,
   ].join("\n");
 }
 
-function parseJudgeResponse(raw, expectedIndexes) {
+/** The paragraph's verdict is the sum of its claims. The model never decides this. */
+function deriveVerdict(claims) {
+  if (!claims.length) return VERDICT.SUPPORTED;
+  const supported = claims.filter((c) => c.verdict === VERDICT.SUPPORTED).length;
+  if (supported === claims.length) return VERDICT.SUPPORTED;
+  if (supported === 0) return VERDICT.UNSUPPORTED;
+  return VERDICT.PARTIAL;
+}
+
+function normaliseClaim(raw, knownIds) {
+  const text = String(raw?.text || "").replace(/\s+/g, " ").trim().slice(0, CLAIM_LIMITS.textChars);
+  if (!text) return null;
+  const verdict = raw?.verdict === VERDICT.SUPPORTED ? VERDICT.SUPPORTED : VERDICT.UNSUPPORTED;
+  const passageIds = (Array.isArray(raw?.passage_ids) ? raw.passage_ids : [])
+    .map((id) => String(id).trim())
+    .filter((id) => id && (!knownIds || knownIds.has(id)))
+    .slice(0, CLAIM_LIMITS.passages);
+  const evidence = String(raw?.evidence || "").replace(/\s+/g, " ").trim().slice(0, CLAIM_LIMITS.evidenceChars);
+  /* A claim said to be supported by nothing is not supported. The rule holds
+     even when the model's verdict says otherwise. */
+  if (verdict === VERDICT.SUPPORTED && passageIds.length === 0) {
+    return { text, verdict: VERDICT.UNSUPPORTED, passageIds: [], evidence: "" };
+  }
+  return { text, verdict, passageIds, evidence: verdict === VERDICT.SUPPORTED ? evidence : "" };
+}
+
+/**
+ * @param {string} raw
+ * @param {number[]} expectedIndexes
+ * @param {Set<string>|null} [knownIds]  passage ids the judge was shown; others are dropped from claims
+ * @returns {Map<number, {verdict: string, claims: object[], unsupportedClaims: string[], reasons: string[]}>}
+ */
+function parseJudgeResponse(raw, expectedIndexes, knownIds = null) {
   let data;
   try {
     data = JSON.parse(stripFence(raw));
@@ -99,10 +163,27 @@ function parseJudgeResponse(raw, expectedIndexes) {
   for (const r of rows) {
     const index = Number(r?.index);
     if (!Number.isInteger(index)) continue;
+
+    if (Array.isArray(r?.claims)) {
+      const claims = r.claims.map((c) => normaliseClaim(c, knownIds)).filter(Boolean).slice(0, CLAIM_LIMITS.perParagraph);
+      byIndex.set(index, {
+        verdict: deriveVerdict(claims),
+        claims,
+        unsupportedClaims: claims.filter((c) => c.verdict === VERDICT.UNSUPPORTED).map((c) => c.text),
+        reasons: [],
+      });
+      continue;
+    }
+
+    /* The older shape, a verdict per paragraph. A model that ignores the
+       schema, or a stored response from before claims, still parses; it just
+       carries no claims to show. */
     const verdict = Object.values(VERDICT).includes(r?.verdict) ? r.verdict : VERDICT.UNSUPPORTED;
+    const unsupportedClaims = (Array.isArray(r?.unsupported_claims) ? r.unsupported_claims : []).map((s) => String(s).trim()).filter(Boolean).slice(0, 6);
     byIndex.set(index, {
       verdict,
-      unsupportedClaims: (Array.isArray(r?.unsupported_claims) ? r.unsupported_claims : []).map((s) => String(s).trim()).filter(Boolean).slice(0, 6),
+      claims: [],
+      unsupportedClaims,
       reasons: (Array.isArray(r?.reasons) ? r.reasons : []).map((s) => String(s).trim()).filter(Boolean).slice(0, 6),
     });
   }
@@ -110,7 +191,7 @@ function parseJudgeResponse(raw, expectedIndexes) {
   for (const index of expectedIndexes) {
     out.set(
       index,
-      byIndex.get(index) || { verdict: VERDICT.UNSUPPORTED, unsupportedClaims: [], reasons: ["the judge returned no verdict for this paragraph"] },
+      byIndex.get(index) || { verdict: VERDICT.UNSUPPORTED, claims: [], unsupportedClaims: [], reasons: ["the judge returned no verdict for this paragraph"] },
     );
   }
   return out;
@@ -135,7 +216,10 @@ async function judgeSection({ blocks, passages, generate }) {
     if (block.type !== "paragraph") return;
     const refs = (block.sourceRefs || []).map((r) => r.passageId).filter((id) => byId.has(id));
     if (refs.length === 0) {
-      block.fidelity = { verdict: VERDICT.UNSUPPORTED, unsupportedClaims: [], reasons: ["cites no passage"], checks: { cited: 0, judged: false }, verifierVersion: FIDELITY_VERSION };
+      block.fidelity = {
+        verdict: VERDICT.UNSUPPORTED, claims: [], unsupportedClaims: [], reasons: ["cites no passage"],
+        checks: { cited: 0, judged: false, claims: 0 }, verifierVersion: FIDELITY_VERSION,
+      };
       failing.push(i);
       return;
     }
@@ -147,12 +231,12 @@ async function judgeSection({ blocks, passages, generate }) {
   const citedIds = [...new Set(toJudge.flatMap((p) => p.refs))];
   const cited = citedIds.map((id) => byId.get(id));
   const prompt = buildJudgePrompt({ paragraphs: toJudge.map((p) => ({ index: p.index, text: p.text })), passages: cited });
-  const r = await generate({ prompt, systemInstruction: JUDGE_SYSTEM, responseSchema: JUDGE_SCHEMA, temperature: 0, maxOutputTokens: 1536 });
-  const verdicts = parseJudgeResponse(r.text, toJudge.map((p) => p.index));
+  const r = await generate({ prompt, systemInstruction: JUDGE_SYSTEM, responseSchema: JUDGE_SCHEMA, temperature: 0, maxOutputTokens: 4096 });
+  const verdicts = parseJudgeResponse(r.text, toJudge.map((p) => p.index), new Set(citedIds));
 
   for (const p of toJudge) {
     const v = verdicts.get(p.index);
-    out[p.blockIndex].fidelity = { ...v, checks: { cited: p.refs.length, judged: true }, verifierVersion: FIDELITY_VERSION };
+    out[p.blockIndex].fidelity = { ...v, checks: { cited: p.refs.length, judged: true, claims: v.claims.length }, verifierVersion: FIDELITY_VERSION };
     if (v.verdict !== VERDICT.SUPPORTED) failing.push(p.blockIndex);
   }
   failing.sort((a, b) => a - b);
@@ -186,4 +270,4 @@ function unescapeHtml(value) {
   return String(value || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
-module.exports = { FIDELITY_VERSION, VERDICT, JUDGE_SYSTEM, JUDGE_SCHEMA, buildJudgePrompt, parseJudgeResponse, judgeSection, fidelityNote };
+module.exports = { FIDELITY_VERSION, VERDICT, CLAIM_LIMITS, JUDGE_SYSTEM, JUDGE_SCHEMA, buildJudgePrompt, deriveVerdict, parseJudgeResponse, judgeSection, fidelityNote };

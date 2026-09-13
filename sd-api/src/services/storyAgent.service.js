@@ -33,17 +33,11 @@ const imageGen = require("../lib/imageGen");
 const vertex = require("../lib/vertex");
 const { traced } = require("../lib/tracing");
 const editorial = require("./editorial.service");
-const { loadSourceText } = require("./drafting.service");
 
 const MAX_HISTORY_TURNS = 6;
 const TURN_STATUS = { PROPOSED: "proposed", ACCEPTED: "accepted", REJECTED: "rejected" };
 
-async function passagesFor(db, story) {
-  const p = story.provenance;
-  if (!p || !p.source_id) return [];
-  const text = await loadSourceText(db, { origin: p.origin, id: p.source_id });
-  return plan.splitPassages(composer.prepareSourceText(text).text);
-}
+const { passagesFor } = require("./passages.service");
 
 function serializeBlock(b) {
   if (b.type === "image") {

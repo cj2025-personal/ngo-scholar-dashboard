@@ -98,9 +98,21 @@ const FIDELITY_VERDICTS = new Set(["supported", "partial", "unsupported"]);
 
 function normalizeFidelity(f) {
   if (!f || typeof f !== "object" || !FIDELITY_VERDICTS.has(f.verdict)) return null;
+  /* The claims are what the evidence ledger and the reader's highlights are
+     built from, so they are kept, bounded the same way the judge bounds them. */
+  const claims = (Array.isArray(f.claims) ? f.claims : [])
+    .map((c) => ({
+      text: String(c?.text || "").slice(0, 300),
+      verdict: c?.verdict === "supported" ? "supported" : "unsupported",
+      passageIds: (Array.isArray(c?.passageIds) ? c.passageIds : []).map(String).filter((id) => REF_ID.test(id)).slice(0, 6),
+      evidence: String(c?.evidence || "").slice(0, 400),
+    }))
+    .filter((c) => c.text)
+    .slice(0, 12);
   return {
     verdict: f.verdict,
     unsupportedClaims: (Array.isArray(f.unsupportedClaims) ? f.unsupportedClaims : []).map((s) => String(s).slice(0, 300)).filter(Boolean).slice(0, 6),
+    ...(claims.length ? { claims } : {}),
   };
 }
 

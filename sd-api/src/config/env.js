@@ -82,6 +82,23 @@ const env = {
     enabled: String(process.env.DRAFTING_IMAGES ?? "false").toLowerCase() === "true",
     model: process.env.IMAGE_MODEL || "imagen-3.0-generate-002",
   },
+  /* The evidence ledger: a signed manifest of every claim behind a published
+     story. LEDGER_SIGNING_KEY is an Ed25519 private key as a PKCS8 PEM, or
+     that PEM base64-encoded onto one line. Absent outside production, one key
+     is generated per process so local runs and tests still sign. Absent in
+     production, manifests go out marked unsigned and the boot log says so. */
+  ledger: {
+    privateKey: process.env.LEDGER_SIGNING_KEY || null,
+    keyId: process.env.LEDGER_KEY_ID || null,
+  },
+  /* Watching the scientific record: retractions and corrections of the
+     papers behind published stories. `sweepToken` guards the endpoint a
+     scheduler calls; absent means the sweep is disabled, not open. */
+  record: {
+    enabled: String(process.env.RECORD_CHECKS ?? "true").toLowerCase() !== "false",
+    sweepToken: process.env.RECORD_SWEEP_TOKEN || null,
+    crossrefMailto: process.env.CROSSREF_MAILTO || null,
+  },
   /* The drafting job queue. `enabled` is the kill switch; `worker` lets a
      deployment serve the API without running the queue (a second replica, or
      a local dev instance pointed at shared data). */
