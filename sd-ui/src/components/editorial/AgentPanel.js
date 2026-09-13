@@ -1,26 +1,65 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 
 import { askStoryAgent, listStoryTurns, resolveStoryTurn } from "@/lib/drafting";
 
 /**
- * The agent, as a conversation about this draft.
+ * The agent console: a thread with the agent, and a composer docked at the
+ * bottom, the way a coding agent is driven.
  *
- * The scholar types what they want changed. What comes back is a proposal:
- * a summary, the changes block by block, the fact-check on what was written,
- * and two buttons. Nothing reaches the story until Accept; Reject discards
- * the proposal and any illustration it generated. Earlier turns stay in
- * view so "no, shorter" has something to refer to.
+ * The scholar types what they want changed. What comes back is a turn: the
+ * steps the agent took (each tool call and what the rules said to it), a
+ * one-line summary, the change block by block, the fact-check on what was
+ * written, and Accept / Reject. Nothing reaches the story until Accept.
+ * The paragraph the scholar is on is offered as context, so "make this
+ * plainer" needs no block number.
  */
 
 const EXAMPLES = [
   "Shorten paragraph 2 to two sentences",
   "Add a paragraph about the limitations, citing the paper",
   "Make the opening plainer for a fifteen-year-old",
+  "Add an illustration of the experiment after paragraph 1",
   "Delete the last section",
 ];
+
+const WORKING_PHASES = ["Reading the draft", "Searching the paper", "Writing the change", "Checking it against the passages"];
+
+function stepLabel(call) {
+  const refused = /^refused/.test(call.result || "");
+  const detail = String(call.result || "").replace(/^(ok|refused):\s*/, "");
+  const verb = {
+    replace_block: "Rewrote a block",
+    insert_block: "Inserted a block",
+    delete_block: "Removed a block",
+    move_block: "Moved a block",
+    set_heading_fields: "Changed the heading",
+    add_image: "Generated an illustration",
+    search_passages: "Searched the paper",
+    finish: "Finished",
+  }[call.name] || call.name;
+  return { verb: refused ? `Tried to ${verb.charAt(0).toLowerCase()}${verb.slice(1)}` : verb, detail, refused };
+}
+
+function Steps({ calls }) {
+  const shown = (calls || []).filter((c) => c.name !== "finish");
+  if (!shown.length) return null;
+  return (
+    <ol className="ag-steps">
+      {shown.map((c, i) => {
+        const s = stepLabel(c);
+        return (
+          <li key={i} className={s.refused ? "ag-step is-refused" : "ag-step"}>
+            <span className="ag-step-ic" aria-hidden>{s.refused ? "!" : "✓"}</span>
+            <span>{s.verb}{s.detail ? <span className="ag-step-result"> · {s.detail}</span> : null}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 function ChangeRow({ change }) {
   const label = { added: "Added", changed: "Changed", removed: "Removed", moved: "Moved", field: "Changed" }[change.kind] || change.kind;
@@ -36,10 +75,14 @@ function ChangeRow({ change }) {
 
 function Proposal({ turn, onAccept, onReject, busy }) {
   const c = turn.checks || {};
+  const pending = turn.status === "proposed" && turn.changes.length > 0;
   return (
     <div className="ag-proposal">
-      <div className="ag-summary">{turn.summary}</div>
-      {turn.changes.length ? <div className="ag-changes">{turn.changes.map((ch, i) => <ChangeRow key={i} change={ch} />)}</div> : <p className="st-muted">No changes were made.</p>}
+      <div className="ag-proposal-head">
+        <span>{turn.changes.length ? `${turn.changes.length} change${turn.changes.length === 1 ? "" : "s"} proposed` : "No change"}</span>
+        {turn.status !== "proposed" ? <span className="ag-resolved">{turn.status === "accepted" ? "Accepted" : "Rejected"}</span> : null}
+      </div>
+      {turn.changes.length ? <div className="ag-changes">{turn.changes.map((ch, i) => <ChangeRow key={i} change={ch} />)}</div> : <p className="st-muted">The draft is unchanged.</p>}
       {turn.changes.length ? (
         <div className="ag-checks">
           {c.paragraphsChanged ? (
@@ -53,24 +96,40 @@ function Proposal({ turn, onAccept, onReject, busy }) {
         </div>
       ) : null}
       {turn.warnings?.length ? <ul className="ag-warnings">{turn.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul> : null}
-      {turn.status === "proposed" && turn.changes.length ? (
+      {pending ? (
         <div className="ag-actions">
           <button type="button" className="sc-write-publish st-btn-primary" disabled={busy} onClick={onAccept}><FaCheck size={11} aria-hidden /> Accept</button>
           <button type="button" className="sc-write-secondary st-btn" disabled={busy} onClick={onReject}><FaXmark size={11} aria-hidden /> Reject</button>
+          <span className="ag-actions-hint">Nothing changes until you accept</span>
         </div>
-      ) : turn.status !== "proposed" ? (
-        <div className="ag-resolved">{turn.status === "accepted" ? "Accepted" : "Rejected"}</div>
       ) : null}
     </div>
   );
 }
 
-export default function AgentPanel({ storyId, onStoryChanged, onProposalPending }) {
+function Working() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSeconds((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const phase = WORKING_PHASES[Math.min(WORKING_PHASES.length - 1, Math.floor(seconds / 3))];
+  return (
+    <div className="ag-working" role="status" aria-live="polite">
+      <div className="ag-working-line"><span className="ag-spinner" aria-hidden /> Working on it… <span className="ag-elapsed">{seconds}s</span></div>
+      <div className="ag-step"><span className="ag-step-ic" aria-hidden>…</span><span>{phase}</span></div>
+    </div>
+  );
+}
+
+export default function AgentPanel({ storyId, context = null, onStoryChanged, onProposalPending }) {
   const [turns, setTurns] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const listRef = useRef(null);
+  const [useContext, setUseContext] = useState(true);
+  const threadRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
@@ -79,21 +138,33 @@ export default function AgentPanel({ storyId, onStoryChanged, onProposalPending 
   }, [storyId]);
 
   useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+    if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
   }, [turns.length, busy]);
 
   const pending = turns.find((t) => t.status === "proposed" && t.changes?.length);
   useEffect(() => { onProposalPending?.(Boolean(pending)); }, [pending, onProposalPending]);
 
+  const grow = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(160, el.scrollHeight)}px`;
+  }, []);
+
+  const contextUsable = Boolean(context && context.type !== "image" && context.index);
+  const mentionsBlock = (text) => /(?:block|paragraph|section|heading)\s+\d+/i.test(text);
+
   async function send(text) {
-    const ask = (text ?? instruction).trim();
+    let ask = (text ?? instruction).trim();
     if (!ask || busy) return;
+    if (text === undefined && contextUsable && useContext && !mentionsBlock(ask)) ask = `${ask} (paragraph ${context.index})`;
     setError("");
     setBusy(true);
     setInstruction("");
+    if (inputRef.current) inputRef.current.style.height = "auto";
     const r = await askStoryAgent(storyId, ask);
     setBusy(false);
-    if (!r.ok) { setError(r.error); setInstruction(ask); return; }
+    if (!r.ok) { setError(r.error); setInstruction(text ?? ask); return; }
     setTurns((cur) => [...cur, r.data.turn]);
   }
 
@@ -105,37 +176,68 @@ export default function AgentPanel({ storyId, onStoryChanged, onProposalPending 
     if (!r.ok) { setError(r.error); return; }
     setTurns((cur) => cur.map((t) => (t.id === turn.id ? r.data.turn : t)));
     if (action === "accept" && r.data.story) onStoryChanged?.(r.data.story);
+    inputRef.current?.focus();
   }
 
   return (
     <div className="ag-panel">
-      <div className="ag-list" ref={listRef}>
+      <div className="ag-head">
+        <span><b>Agent</b> · edits only what you ask, from the paper</span>
+        <span className="ag-head-status"><span className={`st-dot ${busy ? "is-navy" : pending ? "is-warn" : "is-ok"}`} aria-hidden />{busy ? "Working" : pending ? "Awaiting your decision" : "Ready"}</span>
+      </div>
+
+      <div className="ag-thread" ref={threadRef}>
         {turns.length === 0 && !busy ? (
           <div className="ag-empty">
-            <p className="st-muted">Tell the agent what to change. It edits only what you ask, cites the passages it uses, and shows you the change before it lands.</p>
+            <p className="ag-empty-title">What should change?</p>
+            <p className="st-muted">Ask in plain words. The agent reads the draft and the paper, makes the change, checks it against the passages, and shows it to you before it lands. Try one of these:</p>
             <div className="ag-examples">{EXAMPLES.map((e) => <button key={e} type="button" className="ag-example" onClick={() => send(e)}>{e}</button>)}</div>
           </div>
         ) : null}
         {turns.map((t) => (
           <div key={t.id} className="ag-turn">
             <div className="ag-ask">{t.instruction}</div>
-            <Proposal turn={t} busy={busy} onAccept={() => resolve(t, "accept")} onReject={() => resolve(t, "reject")} />
+            <div className="ag-reply">
+              <span className="ag-avatar" aria-hidden>A</span>
+              <div className="ag-reply-body">
+                <Steps calls={t.calls} />
+                {t.summary ? <div className="ag-summary">{t.summary}</div> : null}
+                <Proposal turn={t} busy={busy} onAccept={() => resolve(t, "accept")} onReject={() => resolve(t, "reject")} />
+              </div>
+            </div>
           </div>
         ))}
-        {busy ? <div className="ag-working" role="status">Working on it…</div> : null}
+        {busy ? <Working /> : null}
         {error ? <p className="sc-write-msg is-error">{error}</p> : null}
       </div>
-      <form className="ag-compose" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <textarea
-          className="ag-input"
-          rows={2}
-          placeholder={pending ? "Accept or reject the proposal above first" : "What should change?"}
-          value={instruction}
-          disabled={busy || Boolean(pending)}
-          onChange={(e) => setInstruction(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-        />
-        <button type="submit" className="sc-write-publish ag-send" disabled={busy || Boolean(pending) || !instruction.trim()} aria-label="Send"><FaPaperPlane size={12} aria-hidden /></button>
+
+      <form className="ag-composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
+        {contextUsable ? (
+          <div className="ag-ctx">
+            <button type="button" className={useContext ? "ag-ctx-chip on" : "ag-ctx-chip"} onClick={() => setUseContext((v) => !v)} aria-pressed={useContext} title={useContext ? "The agent will apply your instruction to this paragraph unless you name another" : "Click to point the agent at this paragraph"}>
+              <span>¶ {context.index}</span>
+              <span className="ag-ctx-text">{context.text}</span>
+            </button>
+            <span className="st-todo-detail">{useContext ? "in focus" : "not in focus"}</span>
+          </div>
+        ) : null}
+        <div className="ag-box">
+          <textarea
+            ref={inputRef}
+            className="ag-input"
+            rows={1}
+            placeholder={pending ? "Accept or reject the proposal above first" : "What should change?"}
+            value={instruction}
+            disabled={busy || Boolean(pending)}
+            onChange={(e) => { setInstruction(e.target.value); grow(); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          />
+          <button type="submit" className="sc-write-publish ag-send" disabled={busy || Boolean(pending) || !instruction.trim()} aria-label="Send"><FaPaperPlane size={12} aria-hidden /></button>
+        </div>
+        <div className="ag-hint">
+          <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
+          <span>{pending ? "One proposal at a time" : "Nothing is saved until you accept"}</span>
+        </div>
       </form>
     </div>
   );

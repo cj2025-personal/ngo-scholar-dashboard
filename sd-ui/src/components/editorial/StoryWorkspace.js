@@ -152,7 +152,7 @@ export default function StoryWorkspace({ initialStory = null }) {
   const [pendingDraftJob, setPendingDraftJob] = useState(null);
   const stopWatchingRef = useRef(null);
   const [mode, setMode] = useState("write"); // "write" | "preview"
-  const [railTab, setRailTab] = useState("source"); // "source" | "checks" | "agent"
+  const [railTab, setRailTab] = useState("agent"); // "source" | "checks" | "agent"
   const [passages, setPassages] = useState(null);
   const [showPublishCheck, setShowPublishCheck] = useState(false);
   const [proposalPending, setProposalPending] = useState(false);
@@ -177,6 +177,12 @@ export default function StoryWorkspace({ initialStory = null }) {
   const summary = useMemo(() => summariseBlocks(form.bodyBlocks), [form.bodyBlocks]);
   const sections = useMemo(() => (reviewMode ? sectionsOf(form.bodyBlocks) : []), [reviewMode, form.bodyBlocks]);
   const activeBlock = form.bodyBlocks.find((b) => b.id === activeBlockId) || null;
+  const agentContext = useMemo(() => {
+    const i = form.bodyBlocks.findIndex((b) => b.id === activeBlockId);
+    if (i < 0) return null;
+    const b = form.bodyBlocks[i];
+    return { index: i + 1, type: b.type, text: b.type === "image" ? (b.caption || "image") : plainText(b.html).slice(0, 90) };
+  }, [form.bodyBlocks, activeBlockId]);
   const sourceLabel = pendingDraftJob
     ? shortSourceLabel({ title: pendingDraftJob.sourceTitle, year: pendingDraftJob.sourceYear })
     : form.provenance
@@ -196,12 +202,12 @@ export default function StoryWorkspace({ initialStory = null }) {
     setForm((current) => ({ ...current, bodyBlocks }));
   }
 
-  const goToBlock = useCallback((index) => {
+  const goToBlock = useCallback((index, rail = null) => {
     const block = form.bodyBlocks[index];
     if (!block) return;
     setMode("write");
     setActiveBlockId(block.id);
-    setRailTab("source");
+    if (rail) setRailTab(rail);
     window.requestAnimationFrame(() => {
       document.querySelector(`[data-block-id="${block.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
@@ -437,7 +443,7 @@ export default function StoryWorkspace({ initialStory = null }) {
 
           <div className="ws-center">{editorColumn}</div>
 
-          <aside className="ws-right">
+          <aside className={railTab === "agent" ? "ws-right is-agent" : "ws-right"}>
             <div className="ws-tabs" role="tablist">
               {[["source", "Source"], ["checks", "Checks"], ["agent", "Agent"]].map(([id, label]) => (
                 <button key={id} type="button" role="tab" aria-selected={railTab === id} className={railTab === id ? "ws-tab on" : "ws-tab"} onClick={() => setRailTab(id)}>{label}</button>
@@ -445,8 +451,8 @@ export default function StoryWorkspace({ initialStory = null }) {
             </div>
             <div className="ws-rail-body">
               {railTab === "source" ? <SourceRail block={activeBlock} passages={passages} provenance={form.provenance} /> : null}
-              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} onGoTo={goToBlock} /> : null}
-              {railTab === "agent" ? <AgentPanel storyId={form.id} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : null}
+              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} onGoTo={(i) => goToBlock(i, "source")} /> : null}
+              {railTab === "agent" ? <AgentPanel storyId={form.id} context={agentContext} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : null}
             </div>
           </aside>
         </div>
@@ -461,7 +467,7 @@ export default function StoryWorkspace({ initialStory = null }) {
           provenance={form.provenance}
           busy={isSaving}
           onClose={() => setShowPublishCheck(false)}
-          onGoTo={goToBlock}
+          onGoTo={(i) => goToBlock(i, "source")}
           onPublish={async () => { const ok = await submitStory("published"); if (ok) setShowPublishCheck(false); }}
           onSchedule={form.scheduledFor ? async () => { const ok = await submitStory("scheduled"); if (ok) setShowPublishCheck(false); } : null}
         />

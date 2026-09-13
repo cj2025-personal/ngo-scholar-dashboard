@@ -80,9 +80,14 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(chips.first()).toBeVisible();
   await expect(page.locator(".block-row .block-chip.is-lost")).toHaveCount(0);
 
+  /* The Agent console is the default rail; the composer is docked and ready. */
+  await expect(page.locator(".ws-tab.on")).toHaveText("Agent");
+  await expect(page.getByPlaceholder("What should change?")).toBeVisible();
+
   /* Source rail: the passages behind the paragraph the scholar is on. */
   const firstParagraph = page.locator(".block-row", { has: page.locator(".block-chip") }).first();
   await firstParagraph.locator(".block-editor-surface").click();
+  await page.getByRole("tab", { name: "Source" }).click();
   await expect(page.locator(".sr-passage").first()).toBeVisible();
   await expect(page.locator(".sr-passage mark").first()).toBeVisible();
 
@@ -94,6 +99,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   /* Agent: an instruction becomes a proposal; nothing lands until Accept. */
   await page.getByRole("tab", { name: "Agent" }).click();
   await expect(page.locator(".ag-example").first()).toBeVisible();
+  await expect(page.locator(".ag-ctx-chip")).toContainText("¶ 2");
   const secondBlock = page.locator(".block-row").nth(1).locator(".block-editor-surface");
   const secondBefore = (await secondBlock.innerText()).trim();
   await page.getByPlaceholder("What should change?").fill("Shorten paragraph 2 to one sentence");
@@ -108,6 +114,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.getByRole("button", { name: "Publish check" })).toBeDisabled();
   expect((await secondBlock.innerText()).trim()).toBe(secondBefore);
 
+  await expect(page.locator(".ag-step").first()).toContainText("Rewrote a block");
   await proposal.getByRole("button", { name: "Accept" }).click();
   await expect(proposal.locator(".ag-resolved")).toHaveText("Accepted");
   await expect(page.locator(".block-row").nth(1).locator(".block-editor-surface")).toHaveText(proposed);
