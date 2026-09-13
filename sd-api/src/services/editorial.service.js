@@ -12,6 +12,9 @@ const { ownedByScholarFilter } = require("../lib/identity");
 const { buildByline } = require("../lib/byline");
 const { humanPublisher, makesPublic } = require("../lib/actor");
 const storyVersion = require("../lib/storyVersion");
+const levelsLib = require("../lib/levels");
+const recordLib = require("../lib/record");
+const { AUDIENCES: AUDIENCE_TABLE } = require("../lib/audiences");
 const {
   normalizeBlockProvenance,
   presentBlockProvenance,
@@ -873,6 +876,33 @@ async function linkDraftJob({ draftJobId, profileId, storyId }) {
   }
 }
 
+/** Stored blocks in the shape a client reads: images resolved, provenance presented. */
+function presentStoredBlocks(rawBlocks, imageById) {
+  return rawBlocks
+    .map((block) => {
+      if (block.type === "image") {
+        const image = imageById.get(String(block.image_file_id));
+        if (!image) return null;
+        return {
+          type: "image",
+          imageId: String(image.file_id),
+          url: buildImageUrl(image.file_id),
+          filename: image.filename,
+          caption: block.caption || "",
+          alt: block.alt_text || "",
+          width: normalizeImageWidth(block.width),
+        };
+      }
+      return {
+        type: normalizeBlockType(block.type),
+        html: typeof block.html === "string" ? block.html : "",
+        ...presentBlockProvenance(block.provenance),
+        ...(block.own_view ? { ownView: true } : {}),
+      };
+    })
+    .filter(Boolean);
+}
+
 function mapStoryDocument(story, author = null, provenance = null) {
   const now = new Date();
   const images = Array.isArray(story.images) ? story.images : [];
@@ -882,35 +912,33 @@ function mapStoryDocument(story, author = null, provenance = null) {
   const rawBlocks = Array.isArray(story.body_blocks) ? story.body_blocks : [];
   const bodyBlocks =
     rawBlocks.length > 0
-      ? rawBlocks
-          .map((block) => {
-            if (block.type === "image") {
-              const image = imageById.get(String(block.image_file_id));
-
-              if (!image) {
-                return null;
-              }
-
-              return {
-                type: "image",
-                imageId: String(image.file_id),
-                url: buildImageUrl(image.file_id),
-                filename: image.filename,
-                caption: block.caption || "",
-                alt: block.alt_text || "",
-                width: normalizeImageWidth(block.width),
-              };
-            }
-
-            return {
-              type: normalizeBlockType(block.type),
-              html: typeof block.html === "string" ? block.html : "",
-              ...presentBlockProvenance(block.provenance),
-              ...(block.own_view ? { ownView: true } : {}),
-            };
-          })
-          .filter(Boolean)
+      ? presentStoredBlocks(rawBlocks, imageById)
       : normalizeRawBodyBlocks(null, story.content || "");
+
+  /* The article for other readers. Each level lines up with bodyBlocks. A
+     level is stale once the article changed under it; the public read drops
+     stale and unapproved levels, the owner sees them with the reason. */
+  const levelRows = story.levels && typeof story.levels === "object" ? Object.values(story.levels) : [];
+  const levels = levelRows
+    .filter((l) => l && l.audience && AUDIENCE_TABLE[l.audience])
+    .map((l) => {
+      const st = levelsLib.staleness(l, bodyBlocks);
+      return {
+        audience: l.audience,
+        label: AUDIENCE_TABLE[l.audience].label,
+        grade: AUDIENCE_TABLE[l.audience].grade,
+        approved: Boolean(l.approved),
+        approvedAt: l.approved_at || null,
+        approvedBy: l.approved_by || null,
+        generatedAt: l.generated_at || null,
+        readability: l.readability || null,
+        fidelity: l.fidelity || null,
+        stale: st.stale,
+        staleReason: st.reason,
+        blocks: presentStoredBlocks(Array.isArray(l.blocks) ? l.blocks : [], imageById),
+      };
+    })
+    .sort((a, b) => a.grade - b.grade);
   const plainTextContent = buildPlainTextContentFromBlocks(bodyBlocks);
   const wordCount = countWords(plainTextContent);
 
@@ -926,6 +954,7 @@ function mapStoryDocument(story, author = null, provenance = null) {
     provenance,
     /* What the drafter said about its own draft, for the Checks rail. */
     draftWarnings: Array.isArray(story.draft_warnings) ? story.draft_warnings : [],
+    draftChecks: story.draft_checks || null,
     subtitle: story.subtitle || "",
     excerpt: buildExcerpt(story.excerpt, plainTextContent),
     content: plainTextContent,
@@ -934,6 +963,19 @@ function mapStoryDocument(story, author = null, provenance = null) {
     effectiveStatus: getEffectivePublicationStatus(story, now),
     /* What a save must be made against. The editor sends it back. */
     version: storyVersion.versionOf(story),
+    levels,
+    /* What the scientific record says about the source, as last checked.
+       A retraction is shown to the reader too; it is not ours to keep. */
+    record: story.record
+      ? {
+          doi: story.record.doi || null,
+          checkedAt: story.record.checked_at || null,
+          alerts: Array.isArray(story.record.alerts) ? story.record.alerts.map((a) => ({ kind: a.kind, type: a.type, noticeDoi: a.notice_doi || null, noticeUrl: a.notice_url || null, date: a.date || null, sentence: a.sentence, affectedBlocks: a.affected_blocks || [] })) : [],
+          headline: recordLib.headline(story.record.alerts || []),
+          acknowledgedAt: story.record.acknowledged_at || null,
+          reason: story.record.reason || null,
+        }
+      : null,
     /* The stored evidence ledger, summarised. Null until the story is public. */
     evidence: story.evidence?.manifest
       ? {
@@ -1324,6 +1366,7 @@ async function restoreStoryRevision({ storyId, version, scholarId, profileId, us
       excerpt: revision.excerpt || "",
       content,
       body_blocks: blocks,
+      levels: revision.levels && typeof revision.levels === "object" ? revision.levels : {},
       updated_by: user?.login_email || scholarId,
       editor_version: 4,
     },
@@ -1418,9 +1461,11 @@ async function getPublishedStoryBySlug(slug) {
     resolveStoryAuthor(db, story.profile_id),
     resolveStoryProvenance(db, story.provenance),
   ]);
-  return serializeMongoValue({
-    story: mapStoryDocument(story, author, provenance),
-  });
+  const mapped = mapStoryDocument(story, author, provenance);
+  /* A reader may switch only between levels the scholar approved and that
+     still say what the article says. */
+  mapped.levels = mapped.levels.filter((l) => l.approved && !l.stale);
+  return serializeMongoValue({ story: mapped });
 }
 
 async function createEditorialStory({ scholarId, profileId, user, body, files }) {
@@ -1997,6 +2042,7 @@ async function createStoryFromDraft({ job, draft }) {
     provenance: storyProvenanceFromJob(job),
     draft_warnings: draft.warnings || [],
     draft_readability: draft.readability || null,
+    draft_checks: draft.checks || null,
     source: "drafter",
     editor_version: 4,
     version: 1,
@@ -2034,6 +2080,8 @@ module.exports = {
      path as the composer's inline images. */
   findOwnedStory,
   mapStoryDocument,
+  normalizeRawBodyBlocks,
+  refreshEvidenceAfterWrite,
   resolveStoryAuthor,
   resolveStoryProvenance,
   buildPublicStoryQuery,

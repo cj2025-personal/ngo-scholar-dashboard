@@ -69,6 +69,8 @@ async function startApi(extraEnv = {}) {
       DRAFTING_POLL_MS: "150",
       DRAFT_DAILY_CAP: "4",
       DRAFTING_IMAGES: "true",
+      RECORD_FAKE: JSON.stringify({"10.1000/src-e2e-1": {"updated-by": [{"type": "retraction", "DOI": "10.1000/notice-1", "label": "Retraction", "updated": {"date-time": "2026-09-01T00:00:00Z"}}]}, "10.1000/src-e2e-2": {"updated-by": [{"type": "addendum", "DOI": "10.1000/notice-2"}]}}),
+      RECORD_SWEEP_TOKEN: "sweep-test-token",
       CORS_ORIGIN: "http://localhost:3000",
       GCP_PROJECT_ID: "",
       GCP_SERVICE_ACCOUNT_JSON: "",
@@ -237,7 +239,7 @@ test("the same request again is the same job, not a second bill", async () => {
 });
 
 test("with outline approval the job pauses, the scholar cuts a section, and the draft becomes a story", async () => {
-  const created = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-2", audience: "ages_15_18", brief: "focus on the limitations", approveOutline: true } });
+  const created = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-2", audience: "ages_15_18", brief: "focus on the limitations", approveOutline: true, levels: true } });
   assert.equal(created.status, 202, JSON.stringify(created.data));
   const jobId = created.data.job.id;
   assert.equal(created.data.job.approveOutline, true);
@@ -302,6 +304,10 @@ test("with outline approval the job pauses, the scholar cuts a section, and the 
   const passages = await call("GET", `/api/editorial-stories/${done.storyId}/passages`);
   assert.equal(passages.status, 200);
   assert.equal(passages.data.passages[0].id, "p1");
+  /* Asked for at creation, the other reading ages were written by the worker straight after the story. */
+  assert.equal(story.levels.length, 3, JSON.stringify(story.levels.map((l) => l.audience)));
+  assert.ok(story.levels.every((l) => !l.approved && !l.stale && l.blocks.length === story.bodyBlocks.length));
+  assert.ok(frames2.some((f) => f.event === "progress" && f.data.step === "draft_levels"));
   state.outlineStoryId = done.storyId;
 });
 
@@ -430,6 +436,8 @@ test("the scholar edits by instruction: a proposal with checks, accepted onto th
   assert.equal(turn.changes[0].index, target.n);
   assert.equal(turn.checks.paragraphsChanged, 1);
   assert.equal(turn.checks.supported, 1, "the fact-checker judged the changed paragraph");
+  assert.equal(turn.checks.numbers.ok, true, "every number in the change is in a passage it cites");
+  assert.ok(turn.checks.limitationsCited === true || turn.checks.limitationsCited === false || turn.checks.limitationsCited === null);
   assert.ok(turn.proposal.blocks.length === before.bodyBlocks.length);
   const untouched = turn.proposal.blocks.filter((b, i) => b.type !== "image" && i + 1 !== target.n);
   assert.ok(untouched.every((b, k) => b.html === before.bodyBlocks.filter((x, i) => x.type !== "image" && i + 1 !== target.n)[k].html), "untouched blocks are byte-identical");
@@ -549,11 +557,133 @@ test("a published story carries a signed evidence ledger anyone can verify, and 
   assert.equal(preview.data.preview, true);
   assert.equal(preview.data.stored, false);
   assert.equal(preview.data.passagesCheck.mismatched.length, 0);
+  assert.equal(preview.data.checks.numbers.ok, true, JSON.stringify(preview.data.checks.numbers));
+  assert.ok(preview.data.checks.numbers.checked >= 1, "the drafted paragraphs were checked for numbers");
+  assert.equal(preview.data.checks.limitations.heuristic, true);
+  assert.ok(Array.isArray(preview.data.checks.limitations.limitationIds));
 
   /* A draft has no public ledger. */
   const draftDoc = await db.collection("scholar_editorials").findOne({ _id: new ObjectId(state.outlineStoryId) });
   const none = await call("GET", `/api/editorial-stories/public/slug/${draftDoc.slug}/evidence`, { cookieValue: "" });
   assert.equal(none.status, 404);
+});
+
+test("the story is written for every reading age, lines up block for block, and reaches readers only once approved", async () => {
+  const before = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  assert.deepEqual(before.levels, [], "no levels until asked");
+  const made = await call("POST", `/api/editorial-stories/${state.storyId}/levels`, { body: { baseVersion: before.version } });
+  assert.equal(made.status, 200, JSON.stringify(made.data));
+  assert.deepEqual([...made.data.written].sort(), ["ages_12_14", "ages_15_18", "ages_8_11"]);
+  const story = made.data.story;
+  assert.equal(story.version, before.version + 1, "writing levels is a version of the story");
+  assert.equal(story.levels.length, 3);
+  for (const level of story.levels) {
+    assert.equal(level.blocks.length, story.bodyBlocks.length, `${level.audience} lines up block for block`);
+    assert.equal(level.approved, false);
+    assert.equal(level.stale, false);
+    assert.ok(level.readability && typeof level.readability.fkGrade === "number", JSON.stringify(level.readability));
+    story.bodyBlocks.forEach((b, i) => {
+      const l = level.blocks[i];
+      assert.equal(l.type, b.type);
+      if (b.type === "paragraph" && b.sourceRefs?.length && b.traceable !== false && !b.ownView) {
+        assert.deepEqual(l.sourceRefs, b.sourceRefs, "a rewritten paragraph rests on the same passages");
+        assert.ok(l.fidelity && l.fidelity.verdict, "and was judged");
+        assert.ok(l.fidelity.claims?.length >= 1, "claim by claim");
+      } else if (b.type !== "image") {
+        assert.equal(l.html, b.html, "everything else is carried as it is");
+      }
+    });
+    assert.ok(level.fidelity.supported >= 1, JSON.stringify(level.fidelity));
+  }
+  assert.ok(story.levels.find((l) => l.audience === "ages_8_11").grade < story.levels.find((l) => l.audience === "ages_15_18").grade);
+
+  /* Unapproved: readers see none. */
+  const pub1 = await call("GET", `/api/editorial-stories/public/slug/${state.slug}`, { cookieValue: "" });
+  assert.deepEqual(pub1.data.story.levels, []);
+
+  /* Approve two of three. */
+  const approved = await call("POST", `/api/editorial-stories/${state.storyId}/levels/approve`, { body: { audiences: ["ages_12_14", "ages_15_18"], baseVersion: story.version } });
+  assert.equal(approved.status, 200, JSON.stringify(approved.data));
+  assert.deepEqual([...approved.data.approved].sort(), ["ages_12_14", "ages_15_18"]);
+  const pub2 = await call("GET", `/api/editorial-stories/public/slug/${state.slug}`, { cookieValue: "" });
+  assert.deepEqual(pub2.data.story.levels.map((l) => l.audience).sort(), ["ages_12_14", "ages_15_18"]);
+  assert.equal(pub2.data.story.levels[0].blocks.length, pub2.data.story.bodyBlocks.length);
+  assert.ok(pub2.data.story.levels.every((l) => l.approvedBy === EMAIL));
+
+  /* The history says who wrote them and who approved them. */
+  const history = await call("GET", `/api/editorial-stories/${state.storyId}/revisions`);
+  assert.ok(history.data.revisions.some((v) => v.source === "levels"), JSON.stringify(history.data.revisions.map((v) => v.source)));
+  assert.ok(history.data.revisions.some((v) => /Approved the/.test(v.note || "")));
+
+  /* An edit to the article makes every level stale, and readers see none until it is rewritten. */
+  const current = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  const i = current.bodyBlocks.findIndex((b) => b.type === "paragraph" && b.sourceRefs?.length && b.traceable !== false);
+  const edited = current.bodyBlocks.map((b, k) => ({
+    type: b.type,
+    html: k === i ? `${b.html} Edited after the levels were written.` : b.html,
+    ...(b.sourceRefs?.length ? { sourceRefs: b.sourceRefs, draftedText: b.draftedText, fidelity: b.fidelity } : {}),
+    ...(b.ownView ? { ownView: true } : {}),
+    ...(b.type === "image" ? { imageId: b.imageId, caption: b.caption, alt: b.alt, width: b.width } : {}),
+  }));
+  const f = new FormData();
+  f.set("bodyBlocks", JSON.stringify(edited));
+  f.set("content", edited.filter((b) => b.type !== "image").map((b) => b.html).join("\n\n"));
+  f.set("inlineImageKeys", "[]");
+  f.set("retainImageIds", JSON.stringify(current.bodyBlocks.filter((b) => b.type === "image").map((b) => b.imageId)));
+  f.set("status", current.status);
+  f.set("baseVersion", String(current.version));
+  const saved = await call("PATCH", `/api/editorial-stories/${state.storyId}`, { form: f });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  assert.ok(saved.data.story.levels.every((l) => l.stale), "every level is stale after the edit");
+  assert.match(saved.data.story.levels[0].staleReason, new RegExp(`block ${i + 1} changed`));
+  const pub3 = await call("GET", `/api/editorial-stories/public/slug/${state.slug}`, { cookieValue: "" });
+  assert.deepEqual(pub3.data.story.levels, [], "readers never see a level that no longer matches the article");
+  const refused = await call("POST", `/api/editorial-stories/${state.storyId}/levels/approve`, { body: { audiences: ["ages_8_11"], baseVersion: saved.data.story.version } });
+  assert.equal(refused.status, 409, "a stale level cannot be approved");
+});
+
+test("a retraction of the source is noticed, named to the scholar and the reader, and swept for every public story", async () => {
+  const before = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  assert.equal(before.record, null, "nothing until checked");
+
+  const checked = await call("POST", `/api/editorial-stories/${state.storyId}/record/check`, { body: {} });
+  assert.equal(checked.status, 200, JSON.stringify(checked.data));
+  assert.equal(checked.data.result.doi, "10.1000/src-e2e-1", "the DOI comes off the source's own URL");
+  const rec = checked.data.story.record;
+  assert.equal(rec.alerts.length, 1);
+  assert.equal(rec.alerts[0].kind, "retracted");
+  assert.equal(rec.alerts[0].noticeUrl, "https://doi.org/10.1000/notice-1");
+  assert.match(rec.alerts[0].sentence, /“Adaptive nulling in small antenna arrays” was retracted on 2026-09-01/);
+  assert.ok(rec.alerts[0].affectedBlocks.length >= 1, "the paragraphs that rest on the paper are named");
+  assert.match(rec.headline, /retracted/);
+  assert.equal(rec.acknowledgedAt, null);
+  assert.equal(checked.data.story.version, before.version, "a check is not a version; the editor's next save is not refused");
+
+  /* The reader is told. */
+  const pub = await call("GET", `/api/editorial-stories/public/slug/${state.slug}`, { cookieValue: "" });
+  assert.equal(pub.data.story.record.alerts[0].kind, "retracted");
+
+  /* The scholar acknowledges; a re-check with the same notice keeps that. */
+  const ack = await call("POST", `/api/editorial-stories/${state.storyId}/record/acknowledge`, { body: {} });
+  assert.equal(ack.status, 200);
+  assert.ok(ack.data.story.record.acknowledgedAt);
+  const again = await call("POST", `/api/editorial-stories/${state.storyId}/record/check`, { body: {} });
+  assert.ok(again.data.story.record.acknowledgedAt, "an unchanged alert stays acknowledged");
+
+  /* An addendum is not an alert. */
+  const other = await call("POST", `/api/editorial-stories/${state.outlineStoryId}/record/check`, { body: {} });
+  assert.equal(other.status, 200, JSON.stringify(other.data));
+  assert.equal(other.data.result.doi, "10.1000/src-e2e-2");
+  assert.deepEqual(other.data.story.record.alerts, []);
+  assert.equal(other.data.result.notices, 1);
+
+  /* The sweep: guarded, and it walks every public story. */
+  const noToken = await call("POST", "/api/editorial-stories/record/sweep", { body: {}, cookieValue: "" });
+  assert.equal(noToken.status, 401);
+  const swept = await call("POST", "/api/editorial-stories/record/sweep", { body: {}, cookieValue: "", headers: { "x-service-token": "sweep-test-token" } });
+  assert.equal(swept.status, 200, JSON.stringify(swept.data));
+  assert.ok(swept.data.checked >= 1);
+  assert.ok(swept.data.stories.some((st) => st.slug === state.slug && st.alerts.includes("retracted")));
 });
 
 test("a stale save is refused rather than overwriting, and an earlier version can be put back", async () => {

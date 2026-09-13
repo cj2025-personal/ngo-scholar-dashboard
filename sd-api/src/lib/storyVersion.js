@@ -40,6 +40,8 @@ const SOURCE = {
   DRAFTER: "drafter",
   /* An older version put back, which is itself a new version. */
   RESTORE: "restore",
+  /* The article written for other reading ages, by the level writer. */
+  LEVELS: "levels",
 };
 
 const SOURCES = new Set(Object.values(SOURCE));
@@ -134,6 +136,7 @@ function revisionDocument({ storyId, profileId, story, version, source, actor, n
     content: story.content || "",
     body_blocks: Array.isArray(story.body_blocks) ? story.body_blocks : [],
     status: story.status || "draft",
+    levels: story.levels && typeof story.levels === "object" ? story.levels : null,
     source,
     turn_id: turnId,
     job_id: jobId,

@@ -27,6 +27,7 @@ const { serializeMongoValue } = require("../lib/serialize");
 const composer = require("../lib/draftComposer");
 const plan = require("../lib/draftPlan");
 const fidelity = require("../lib/fidelity");
+const checksLib = require("../lib/checks");
 const { assessDraftReadability, VERDICT } = require("../lib/draftReadability");
 const agent = require("../lib/storyAgent");
 const imageGen = require("../lib/imageGen");
@@ -165,10 +166,21 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
     imagesGenerated: newImages.length,
     imagesFailed: imageFailures.length,
     refused: result.calls.filter((c) => String(c.result).startsWith("refused")).length,
+    /* Every number the agent wrote must be in a passage it cited. A rule,
+       not a model, because a fluent wrong number is the one that gets past. */
+    numbers: checksLib.numericConsistency({ blocks: changed.map(({ b }) => b), passages }),
+    /* Whether the article, as it would be, cites any of the paper's own caveats. */
+    limitationsCited: checksLib.limitationsCoverage({ blocks: result.state.blocks, passages }).ok,
   };
   const warnings = [];
   if (checks.unsupported) warnings.push(`${checks.unsupported} changed paragraph${checks.unsupported === 1 ? " is" : "s are"} not supported by the paper.`);
   if (checks.partial) warnings.push(`${checks.partial} changed paragraph${checks.partial === 1 ? " is" : "s are"} only partly supported; the claims are marked.`);
+  if (checks.numbers && !checks.numbers.ok) {
+    warnings.push(
+      `${checks.numbers.misses.length === 1 ? "A number" : `${checks.numbers.misses.length} numbers`} in this change ${checks.numbers.misses.length === 1 ? "is" : "are"} not in the passages cited: ` +
+      `${checks.numbers.misses.map((m) => `${m.number} (block ${m.block})`).join(", ")}. Check ${checks.numbers.misses.length === 1 ? "it" : "them"} against the paper.`,
+    );
+  }
   if (imageFailures.length) {
     warnings.push(
       `${imageFailures.length === 1 ? "An illustration" : `${imageFailures.length} illustrations`} could not be generated, so ` +

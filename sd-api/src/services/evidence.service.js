@@ -15,6 +15,7 @@ const { env } = require("../config/env");
 const ledger = require("../lib/evidenceLedger");
 const { FIDELITY_VERSION } = require("../lib/fidelity");
 const { AGENT_VERSION } = require("../lib/storyAgent");
+const checksLib = require("../lib/checks");
 const { serializeMongoValue } = require("../lib/serialize");
 const { passagesFor } = require("./passages.service");
 
@@ -61,6 +62,10 @@ async function buildEvidence(db, storyDoc) {
     signed: Boolean(k),
     publicKey: k ? ledger.publicKeyPem(k) : null,
     passages,
+    checks: {
+      numbers: checksLib.numericConsistency({ blocks: mapped.bodyBlocks, passages }),
+      limitations: checksLib.limitationsCoverage({ blocks: mapped.bodyBlocks, passages }),
+    },
   };
 }
 
@@ -117,6 +122,7 @@ async function getOwnerEvidence(db, { storyId, scholarId, profileId }) {
     storedVersion: storyDoc.evidence?.manifest?.story?.version ?? null,
     summary: ledger.summarySentence(built.manifest),
     passagesCheck: ledger.checkPassages(built.manifest, built.passages),
+    checks: built.checks,
   });
 }
 

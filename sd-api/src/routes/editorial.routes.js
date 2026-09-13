@@ -18,6 +18,10 @@ const {
 } = require("../services/editorial.service");
 const { askStoryAgent, listStoryTurns, resolveStoryTurn, streamProposalImage, storyPassages, publicStoryPassages } = require("../services/storyAgent.service");
 const evidence = require("../services/evidence.service");
+const { generateLevels, approveLevels } = require("../services/levels.service");
+const recordService = require("../services/record.service");
+const { env } = require("../config/env");
+const { readServiceToken, secretsMatch } = require("../lib/service-auth");
 const { getDb } = require("../db/mongo");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
 
@@ -188,6 +192,20 @@ router.post(
   }),
 );
 
+/* ── the scientific record ───────────────────────────────────────────────── */
+
+/** A scheduler's sweep of every public story. Guarded by RECORD_SWEEP_TOKEN; absent means disabled. */
+router.post(
+  "/record/sweep",
+  asyncHandler(async (req, res) => {
+    if (!env.record.enabled) throw new ApiError(503, "Record checks are switched off on this deployment (RECORD_CHECKS=false).");
+    if (!env.record.sweepToken) throw new ApiError(503, "The record sweep is not configured on this deployment (RECORD_SWEEP_TOKEN unset).");
+    const presented = readServiceToken(req.headers);
+    if (!presented || !secretsMatch(presented, env.record.sweepToken)) throw new ApiError(401, "A valid sweep token is required.");
+    res.status(200).json(await recordService.sweepPublished({ limit: req.body?.limit }));
+  }),
+);
+
 /* ── the evidence ledger ─────────────────────────────────────────────────── */
 
 /** The key anyone needs to verify what this deployment signed. */
@@ -223,6 +241,64 @@ router.get(
       storyId: req.params.storyId,
       scholarId: req.auth.user.scholar_id,
       profileId: req.auth.user.profile_id,
+    }));
+  }),
+);
+
+/* ── reading levels ──────────────────────────────────────────────────────── */
+
+/** Write the story for other reading ages. A version of the story like any write. */
+router.post(
+  "/:storyId/levels",
+  requireAuth,
+  agentLimiter,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await generateLevels({
+      storyId: req.params.storyId,
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
+      user: req.auth.user,
+      audiences: Array.isArray(req.body?.audiences) ? req.body.audiences.map(String) : null,
+      baseVersion: req.body?.baseVersion ?? null,
+    }));
+  }),
+);
+
+/** Approve levels for readers. Nothing reaches the public without this. */
+router.post(
+  "/:storyId/levels/approve",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await approveLevels({
+      storyId: req.params.storyId,
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
+      user: req.auth.user,
+      audiences: Array.isArray(req.body?.audiences) ? req.body.audiences.map(String) : null,
+      baseVersion: req.body?.baseVersion ?? null,
+    }));
+  }),
+);
+
+/** The scholar asks now whether the record has moved against this story's source. */
+router.post(
+  "/:storyId/record/check",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (!env.record.enabled) throw new ApiError(503, "Record checks are switched off on this deployment.");
+    res.status(200).json(await recordService.checkStory({
+      storyId: req.params.storyId, scholarId: req.auth.user.scholar_id, profileId: req.auth.user.profile_id,
+    }));
+  }),
+);
+
+/** The scholar has seen the alert. */
+router.post(
+  "/:storyId/record/acknowledge",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await recordService.acknowledge({
+      storyId: req.params.storyId, scholarId: req.auth.user.scholar_id, profileId: req.auth.user.profile_id,
     }));
   }),
 );

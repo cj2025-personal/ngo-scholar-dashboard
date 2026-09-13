@@ -99,6 +99,15 @@ function answerJudge(prompt) {
   });
 }
 
+/** A paragraph for another reader: one lifted sentence for the youngest band, two otherwise. */
+function answerLevel(prompt) {
+  const cited = passagesIn(prompt, "=== PASSAGES THIS PARAGRAPH RESTS ON ===");
+  const first = cited[0] || { text: "The paper reports its findings." };
+  const s = sentences(first.text);
+  const n = /aged 8 to 11/.test(prompt) ? 1 : 2;
+  return JSON.stringify({ text: s.slice(0, n).join(" ") });
+}
+
 function answerComposer(prompt) {
   const start = prompt.indexOf("=== PAPER BEGINS ===");
   const end = prompt.indexOf("=== PAPER ENDS ===");
@@ -179,6 +188,7 @@ async function generateContent({ prompt, contents = null, tools = null }) {
   const p = String(prompt || (contents ? contents.map((c) => (c.parts || []).map((x) => x.text || "").join("\n")).join("\n") : ""));
   let text;
   if (p.includes("PARAGRAPHS TO CHECK:")) text = answerJudge(p);
+  else if (p.includes("=== PARAGRAPH TO REWRITE FOR ANOTHER READER ===")) text = answerLevel(p);
   else if (p.includes("=== PAPER, IN NUMBERED PASSAGES ===")) text = answerOutline(p);
   else if (p.includes("=== PASSAGES THIS SECTION MAY USE ===")) text = answerSection(p);
   else text = answerComposer(p);

@@ -44,6 +44,7 @@ const plan = require("./draftPlan");
 const fidelity = require("./fidelity");
 const { assessDraftReadability, simplificationNote, VERDICT } = require("./draftReadability");
 const { USE } = require("./draftEligibility");
+const checks = require("./checks");
 
 const GRAPH_VERSION = "draft-graph-2026.2";
 
@@ -67,6 +68,7 @@ const State = Annotation.Root({
   readability: Annotation(),
   readabilityNote: Annotation(),
   readabilityRetried: Annotation(),
+  checks: Annotation(),
   warnings: Annotation({ reducer: (a, b) => [...(a || []), ...(b || [])], default: () => [] }),
   calls: Annotation({ reducer: (a, b) => [...(a || []), ...(b || [])], default: () => [] }),
 });
@@ -196,12 +198,24 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
     }
     const warnings = [];
     if (readability.verdict !== VERDICT.PASS && readability.reason) warnings.push(`This draft ${readability.reason}.`);
+
+    /* Two rules the judge does not apply: every number must be in a cited
+       passage, and the paper's own caveats should not have been left out. */
+    const numbers = checks.numericConsistency({ blocks: s.draft.bodyBlocks, passages: s.passages });
+    if (!numbers.ok) {
+      warnings.push(
+        `${numbers.misses.length === 1 ? "A number" : `${numbers.misses.length} numbers`} in this draft ${numbers.misses.length === 1 ? "is" : "are"} not in the passages cited: ` +
+        `${numbers.misses.map((m) => `${m.number} (block ${m.block})`).join(", ")}. Check ${numbers.misses.length === 1 ? "it" : "them"} against the paper before publishing.`,
+      );
+    }
+    const limitations = checks.limitationsCoverage({ blocks: s.draft.bodyBlocks, passages: s.passages });
+    if (limitations.ok === false) warnings.push(limitations.sentence);
     if (s.prepared.truncated) {
       warnings.push(
         `Only the first ${s.prepared.words.toLocaleString()} of ${s.prepared.totalWords.toLocaleString()} words were used; the rest of the paper is not reflected here.`,
       );
     }
-    return { readability, readabilityNote: null, warnings };
+    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations } };
   }
 
   return { pick_source, plan_outline, draft_blocks, assemble, verify };
@@ -288,6 +302,7 @@ async function runDraftGraph(input, deps) {
       ? { verdict: final.readability.verdict, fkGrade: final.readability.fkGrade, targetGrade: final.readability.targetGrade, drift: final.readability.drift, tolerance: final.readability.tolerance, reliable: final.readability.reliable }
       : null,
     warnings,
+    checks: final.checks || null,
     calls: final.calls || [],
     graphVersion: GRAPH_VERSION,
   };

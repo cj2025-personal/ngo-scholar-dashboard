@@ -101,7 +101,7 @@ router.post(
   draftLimiter,
   asyncHandler(async (req, res) => {
     const profileId = requireProfile(req);
-    const { origin, sourceId, audience, brief, approveOutline: wantsOutline, createStory } = req.body || {};
+    const { origin, sourceId, audience, brief, approveOutline: wantsOutline, createStory, levels } = req.body || {};
     if (origin !== "harvested" && origin !== "contributed") {
       throw new ApiError(400, "Source origin must be harvested or contributed.");
     }
@@ -117,6 +117,7 @@ router.post(
       brief: typeof brief === "string" ? brief : null,
       approveOutline: Boolean(wantsOutline),
       createStory: createStory === undefined ? true : Boolean(createStory),
+      levels: Boolean(levels),
     });
     res.status(result.reused ? 200 : 202).json(result);
   }),

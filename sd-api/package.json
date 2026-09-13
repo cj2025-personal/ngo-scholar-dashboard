@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "test": "node --test tests/",
     "eval:drafts": "node scripts/evalDrafts.js",
+    "record:check": "node scripts/checkRecord.js",
     "eval:capture": "node scripts/captureDraftEvals.js",
     "test:e2e": "node --test tests-e2e/",
     "test:all": "npm test && npm run test:e2e"
