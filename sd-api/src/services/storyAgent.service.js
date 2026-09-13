@@ -93,8 +93,9 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const audience = storyDoc.provenance?.audience || "general";
   const startedAt = new Date();
 
+  const stateBefore = agent.stateFromStory(mapped);
   const result = await agent.runStoryAgent({
-    state: agent.stateFromStory(mapped), passages, instruction, history, audience, generate,
+    state: stateBefore, passages, instruction, history, audience, generate,
     imagesAllowed: imageGen.isConfigured(), isVerbatim,
   });
 
@@ -113,12 +114,25 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const turnId = new ObjectId();
   const newImages = [];
   const assetDocuments = [];
+  const imageFailures = [];
+  const failedImageIndexes = new Set();
   let imageIndex = 0;
   for (let i = 0; i < result.state.blocks.length; i += 1) {
     const b = result.state.blocks[i];
     if (b.type !== "image" || !b.pending) continue;
     imageIndex += 1;
-    const made = await imageGen.generateImage({ description: b.pending.description });
+    /* An illustration that cannot be made must not cost the scholar the rest
+       of the turn: the text edits the agent made alongside it are good work.
+       The picture is dropped from the proposal and said out loud instead. */
+    let made;
+    try {
+      made = await imageGen.generateImage({ description: b.pending.description });
+    } catch (error) {
+      console.warn("[story-agent] illustration could not be generated:", error.message);
+      imageFailures.push(b.pending.description);
+      failedImageIndexes.add(i);
+      continue;
+    }
     const uploaded = await editorial.uploadBufferToCloudStorage({
       scholarId, profileId, storyId: storyDoc._id, storySlug: storyDoc.slug, kind: "inline",
       uploadKey: `agent-${Date.now()}-${imageIndex}`,
@@ -134,6 +148,12 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
       caption, alt: b.pending.alt || b.pending.description, width: "body", generated: true, changed: true, model: made.model, description: b.pending.description,
     };
   }
+  if (failedImageIndexes.size) {
+    /* The picture is gone from the proposal, so it must be gone from the diff
+       the scholar reads too, and the blocks after it renumbered. */
+    result.state.blocks = result.state.blocks.filter((_, i) => !failedImageIndexes.has(i));
+    result.changes = agent.diffStates(stateBefore, result.state);
+  }
   if (assetDocuments.length) await editorial.insertAssetDocuments(db.collection(COLLECTIONS.editorialImageAssets), assetDocuments);
 
   /* Reading level over the whole draft as it would be. */
@@ -148,11 +168,18 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
     unsupported: verdicts.filter((v) => v === "unsupported").length,
     readability: readability ? { verdict: readability.verdict, fkGrade: readability.fkGrade, targetGrade: readability.targetGrade } : null,
     imagesGenerated: newImages.length,
+    imagesFailed: imageFailures.length,
     refused: result.calls.filter((c) => String(c.result).startsWith("refused")).length,
   };
   const warnings = [];
   if (checks.unsupported) warnings.push(`${checks.unsupported} changed paragraph${checks.unsupported === 1 ? " is" : "s are"} not supported by the paper.`);
   if (checks.partial) warnings.push(`${checks.partial} changed paragraph${checks.partial === 1 ? " is" : "s are"} only partly supported; the claims are marked.`);
+  if (imageFailures.length) {
+    warnings.push(
+      `${imageFailures.length === 1 ? "An illustration" : `${imageFailures.length} illustrations`} could not be generated, so ` +
+      `${imageFailures.length === 1 ? "it was" : "they were"} left out. Everything else in this change stands.`,
+    );
+  }
   if (readability && readability.verdict !== VERDICT.PASS && readability.reason) warnings.push(`After this change the draft ${readability.reason}.`);
   if (!passages.length && changed.length) warnings.push("This story has no source paper on record, so nothing the agent wrote could be checked against one.");
 
