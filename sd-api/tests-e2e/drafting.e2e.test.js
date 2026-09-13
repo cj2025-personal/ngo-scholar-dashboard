@@ -491,6 +491,71 @@ test("the agent refuses first person and a stale proposal cannot be applied", as
   assert.match(stale.data.error, /changed after this proposal/);
 });
 
+test("a stale save is refused rather than overwriting, and an earlier version can be put back", async () => {
+  const read = await call("GET", `/api/editorial-stories/${state.storyId}`);
+  const story = read.data.story;
+  assert.ok(Number.isInteger(story.version) && story.version >= 1, `the story carries a version: ${story.version}`);
+  const startedAt = story.version;
+
+  const save = (baseVersion, title) => {
+    const f = new FormData();
+    f.set("title", title);
+    f.set("inlineImageKeys", "[]");
+    f.set("retainImageIds", "[]");
+    f.set("status", story.status);
+    if (baseVersion !== null) f.set("baseVersion", String(baseVersion));
+    return call("PATCH", `/api/editorial-stories/${state.storyId}`, { form: f });
+  };
+
+  /* A save made against the version the editor was reading lands. */
+  const first = await save(startedAt, "Edited by the scholar");
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(first.data.story.version, startedAt + 1);
+  assert.equal(first.data.story.title, "Edited by the scholar");
+
+  /* The same save again, from an editor that never reloaded, is refused
+     instead of quietly erasing the version that landed in between. */
+  const stale = await save(startedAt, "Written from a stale tab");
+  assert.equal(stale.status, 409, JSON.stringify(stale.data));
+  assert.match(stale.data.error, /changed/);
+  assert.match(stale.data.error, new RegExp(`version ${startedAt + 1}`));
+  const unchanged = await call("GET", `/api/editorial-stories/${state.storyId}`);
+  assert.equal(unchanged.data.story.title, "Edited by the scholar", "the stale save wrote nothing");
+  assert.equal(unchanged.data.story.version, startedAt + 1);
+
+  /* A malformed claim is refused outright rather than silently unguarded. */
+  const nonsense = await save("not-a-version", "x");
+  assert.equal(nonsense.status, 400, JSON.stringify(nonsense.data));
+
+  /* The history holds every version, with the machine's draft at version 1. */
+  const history = await call("GET", `/api/editorial-stories/${state.storyId}/revisions`);
+  assert.equal(history.status, 200, JSON.stringify(history.data));
+  const versions = history.data.revisions;
+  assert.ok(versions.length >= 2, JSON.stringify(versions.map((v) => v.version)));
+  assert.equal(history.data.version, startedAt + 1);
+  const first_ = versions.find((v) => v.version === 1);
+  assert.ok(first_, "version 1 is kept");
+  assert.equal(first_.source, "scholar", "a person saved this story, even though a job wrote the words");
+  assert.equal(first_.createdBy, EMAIL);
+  assert.ok(versions.some((v) => v.source === "agent"), "the agent's accepted change is on the record");
+  assert.ok(versions.every((v) => v.words >= 0 && !("body_blocks" in v)), "a listing carries no bodies");
+
+  /* Putting version 1 back is itself a new version, so the restore can be undone. */
+  const restored = await call("POST", `/api/editorial-stories/${state.storyId}/revisions/1/restore`, { body: { baseVersion: startedAt + 1 } });
+  assert.equal(restored.status, 200, JSON.stringify(restored.data));
+  assert.equal(restored.data.restoredFrom, 1);
+  assert.equal(restored.data.version, startedAt + 2);
+  assert.equal(restored.data.story.version, startedAt + 2);
+  assert.match(restored.data.story.title, /^What the paper found/, "the machine's title is back");
+
+  const afterRestore = await call("GET", `/api/editorial-stories/${state.storyId}/revisions`);
+  assert.ok(afterRestore.data.revisions.some((v) => v.source === "restore" && /Restored version 1/.test(v.note || "")));
+
+  /* A version that was never kept cannot be restored. */
+  const missing = await call("POST", `/api/editorial-stories/${state.storyId}/revisions/9999/restore`, { body: {} });
+  assert.equal(missing.status, 404);
+});
+
 test("the scholar deletes a draft and a published story: gone from every read, and only the owner can", async () => {
   const draftId = state.outlineStoryId;
   const anon = await call("DELETE", `/api/editorial-stories/${draftId}`, { cookieValue: "nope" });

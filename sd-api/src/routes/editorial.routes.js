@@ -8,6 +8,8 @@ const {
   createEditorialStory,
   deleteEditorialStory,
   getEditorialStory,
+  listStoryRevisions,
+  restoreStoryRevision,
   getPublishedStoryBySlug,
   listEditorialStories,
   streamEditorialImage,
@@ -148,6 +150,38 @@ router.delete(
       scholarId: req.auth.user.scholar_id,
       profileId: req.auth.user.profile_id,
       user: req.auth.user,
+    }));
+  }),
+);
+
+/* ── versions ────────────────────────────────────────────────────────────── */
+
+/** The story's history: what changed, when, and by whom. */
+router.get(
+  "/:storyId/revisions",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await listStoryRevisions({
+      storyId: req.params.storyId,
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
+      limit: req.query.limit,
+    }));
+  }),
+);
+
+/** Put an earlier version back, as a new version. History is never rewritten. */
+router.post(
+  "/:storyId/revisions/:version/restore",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await restoreStoryRevision({
+      storyId: req.params.storyId,
+      version: req.params.version,
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
+      user: req.auth.user,
+      baseVersion: req.body?.baseVersion ?? null,
     }));
   }),
 );

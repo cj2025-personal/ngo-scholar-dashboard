@@ -18,6 +18,10 @@ const COLLECTIONS = {
   /* One row per instruction the scholar gives the story agent: the ask, the
      tool calls, the proposed change, and whether it was accepted. */
   storyTurns: "scholar_story_turns",
+  /* One row per version of a story: the content as of that version, and who
+     made it. What makes "put back the version before the agent touched it"
+     possible, and what turns a lost write into a refusal the scholar sees. */
+  storyRevisions: "scholar_editorial_revisions",
 };
 
 let clientPromise;
@@ -230,6 +234,10 @@ async function ensureIndexes() {
       await db.collection(COLLECTIONS.storyTurns).createIndex(
         { story_id: 1, created_at: -1 },
         { name: "idx_scholar_story_turns_story_created" },
+      );
+      await db.collection(COLLECTIONS.storyRevisions).createIndex(
+        { story_id: 1, version: -1 },
+        { name: "idx_scholar_editorial_revisions_story_version", unique: true },
       );
     })();
   }

@@ -11,6 +11,7 @@ const { serializeMongoValue } = require("../lib/serialize");
 const { ownedByScholarFilter } = require("../lib/identity");
 const { buildByline } = require("../lib/byline");
 const { humanPublisher, makesPublic } = require("../lib/actor");
+const storyVersion = require("../lib/storyVersion");
 const {
   normalizeBlockProvenance,
   presentBlockProvenance,
@@ -922,6 +923,8 @@ function mapStoryDocument(story, author = null, provenance = null) {
     bodyBlocks,
     status: story.status || "draft",
     effectiveStatus: getEffectivePublicationStatus(story, now),
+    /* What a save must be made against. The editor sends it back. */
+    version: storyVersion.versionOf(story),
     slug: story.slug || slugify(title),
     createdAt: story.createdAt || null,
     updatedAt: story.updatedAt || null,
@@ -1174,6 +1177,141 @@ function resolvePublishedAt({
  * points at it keeps pointing somewhere. Only the owner can delete; the
  * agent never calls this.
  */
+/**
+ * Append one version of a story to its history.
+ *
+ * Consecutive saves by the same person, close together, rewrite the last row
+ * rather than adding one, so an hour of autosaved typing reads as save points
+ * instead of hundreds of near-identical entries. An agent's version never
+ * collapses into a person's, because "who changed this" has to stay
+ * answerable. Version 1 is never pruned: it is the draft as the machine wrote
+ * it, and it is the one a scholar is most likely to want back.
+ */
+async function appendRevision(db, { storyId, profileId, story, version, source, actor, note, turnId, jobId, at }) {
+  const revisions = db.collection(COLLECTIONS.storyRevisions);
+  const doc = storyVersion.revisionDocument({ storyId, profileId, story, version, source, actor, note, turnId, jobId, at });
+  const last = await revisions.findOne({ story_id: storyId }, { sort: { version: -1 } });
+
+  if (storyVersion.shouldCoalesce({ last, source, actor, turnId, at })) {
+    const { created_at: _keepOriginalTime, ...rest } = doc;
+    await revisions.updateOne({ _id: last._id }, { $set: { ...rest, coalesced_at: at } });
+    return;
+  }
+
+  await revisions.insertOne(doc);
+  const extra = await revisions
+    .find({ story_id: storyId, version: { $ne: 1 } }, { projection: { _id: 1 }, sort: { version: -1 }, skip: storyVersion.KEEP_REVISIONS })
+    .toArray();
+  if (extra.length) await revisions.deleteMany({ _id: { $in: extra.map((d) => d._id) } });
+}
+
+/**
+ * The one way this service changes a story's content.
+ *
+ * The write is conditional on the version the caller read. If the story moved
+ * on in between — the agent's change landed, another tab saved — nothing is
+ * written and the caller is told what happened, rather than quietly winning.
+ * Every accepted write becomes a version in the history.
+ *
+ * @param {object} p
+ * @param {object} p.story        the story as read, carrying its version
+ * @param {object} p.set          fields to write
+ * @param {string} p.source       storyVersion.SOURCE.*
+ * @param {string} p.actor        who caused it
+ * @param {number|null} p.baseVersion  the version the caller edited, or null for an unguarded write
+ * @returns {Promise<{version: number, at: Date}>}
+ */
+async function commitStoryWrite(db, { story, set, source, actor, note = null, turnId = null, jobId = null, baseVersion = null }) {
+  const collection = getStoryCollection(db);
+  const at = new Date();
+  const version = storyVersion.versionOf(story) + 1;
+
+  const result = await collection.updateOne(
+    storyVersion.guardFilter(story._id, baseVersion),
+    { $set: { ...set, version, updatedAt: at } },
+  );
+
+  if (result.matchedCount === 0) {
+    const current = await collection.findOne({ _id: story._id }, { projection: { version: 1, updated_by: 1 } });
+    if (!current) throw new ApiError(404, "Story not found.");
+    throw new ApiError(409, storyVersion.conflictSentence({
+      current: storyVersion.versionOf(current),
+      who: current.updated_by && current.updated_by !== actor ? "elsewhere" : null,
+    }));
+  }
+
+  await appendRevision(db, {
+    storyId: story._id, profileId: story.profile_id, story: { ...story, ...set },
+    version, source, actor, note, turnId, jobId, at,
+  });
+  return { version, at };
+}
+
+/** The history panel's list: what changed, when, and by whom. Never whole bodies. */
+async function listStoryRevisions({ storyId, scholarId, profileId, limit = 30 }) {
+  const story = await findOwnedStory({ storyId, scholarId, profileId });
+  const db = await getDb();
+  const docs = await db
+    .collection(COLLECTIONS.storyRevisions)
+    .find({ story_id: story._id }, { sort: { version: -1 }, limit: Math.min(Number(limit) || 30, 100) })
+    .toArray();
+  return serializeMongoValue({
+    version: storyVersion.versionOf(story),
+    revisions: docs.map(storyVersion.viewRevision),
+  });
+}
+
+/**
+ * Put an earlier version back, as a new version.
+ *
+ * History is never rewritten: restoring version 3 onto version 9 produces
+ * version 10 whose content is version 3's, so the restore itself can be undone.
+ * Pictures that have since been released are dropped rather than restored as
+ * broken references, and the scholar is told how many.
+ */
+async function restoreStoryRevision({ storyId, version, scholarId, profileId, user, baseVersion = null }) {
+  const story = await findOwnedStory({ storyId, scholarId, profileId });
+  const db = await getDb();
+  const wanted = Number(version);
+  if (!storyVersion.isVersion(wanted)) throw new ApiError(400, "That is not a version number.");
+  const revision = await db.collection(COLLECTIONS.storyRevisions).findOne({ story_id: story._id, version: wanted });
+  if (!revision) throw new ApiError(404, "That version is no longer kept.");
+
+  const liveImageIds = new Set((Array.isArray(story.images) ? story.images : []).map((img) => String(img.file_id)));
+  const blocks = (revision.body_blocks || []).filter((b) => b.type !== "image" || liveImageIds.has(String(b.image_id || b.imageId)));
+  const dropped = (revision.body_blocks || []).length - blocks.length;
+
+  const content = buildPlainTextContentFromBlocks(blocks);
+  const { version: newVersion } = await commitStoryWrite(db, {
+    story,
+    set: {
+      title: revision.title || story.title,
+      subtitle: revision.subtitle || "",
+      excerpt: revision.excerpt || "",
+      content,
+      body_blocks: blocks,
+      updated_by: user?.login_email || scholarId,
+      editor_version: 4,
+    },
+    source: storyVersion.SOURCE.RESTORE,
+    actor: user?.login_email || scholarId,
+    note: `Restored version ${wanted}`,
+    baseVersion,
+  });
+
+  const updated = await getStoryCollection(db).findOne({ _id: story._id });
+  const [author, provenance] = await Promise.all([
+    resolveStoryAuthor(db, updated.profile_id),
+    resolveStoryProvenance(db, updated.provenance),
+  ]);
+  return serializeMongoValue({
+    story: mapStoryDocument(updated, author, provenance),
+    restoredFrom: wanted,
+    version: newVersion,
+    imagesDropped: dropped,
+  });
+}
+
 async function deleteEditorialStory({ storyId, scholarId, profileId, user }) {
   const story = await findOwnedStory({ storyId, scholarId, profileId });
   const db = await getDb();
@@ -1342,11 +1480,19 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
       provenance,
       source: "native_dashboard_editor",
       editor_version: 4,
+      version: 1,
     };
 
     await insertAssetDocuments(assetCollection, uploadedAssetDocuments);
     await collection.insertOne(story);
     storyInserted = true;
+    await appendRevision(db, {
+      storyId, profileId, story, version: 1,
+      /* A person saved this, even when the words came from a draft job. The
+         job is recorded alongside, so where it came from is not lost. */
+      source: storyVersion.SOURCE.SCHOLAR,
+      actor: story.created_by, note: "First version", turnId: null, jobId: body.draftJobId || null, at: now,
+    });
     await linkDraftJob({ draftJobId: body.draftJobId, profileId, storyId });
   } catch (error) {
     if (!storyInserted) {
@@ -1534,29 +1680,29 @@ async function updateEditorialStory({
     };
 
     await insertAssetDocuments(assetCollection, uploadedAssetDocuments);
-    await collection.updateOne(
-      { _id: existingStory._id },
-      {
-        $set: {
-          title: nextStory.title,
-          subtitle: nextStory.subtitle,
-          excerpt: nextStory.excerpt,
-          content: nextStory.content,
-          body_blocks: nextStory.body_blocks,
-          status: nextStory.status,
-          slug: nextStory.slug,
-          images: nextStory.images,
-          updated_by: nextStory.updated_by,
-          updatedAt: nextStory.updatedAt,
-          published_at: nextStory.published_at,
-          scheduled_for: nextStory.scheduled_for,
-          unpublished_at: nextStory.unpublished_at,
-          published_by: nextStory.published_by,
-          provenance: nextStory.provenance,
-          editor_version: nextStory.editor_version,
-        },
+    await commitStoryWrite(db, {
+      story: existingStory,
+      set: {
+        title: nextStory.title,
+        subtitle: nextStory.subtitle,
+        excerpt: nextStory.excerpt,
+        content: nextStory.content,
+        body_blocks: nextStory.body_blocks,
+        status: nextStory.status,
+        slug: nextStory.slug,
+        images: nextStory.images,
+        updated_by: nextStory.updated_by,
+        published_at: nextStory.published_at,
+        scheduled_for: nextStory.scheduled_for,
+        unpublished_at: nextStory.unpublished_at,
+        published_by: nextStory.published_by,
+        provenance: nextStory.provenance,
+        editor_version: nextStory.editor_version,
       },
-    );
+      source: storyVersion.SOURCE.SCHOLAR,
+      actor: nextStory.updated_by,
+      baseVersion: storyVersion.parseBaseVersion(body.baseVersion),
+    });
     storyUpdated = true;
     await linkDraftJob({ draftJobId: body.draftJobId, profileId, storyId: existingStory._id });
   } catch (error) {
@@ -1703,7 +1849,7 @@ async function streamPublishedEditorialImage({ fileId, res }) {
  * Images the agent generated were uploaded when the proposal was made; they
  * arrive here as `newImages` and become part of the story only now.
  */
-async function applyStoryRevision({ storyId, scholarId, profileId, user, fields = {}, blocks, newImages = [] }) {
+async function applyStoryRevision({ storyId, scholarId, profileId, user, fields = {}, blocks, newImages = [], baseVersion = null, turnId = null, note = null }) {
   const db = await getDb();
   const collection = getStoryCollection(db);
   const assetCollection = getImageAssetCollection(db);
@@ -1735,10 +1881,15 @@ async function applyStoryRevision({ storyId, scholarId, profileId, user, fields 
   const nextImages = existingImages.filter((img) => img.kind === "cover" || referencedImageIds.has(String(img.file_id)));
   const removedImages = existingImages.filter((img) => img.kind !== "cover" && !referencedImageIds.has(String(img.file_id)));
 
-  await collection.updateOne(
-    { _id: existingStory._id },
-    { $set: { title, subtitle, excerpt, content: plainTextContent, body_blocks: bodyBlocks, images: nextImages, updated_by: updatedBy, updatedAt: now, editor_version: 4 } },
-  );
+  await commitStoryWrite(db, {
+    story: existingStory,
+    set: { title, subtitle, excerpt, content: plainTextContent, body_blocks: bodyBlocks, images: nextImages, updated_by: updatedBy, editor_version: 4 },
+    source: storyVersion.SOURCE.AGENT,
+    actor: updatedBy,
+    turnId: turnId || null,
+    note: note || null,
+    baseVersion,
+  });
 
   try {
     await syncAssetDocuments({
@@ -1807,6 +1958,19 @@ async function createStoryFromDraft({ job, draft }) {
     draft_readability: draft.readability || null,
     source: "drafter",
     editor_version: 4,
+    version: 1,
+  });
+  await appendRevision(db, {
+    storyId,
+    profileId: job.profile_id,
+    story: { title, subtitle: normalizeString(draft.subtitle), excerpt: buildExcerpt(draft.excerpt, plainTextContent), content: plainTextContent, body_blocks: bodyBlocks, status: "draft" },
+    version: 1,
+    source: storyVersion.SOURCE.DRAFTER,
+    actor: `drafter:${job.graph_version || "draft-graph"}`,
+    note: "The draft as the machine wrote it",
+    turnId: null,
+    jobId: job._id || null,
+    at: now,
   });
   return { storyId, slug };
 }
@@ -1814,6 +1978,9 @@ async function createStoryFromDraft({ job, draft }) {
 module.exports = {
   applyStoryRevision,
   deleteEditorialStory,
+  listStoryRevisions,
+  restoreStoryRevision,
+  commitStoryWrite,
   createStoryFromDraft,
   createEditorialStory,
   getEditorialStory,

@@ -28,7 +28,7 @@
  */
 
 /** Bump when ownership changes. Both repos assert this value. */
-const MANIFEST_VERSION = "2026-09-12.1";
+const MANIFEST_VERSION = "2026-09-13.1";
 
 const OWNER = {
   SD_API: "sd-api",
@@ -68,6 +68,10 @@ const COLLECTION_OWNERSHIP = {
      cannot appear without this manifest changing. */
   scholar_draft_jobs: OWNER.SD_API,
   scholar_draft_runs: OWNER.SD_API,
+  /* Every version of a story, and who made it. Owned here because the story
+     itself is; listed so a second writer cannot appear without this manifest
+     changing, which is the whole point of the file. */
+  scholar_editorial_revisions: OWNER.SD_API,
 
   /* Student-facing content. Authored through the existing editor. */
   scholarstories: OWNER.USER_DASHBOARD_API,

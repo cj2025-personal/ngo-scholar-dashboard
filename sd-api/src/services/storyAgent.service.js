@@ -22,6 +22,7 @@ const { ObjectId } = require("mongodb");
 
 const { COLLECTIONS, getCollections } = require("../db/mongo");
 const { ApiError } = require("../lib/api-error");
+const storyVersion = require("../lib/storyVersion");
 const { serializeMongoValue } = require("../lib/serialize");
 const composer = require("../lib/draftComposer");
 const plan = require("../lib/draftPlan");
@@ -189,6 +190,8 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
     story_id: storyDoc._id,
     profile_id: profileId,
     story_updated_at: storyDoc.updatedAt || null,
+    /* The version the proposal was computed against. Accepting checks it. */
+    story_version: storyVersion.versionOf(storyDoc),
     instruction,
     summary: result.summary,
     changes: result.changes,
@@ -244,17 +247,29 @@ async function resolveStoryTurn({ storyId, turnId, scholarId, profileId, user, a
     return { turn: viewTurn({ ...turn, status: TURN_STATUS.REJECTED, resolved_at: now }) };
   }
 
-  /* Accept: only onto the story the proposal was made against. */
-  const then = turn.story_updated_at ? new Date(turn.story_updated_at).getTime() : null;
-  const current = storyDoc.updatedAt ? new Date(storyDoc.updatedAt).getTime() : null;
-  if (then !== null && current !== null && then !== current) {
+  /* Accept: only onto the story the proposal was made against.
+     The version is the authority; the timestamp is kept for older turns that
+     were recorded before versions existed. */
+  const proposedAgainst = storyVersion.isVersion(turn.story_version) ? turn.story_version : null;
+  const nowAt = storyVersion.versionOf(storyDoc);
+  if (proposedAgainst !== null && proposedAgainst !== nowAt) {
     throw new ApiError(409, "The story changed after this proposal was made. Ask again so the agent works from the current text.");
+  }
+  if (proposedAgainst === null) {
+    const then = turn.story_updated_at ? new Date(turn.story_updated_at).getTime() : null;
+    const current = storyDoc.updatedAt ? new Date(storyDoc.updatedAt).getTime() : null;
+    if (then !== null && current !== null && then !== current) {
+      throw new ApiError(409, "The story changed after this proposal was made. Ask again so the agent works from the current text.");
+    }
   }
   const applied = await editorial.applyStoryRevision({
     storyId, scholarId, profileId, user,
     fields: { title: turn.proposal.title, subtitle: turn.proposal.subtitle, excerpt: turn.proposal.excerpt },
     blocks: turn.proposal.blocks,
     newImages: turn.proposal.newImages || [],
+    baseVersion: proposedAgainst,
+    turnId: turn._id,
+    note: turn.instruction ? String(turn.instruction).slice(0, 200) : null,
   });
   await turns.updateOne({ _id: turn._id }, { $set: { status: TURN_STATUS.ACCEPTED, resolved_at: now } });
   return { turn: viewTurn({ ...turn, status: TURN_STATUS.ACCEPTED, resolved_at: now }, { withProposal: false }), story: applied.story };
