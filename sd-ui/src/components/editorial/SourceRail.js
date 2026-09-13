@@ -40,6 +40,26 @@ export default function SourceRail({ block, passages, provenance }) {
           </p>
         </div>
       ))}
+      {block.fidelity?.claims?.length ? (
+        <>
+          <div className="sr-head" style={{ marginTop: 6 }}><span className="sc-kicker">Claim by claim</span><span className="st-todo-detail">{block.fidelity.claims.filter((c) => c.verdict === "supported").length} of {block.fidelity.claims.length} supported</span></div>
+          <ol className="sr-claims">
+            {block.fidelity.claims.map((c, i) => (
+              <li key={i} className={c.verdict === "supported" ? "sr-claim" : "sr-claim is-bad"}>
+                <span className={`st-dot ${c.verdict === "supported" ? "is-ok" : "is-bad"}`} aria-hidden />
+                <div>
+                  <div className="sr-claim-text">“{c.text}”</div>
+                  {c.verdict === "supported" ? (
+                    <div className="sr-claim-ev">{c.passageIds?.join(", ")}: <i>{c.evidence}</i></div>
+                  ) : (
+                    <div className="sr-claim-ev is-bad">Not in the passages this paragraph cites. Rewrite it from the paper, remove it, or mark the paragraph as your own view.</div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : block.fidelity ? <p className="st-muted">Checked as a whole: {block.fidelity.verdict}.</p> : null}
       {block.traceable === false ? <p className="st-muted">You have edited this paragraph beyond its source; the passages above are what it was drafted from.</p> : null}
     </div>
   );

@@ -22,6 +22,7 @@ const SOURCE_LABEL = {
   agent: "The agent",
   drafter: "The drafter",
   restore: "Restored",
+  levels: "Reading levels",
 };
 
 function when(value) {

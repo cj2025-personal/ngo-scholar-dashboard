@@ -57,6 +57,8 @@ async function start() {
       DRAFTING_POLL_MS: "150",
       DRAFT_DAILY_CAP: "10",
       DRAFTING_IMAGES: "true",
+      RECORD_FAKE: JSON.stringify({ "10.1000/src-e2e-1": { "updated-by": [{ type: "retraction", DOI: "10.1000/notice-1", label: "Retraction", updated: { "date-time": "2026-09-01T00:00:00Z" } }] } }),
+      RECORD_SWEEP_TOKEN: "sweep-test-token",
       CORS_ORIGIN: `http://localhost:${process.env.E2E_UI_PORT || 3103},http://127.0.0.1:${process.env.E2E_UI_PORT || 3103}`,
       GCP_PROJECT_ID: "",
       GCP_SERVICE_ACCOUNT_JSON: "",

@@ -1102,6 +1102,10 @@ function mapStorySummary(story) {
     wordCount: mapped.wordCount,
     readingTimeMinutes: mapped.readingTimeMinutes,
     coverImage: mapped.coverImage,
+    provenance: story.provenance ? { sourceId: story.provenance.source_id || null, title: story.provenance.source_title || null } : null,
+    /* Enough for a to-do line, not the whole picture. */
+    record: mapped.record ? { headline: mapped.record.headline, acknowledgedAt: mapped.record.acknowledgedAt, alerts: mapped.record.alerts.length } : null,
+    levels: { written: mapped.levels.length, waiting: mapped.levels.filter((l) => !l.approved && !l.stale).length, stale: mapped.levels.filter((l) => l.stale).length },
   };
 }
 

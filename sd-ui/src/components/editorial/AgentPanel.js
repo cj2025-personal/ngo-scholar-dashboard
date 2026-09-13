@@ -122,7 +122,7 @@ function Working() {
   );
 }
 
-export default function AgentPanel({ storyId, context = null, dirty = false, onStoryChanged, onProposalPending }) {
+export default function AgentPanel({ storyId, context = null, dirty = false, prefill = "", onPrefillTaken, onStoryChanged, onProposalPending }) {
   const [turns, setTurns] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
@@ -155,6 +155,19 @@ export default function AgentPanel({ storyId, context = null, dirty = false, onS
      would either ignore it or overwrite it, so the composer waits. A draft
      autosaves within a couple of seconds, so this is usually invisible. */
   const blocked = dirty;
+  /* An instruction handed in from elsewhere, such as the record banner. */
+  useEffect(() => {
+    if (!prefill) return undefined;
+    const t = setTimeout(() => {
+      setInstruction(prefill);
+      onPrefillTaken?.();
+      inputRef.current?.focus();
+      grow();
+    }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
+
   const contextUsable = Boolean(context && context.type !== "image" && context.index);
   const mentionsBlock = (text) => /(?:block|paragraph|section|heading)\s+\d+/i.test(text);
 

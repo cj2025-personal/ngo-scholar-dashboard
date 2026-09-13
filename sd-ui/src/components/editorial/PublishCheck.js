@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { FaCheck, FaEye, FaTriangleExclamation } from "react-icons/fa6";
+
+import { getStoryEvidence } from "@/lib/drafting";
 
 import { AUDIENCE_TARGETS, normaliseAudience } from "@/lib/readability";
 import { summariseBlocks } from "@/components/editorial/ChecksRail";
@@ -14,8 +17,22 @@ import { summariseBlocks } from "@/components/editorial/ChecksRail";
  * how the story will be attributed. Publishing is still one click; this is
  * the look before it.
  */
-export default function PublishCheck({ blocks, assessment, audience, author, provenance, onClose, onPublish, onSchedule, onGoTo, busy }) {
+export default function PublishCheck({ blocks, assessment, audience, author, provenance, storyId = null, levels = [], record = null, draftChecks = null, onClose, onPublish, onSchedule, onGoTo, busy }) {
   const s = summariseBlocks(blocks);
+  /* The rule checks on the text as it is now, not as it was drafted. */
+  const [fresh, setFresh] = useState(null);
+  useEffect(() => {
+    if (!storyId) return undefined;
+    let alive = true;
+    getStoryEvidence(storyId).then((r) => { if (alive && r.ok) setFresh(r.data); });
+    return () => { alive = false; };
+  }, [storyId]);
+  const numbers = fresh?.checks?.numbers || draftChecks?.numbers || null;
+  const limitations = fresh?.checks?.limitations || draftChecks?.limitations || null;
+  const grave = (record?.alerts || []).some((a) => a.kind === "retracted" || a.kind === "withdrawn");
+  const levelsLive = (levels || []).filter((l) => l.approved && !l.stale).length;
+  const levelsWaiting = (levels || []).filter((l) => !l.approved && !l.stale).length;
+  const levelsStale = (levels || []).filter((l) => l.stale).length;
   const target = AUDIENCE_TARGETS[normaliseAudience(audience)];
   const firstAttention = blocks.findIndex((b) => b.fidelity && b.fidelity.verdict !== "supported" && Array.isArray(b.sourceRefs) && b.sourceRefs.length);
   const firstLost = blocks.findIndex((b) => b.traceable === false);
@@ -41,6 +58,33 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
       detail: s.edited === 0 ? "Readers can open the passage behind every drafted paragraph." : "You rewrote it from scratch, so it will carry no source chip. That is fine if it is your own view.",
       action: s.edited ? { label: "Go to it", onClick: () => onGoTo?.(firstLost) } : null,
     },
+    ...(record?.alerts?.length ? [{
+      /* A retraction blocks publishing until the scholar has marked it as
+         seen on the banner. That act is recorded; publishing over it is then
+         their decision, and a deliberate one. */
+      ok: false,
+      warn: !grave || Boolean(record.acknowledgedAt),
+      title: grave ? "The paper this article rests on has been withdrawn from the record" : "The paper this article rests on has been corrected",
+      detail: `${record.headline} Publishing without a notice would put your name over claims the record has changed.${grave && !record.acknowledgedAt ? " Mark it as seen on the banner above to publish anyway." : ""}`,
+    }] : []),
+    {
+      ok: numbers ? numbers.ok : true,
+      title: numbers ? (numbers.ok ? `Every number is in the paper (${numbers.numbers} checked${fresh ? ", on the current text" : ""})` : `${numbers.misses.length} number${numbers.misses.length === 1 ? "" : "s"} not in the passages cited`) : "Numbers not checked",
+      detail: numbers && !numbers.ok ? `${numbers.misses.map((m) => `${m.number} in block ${m.block}`).join(", ")}. A fluent wrong number is the mistake that gets past a reader.` : "A rule, not a model, checked every figure against the passages it cites.",
+      action: numbers && !numbers.ok ? { label: "Go to it", onClick: () => onGoTo?.(numbers.misses[0].block - 1) } : null,
+    },
+    ...(limitations && limitations.ok !== null ? [{
+      ok: limitations.ok,
+      warn: !limitations.ok,
+      title: limitations.ok ? "The paper's own caveats are in the article" : "The paper's own caveats are not in the article",
+      detail: limitations.sentence,
+    }] : []),
+    {
+      ok: true,
+      warn: levelsStale > 0 || (levels || []).length === 0,
+      title: (levels || []).length === 0 ? "Not yet written for other reading ages" : `${levelsLive} reading level${levelsLive === 1 ? "" : "s"} live for readers${levelsWaiting ? `, ${levelsWaiting} waiting for your approval` : ""}${levelsStale ? `, ${levelsStale} out of date` : ""}`,
+      detail: (levels || []).length === 0 ? "Readers of other ages get the article as written. You can write it for every age from the bar above the article." : levelsStale ? "An out-of-date level is never shown. Rewrite it from the bar above the article." : "Readers can switch between the levels you approved.",
+    },
   ];
   const blocking = items.some((i) => !i.ok && !i.warn);
 
@@ -61,6 +105,13 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
               </div>
             </div>
           ))}
+          <div className="pc-item">
+            <span className="pc-ic is-info" aria-hidden><FaCheck size={11} /></span>
+            <div>
+              <b>What goes on the record</b>
+              <p>{fresh ? fresh.summary : "Every claim, the passage it rests on, and your approval are recorded and signed with the article, for anyone to verify."}</p>
+            </div>
+          </div>
           <div className="pc-item">
             <span className="pc-ic is-info" aria-hidden><FaEye size={11} /></span>
             <div style={{ flex: 1 }}>

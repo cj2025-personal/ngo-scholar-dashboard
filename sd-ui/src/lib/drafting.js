@@ -76,11 +76,11 @@ export async function draftFromSource({ origin, sourceId, audience }) {
  * `awaiting_outline`; with `createStory` (the default) the finished draft
  * becomes a draft story and the job carries its `storyId`.
  */
-export async function createDraftJob({ origin, sourceId, audience, brief = null, approveOutline = false, createStory = true }) {
+export async function createDraftJob({ origin, sourceId, audience, brief = null, approveOutline = false, createStory = true, levels = false }) {
   return request("/api/drafting/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ origin, sourceId, audience, brief, approveOutline, createStory }),
+    body: JSON.stringify({ origin, sourceId, audience, brief, approveOutline, createStory, levels }),
   });
 }
 
@@ -128,6 +128,45 @@ export async function restoreStoryRevision(storyId, version, baseVersion = null)
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ baseVersion }),
   });
+}
+
+/* ── evidence, levels, the record ────────────────────────────────────────── */
+
+/** The scholar's evidence view: the ledger as it stands, the rule checks, and whether it is signed. */
+export async function getStoryEvidence(storyId) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/evidence`, { method: "GET" });
+}
+
+/** The signed record behind a public story. Anyone may fetch it. */
+export async function getPublicEvidence(slug) {
+  return request(`/api/editorial-stories/public/slug/${encodeURIComponent(slug)}/evidence`, { method: "GET" });
+}
+
+export function publicEvidenceUrl(slug) {
+  return `${AUTH_API_URL}/api/editorial-stories/public/slug/${encodeURIComponent(slug)}/evidence`;
+}
+
+/** Write the story for other reading ages. A version of the story. */
+export async function generateStoryLevels(storyId, { audiences = null, baseVersion = null } = {}) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/levels`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiences, baseVersion }),
+  });
+}
+
+/** Approve levels for readers. */
+export async function approveStoryLevels(storyId, { audiences = null, baseVersion = null } = {}) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/levels/approve`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiences, baseVersion }),
+  });
+}
+
+/** Ask now whether the record has moved against this story's source. */
+export async function checkStoryRecord(storyId) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/record/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+}
+
+export async function acknowledgeStoryRecord(storyId) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/record/acknowledge`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
 }
 
 /** Delete a story, draft or published. Gone from every read at once; the owner only. */
@@ -267,6 +306,7 @@ export function watchDraftJob(jobId, { onProgress = () => {}, onSettled, onError
 }
 
 const STEP_LABELS = {
+  draft_levels: "Writing it for every reading age…",
   pick_source: "Reading the paper…",
   plan_outline: "Planning the article's sections…",
   draft_blocks: "Drafting sections…",

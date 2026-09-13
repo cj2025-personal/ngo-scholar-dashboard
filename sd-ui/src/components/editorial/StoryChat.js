@@ -77,6 +77,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
   const [inventory, setInventory] = useState(null);
   const [paper, setPaper] = useState(initialSource);
   const [audience, setAudience] = useState(DEFAULT_AUDIENCE);
+  const [everyAge, setEveryAge] = useState(false);
   const [messages, setMessages] = useState([]);
   const [job, setJob] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -189,7 +190,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       return;
     }
     setProgress("Reading the paper…");
-    const r = await createDraftJob({ origin: selectedPaper.origin, sourceId: selectedPaper.id, audience, brief: ask, approveOutline: true, createStory: true });
+    const r = await createDraftJob({ origin: selectedPaper.origin, sourceId: selectedPaper.id, audience, brief: ask, approveOutline: true, createStory: true, levels: everyAge });
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     const j = r.data.job;
     setJob(j);
@@ -267,6 +268,10 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
             <select aria-label="Reader age" value={audience} disabled={locked} onChange={(e) => setAudience(e.target.value)}>
               {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label} · reads at grade {a.grade}</option>)}
             </select>
+          </label>
+          <label className="ch-opt ch-check" title="After the article, write it for every other reading age too. More model calls; you approve each level before readers see it.">
+            <input type="checkbox" checked={everyAge} disabled={locked} onChange={(e) => setEveryAge(e.target.checked)} />
+            <span>Also write it for every age</span>
           </label>
           {locked ? <span className="st-todo-detail ch-locked">Paper and reader are set for this draft. <button type="button" className="st-link" onClick={() => { if (stopRef.current) stopRef.current(); setJob(null); setBusy(false); setMessages((cur) => cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m))); }}>Start another</button></span> : null}
         </div>

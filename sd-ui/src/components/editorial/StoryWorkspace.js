@@ -22,6 +22,9 @@ import ChecksRail, { summariseBlocks } from "@/components/editorial/ChecksRail";
 import PublishCheck from "@/components/editorial/PublishCheck";
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
 import HistoryRail from "@/components/editorial/HistoryRail";
+import EvidenceRail from "@/components/editorial/EvidenceRail";
+import ReadingLevels from "@/components/editorial/ReadingLevels";
+import RecordBanner from "@/components/editorial/RecordBanner";
 import { createDraftJob, getStoryPassages, watchDraftJob } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { assessForAudience } from "@/lib/readability";
@@ -63,6 +66,10 @@ function storyToForm(story) {
     /* What a save is made against. The server refuses a save made against an
        older version rather than letting it overwrite what landed since. */
     version: story?.version ?? 1,
+    levels: Array.isArray(story?.levels) ? story.levels : [],
+    record: story?.record || null,
+    evidence: story?.evidence || null,
+    draftChecks: story?.draftChecks || null,
     /* Resolved at read time by the API; null for a story written by hand. */
     provenance: story?.provenance || null,
     author: story?.author || null,
@@ -162,6 +169,8 @@ export default function StoryWorkspace({ initialStory = null }) {
   const [showPublishCheck, setShowPublishCheck] = useState(false);
   const [proposalPending, setProposalPending] = useState(false);
   const [conflict, setConflict] = useState("");
+  const [viewLevel, setViewLevel] = useState(null);
+  const [agentPrefill, setAgentPrefill] = useState("");
   const [savedAt, setSavedAt] = useState(null);
   /* A signature of everything a save would send. Compared against the last
      saved one to know whether there is unsaved work, which gates autosave,
@@ -257,17 +266,25 @@ export default function StoryWorkspace({ initialStory = null }) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  /* The agent accepted a proposal: the API returned the story as saved. */
-  const handleStoryChanged = useCallback((story) => {
+  /* A server write returned the story as saved: the agent's accept, a level
+     written or approved, the record checked. Adopt it whole. */
+  const handleStoryChanged = useCallback((story, message = "The change is in. Read it once more before you publish.") => {
     releasePreviewUrl();
     const next = storyToForm(story);
     savedSignatureRef.current = null;
     setForm(next);
-    setActiveBlockId(next.bodyBlocks[0]?.id || null);
-    setFeedback("The change is in. Read it once more before you publish.");
+    setActiveBlockId((current) => (next.bodyBlocks.some((b) => b.id === current) ? current : next.bodyBlocks[0]?.id || null));
+    if (message) setFeedback(message);
     router.refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
+
+  /* The record banner hands the agent an instruction and opens the rail. */
+  const askAgent = useCallback((instruction) => {
+    setViewLevel(null);
+    setRailTab("agent");
+    setAgentPrefill(instruction);
+  }, []);
 
   /* ── the legacy panel: a draft placed into a blank editor ─────────────── */
   function placeDraft(job, source) {
@@ -387,6 +404,9 @@ export default function StoryWorkspace({ initialStory = null }) {
           status: savedStory.status || current.status,
           effectiveStatus: savedStory.effectiveStatus || current.effectiveStatus,
           publicUrl: savedStory.publicUrl ?? current.publicUrl,
+          levels: Array.isArray(savedStory.levels) ? savedStory.levels : current.levels,
+          evidence: savedStory.evidence ?? current.evidence,
+          record: savedStory.record ?? current.record,
         }));
         return true;
       }
@@ -491,6 +511,9 @@ export default function StoryWorkspace({ initialStory = null }) {
       {error ? <p className="sc-write-msg is-error">{error}</p> : null}
       {feedback ? <p className="sc-write-msg is-ok">{feedback}</p> : null}
       {proposalPending ? <p className="sc-write-msg is-ok">The agent has proposed a change. Accept or reject it in the Agent tab before saving.</p> : null}
+      {reviewMode && form.record?.alerts?.length ? (
+        <RecordBanner storyId={form.id} record={form.record} status={form.status} onAskAgent={askAgent} onUnpublish={() => submitStory("draft")} onAcknowledged={(story) => handleStoryChanged(story, "Noted. The alert stays on the story until the record changes.")} />
+      ) : null}
 
       {mode === "preview" ? (
         <div className="sc-write-previewpane">
@@ -521,19 +544,23 @@ export default function StoryWorkspace({ initialStory = null }) {
             </div>
           </aside>
 
-          <div className="ws-center">{editorColumn}</div>
+          <div className="ws-center">
+            <ReadingLevels story={{ id: form.id, version: form.version, levels: form.levels, provenance: form.provenance }} viewLevel={viewLevel} onView={setViewLevel} dirty={dirty} onChanged={(story, message) => handleStoryChanged(story, message)} />
+            {viewLevel ? null : editorColumn}
+          </div>
 
           <aside className={railTab === "agent" ? "ws-right is-agent" : "ws-right"}>
             <div className="ws-tabs" role="tablist">
-              {[["source", "Source"], ["checks", "Checks"], ["agent", "Agent"], ["history", "History"]].map(([id, label]) => (
+              {[["source", "Source"], ["checks", "Checks"], ["evidence", "Evidence"], ["agent", "Agent"], ["history", "History"]].map(([id, label]) => (
                 <button key={id} type="button" role="tab" aria-selected={railTab === id} className={railTab === id ? "ws-tab on" : "ws-tab"} onClick={() => setRailTab(id)}>{label}</button>
               ))}
             </div>
             <div className="ws-rail-body">
               {railTab === "source" ? <SourceRail block={activeBlock} passages={passages} provenance={form.provenance} /> : null}
-              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} onGoTo={(i) => goToBlock(i, "source")} /> : null}
+              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => setRailTab("evidence")} /> : null}
+              {railTab === "evidence" ? <EvidenceRail storyId={form.id} version={form.version} status={form.status} slug={initialStory?.slug} onGoTo={(i) => goToBlock(i, "source")} /> : null}
               {railTab === "history" ? <HistoryRail storyId={form.id} version={form.version} dirty={dirty} onRestored={() => window.location.reload()} /> : null}
-              {railTab === "agent" ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : null}
+              {railTab === "agent" ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} prefill={agentPrefill} onPrefillTaken={() => setAgentPrefill("")} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : null}
             </div>
           </aside>
         </div>
@@ -546,6 +573,10 @@ export default function StoryWorkspace({ initialStory = null }) {
           audience={audience}
           author={form.author}
           provenance={form.provenance}
+          storyId={form.id}
+          levels={form.levels}
+          record={form.record}
+          draftChecks={form.draftChecks}
           busy={isSaving}
           onClose={() => setShowPublishCheck(false)}
           onGoTo={(i) => goToBlock(i, "source")}

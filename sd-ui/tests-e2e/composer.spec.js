@@ -166,6 +166,50 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(second.locator(".ag-resolved")).toHaveText("Rejected");
   await expect(page.locator(".block-row")).toHaveCount(rowsBefore);
 
+  /* Claim by claim: the Source rail shows which sentence rests on which. */
+  await page.locator(".block-row", { has: page.locator(".block-chip") }).first().locator(".block-editor-surface").click();
+  await page.getByRole("tab", { name: "Source" }).click();
+  await expect(page.locator(".sr-claim").first()).toBeVisible();
+  await expect(page.locator(".sr-claim-ev").first()).toContainText(/p\d+:/);
+
+  /* The Evidence rail: the whole article, checked by rule and ready to be signed. */
+  await page.getByRole("tab", { name: "Evidence" }).click();
+  await expect(page.locator(".ev-summary")).toContainText(/claims? checked against the paper/);
+  await expect(page.locator(".ev-wrap .ck-item").first()).toContainText("Every number is in the paper");
+  await expect(page.locator(".ev-wrap")).toContainText("When you publish");
+
+  /* Every reading age from one approval: write them, read one, approve it. */
+  await page.locator(".lv-bar").getByRole("button", { name: "Write for every age" }).click();
+  await expect(page.locator(".lv-status.is-ready")).toHaveCount(3, { timeout: 60_000 });
+  await page.locator(".lv-pill", { hasText: "Ages 12–14" }).click();
+  await expect(page.locator(".lv-preview .sc-kicker")).toContainText("Ages 12–14 · target grade 7");
+  await expect(page.locator(".lv-block").first()).toBeVisible();
+  const articleBlocks = await page.locator(".ws-outline-item").count();
+  expect(await page.locator(".lv-block").count()).toBeGreaterThanOrEqual(articleBlocks);
+  await page.locator(".lv-preview").getByRole("button", { name: "Approve for readers" }).click();
+  await expect(page.locator(".lv-status.is-live")).toHaveCount(1, { timeout: 20_000 });
+  await page.locator(".lv-pill", { hasText: "Your article" }).click();
+  await expect(page.locator(".lv-preview")).toHaveCount(0);
+  await expect(page.locator(".block-row").first()).toBeVisible();
+
+  /* The record: the fake registrar says the paper was retracted. */
+  await page.getByRole("tab", { name: "Checks" }).click();
+  await page.locator(".ck-wrap").getByRole("button", { name: "Check now" }).click();
+  await expect(page.locator(".rec-banner")).toContainText("was retracted", { timeout: 20_000 });
+  await expect(page.locator(".rec-banner")).toContainText(/Paragraphs? [\d, ]+ rests? on it/);
+  await page.locator(".rec-banner").getByRole("button", { name: "Have the agent draft a notice" }).click();
+  await expect(page.locator(".ws-tab.on")).toHaveText("Agent");
+  await expect(page.getByPlaceholder("What should change?")).toHaveValue(/was retracted/);
+  await page.getByPlaceholder("What should change?").fill("");
+
+  /* A retraction blocks publishing until the scholar has marked it as seen. */
+  await page.getByRole("button", { name: "Publish check" }).click();
+  await expect(page.getByRole("dialog")).toContainText("withdrawn from the record");
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Publish now" })).toBeDisabled();
+  await page.getByRole("dialog").getByRole("button", { name: "Back to the draft" }).click();
+  await page.locator(".rec-banner").getByRole("button", { name: "I have seen this" }).click();
+  await expect(page.locator(".rec-banner")).toContainText("seen", { timeout: 20_000 });
+
   /* The publish check, then publish. */
   await page.getByRole("button", { name: "Publish check" }).click();
   const dialog = page.getByRole("dialog");
@@ -194,6 +238,22 @@ test("from a paper to a published story, with the agent editing by instruction",
   await mark.click();
   await expect(reader.locator(".reader-pop-passage p").first()).not.toHaveText(/^\s*$/);
   await expect(reader.locator(".reader-pop-link")).toHaveAttribute("href", "https://pmc.example/src-e2e-1");
+  await expect(reader.locator(".reader-pop-claims li").first()).toBeVisible();
+  await expect(reader.locator(".reader-pop-passage mark").first()).toBeVisible();
+
+  /* The reader is told about the retraction, can read it at another age, and can verify the record. */
+  await expect(reader.locator(".reader-notice")).toContainText("was retracted");
+  await expect(reader.locator(".reader-level")).toHaveCount(2);
+  await reader.locator(".reader-level", { hasText: "Ages 12–14" }).click();
+  await expect(reader.locator(".reader-paragraph").first()).toBeVisible();
+  await expect(reader.locator(".reader-evidence")).toContainText("checked against the paper");
+  const verifyHref = await reader.locator(".reader-evidence a").getAttribute("href");
+  expect(verifyHref).toMatch(/\/public\/slug\/.+\/evidence$/);
+  const ledger = await reader.request.get(verifyHref);
+  expect(ledger.status()).toBe(200);
+  const ledgerBody = await ledger.json();
+  expect(ledgerBody.signed).toBe(true);
+  expect(ledgerBody.manifest.approval.by).toBe("e2e.scholar@example.edu");
 
   /* Delete it from the list: gone for the scholar, and the public link dies. */
   await page.goto("/editorial");

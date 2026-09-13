@@ -60,6 +60,13 @@ export default function StudioHome({ me, sources, jobs, stories }) {
       todos.push({ tone: "navy", lead: "A draft is being written", detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Watch", jobId: job.status === "queued" ? job.id : null });
     }
   }
+  /* The record moved against a source: first, before anything else. */
+  for (const s of (stories || []).filter((st) => st.record?.alerts && !st.record.acknowledgedAt)) {
+    todos.push({ tone: "bad", lead: `The paper behind “${shortTitle(s.title, 50)}” has changed on the record`, detail: s.record.headline, href: `/editorial/${s.id}`, cta: "Deal with it" });
+  }
+  for (const s of (stories || []).filter((st) => st.levels?.waiting > 0)) {
+    todos.push({ tone: "warn", lead: `${s.levels.waiting} reading level${s.levels.waiting === 1 ? "" : "s"} waiting for your approval`, detail: `“${shortTitle(s.title, 60)}” · written for other ages, not yet shown to readers`, href: `/editorial/${s.id}`, cta: "Review levels" });
+  }
   const reviewing = (stories || []).filter((s) => s.status === "draft" && s.provenance);
   for (const s of reviewing.slice(0, 2)) {
     todos.push({ tone: "warn", lead: "A draft is waiting for your review", detail: `“${shortTitle(s.title)}” · drafted from ${s.provenance?.title ? `“${shortTitle(s.provenance.title, 50)}”` : "your paper"} · ${timeAgo(s.updatedAt)}`, href: `/editorial/${s.id}`, cta: "Review" });
