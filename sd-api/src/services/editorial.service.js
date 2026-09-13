@@ -935,6 +935,7 @@ function mapStoryDocument(story, author = null, provenance = null) {
         fidelity: l.fidelity || null,
         stale: st.stale,
         staleReason: st.reason,
+        warnings: Array.isArray(l.warnings) ? l.warnings : [],
         blocks: presentStoredBlocks(Array.isArray(l.blocks) ? l.blocks : [], imageById),
       };
     })
@@ -1258,7 +1259,7 @@ async function appendRevision(db, { storyId, profileId, story, version, source, 
   const doc = storyVersion.revisionDocument({ storyId, profileId, story, version, source, actor, note, turnId, jobId, at });
   const last = await revisions.findOne({ story_id: storyId }, { sort: { version: -1 } });
 
-  if (storyVersion.shouldCoalesce({ last, source, actor, turnId, at })) {
+  if (storyVersion.shouldCoalesce({ last, source, actor, turnId, note, at })) {
     const { created_at: _keepOriginalTime, ...rest } = doc;
     await revisions.updateOne({ _id: last._id }, { $set: { ...rest, coalesced_at: at } });
     return;

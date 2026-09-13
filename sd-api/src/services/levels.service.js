@@ -60,6 +60,7 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
   for (const audience of targets) {
     await onProgress({ step: "draft_levels", message: `Writing it for ${AUDIENCES[audience].label.toLowerCase()}…`, audience });
     const rewrites = new Map();
+    const warnings = [];
 
     for (const { index } of toRewrite) {
       const block = mapped.bodyBlocks[index];
@@ -71,16 +72,27 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
         parsed = levels.parseLevelResponse(r.text);
         if (parsed.violations.length === 0) break;
       }
-      if (parsed.violations.length) throw new ApiError(502, `The level writer kept writing in the first person for block ${index + 1}; nothing was saved.`);
+      if (parsed.violations.length) {
+        /* One paragraph the writer cannot voice must not cost the level: it
+           is carried as the scholar wrote it, and the level says so. */
+        warnings.push(`Block ${index + 1} was carried as written: the level writer kept using the first person for it.`);
+        continue;
+      }
       rewrites.set(index, { text: parsed.text });
     }
+    if (!rewrites.size) throw new ApiError(502, `The level writer could not rewrite any paragraph for ${AUDIENCES[audience].label.toLowerCase()}; nothing was saved.`);
 
-    /* Judge every rewritten paragraph of this level in one call, claim by claim. */
+    /* Judge the rewritten paragraphs claim by claim, a few at a time: claims
+       with quoted evidence add up, and one call for a whole article cut the
+       judge's answer off mid-JSON. */
     const draft = levels.assembleLevel({ blocks: mapped.bodyBlocks, rewrites });
     const judgeIndexes = [...rewrites.keys()];
-    const judged = await fidelity.judgeSection({ blocks: judgeIndexes.map((i) => draft[i]), passages, generate: gen });
-    if (judged.call) calls.push({ ...judged.call, audience });
-    judgeIndexes.forEach((i, k) => { draft[i] = judged.blocks[k]; });
+    for (let start = 0; start < judgeIndexes.length; start += fidelity.JUDGE_BATCH) {
+      const batch = judgeIndexes.slice(start, start + fidelity.JUDGE_BATCH);
+      const judged = await fidelity.judgeSection({ blocks: batch.map((i) => draft[i]), passages, generate: gen });
+      if (judged.call) calls.push({ ...judged.call, audience });
+      batch.forEach((i, k) => { draft[i] = judged.blocks[k]; });
+    }
     const verdicts = judgeIndexes.map((i) => draft[i].fidelity?.verdict || null);
 
     const prose = draft.filter((b) => b.type === "paragraph").map((b) => levels.plain(b.html)).join("\n\n");
@@ -105,6 +117,7 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
       levels_version: levels.LEVELS_VERSION,
       source_version: storyVersion.versionOf(storyDoc),
       source_hashes: levels.sourceHashes(mapped.bodyBlocks),
+      warnings,
       approved: false,
       approved_at: null,
       approved_by: null,

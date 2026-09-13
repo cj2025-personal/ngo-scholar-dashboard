@@ -105,8 +105,12 @@ function conflictSentence({ current, who = null }) {
 }
 
 /** Whether a new write should rewrite the last version's row instead of adding one. */
-function shouldCoalesce({ last, source, actor, turnId = null, at }) {
+function shouldCoalesce({ last, source, actor, turnId = null, note = null, at }) {
   if (!last || turnId || last.turn_id) return false;
+  /* A row with a note records a deliberate act, such as approving the reading
+     levels or a restore. It is never folded into a neighbour, and nothing is
+     folded into it. */
+  if (note || last.note) return false;
   if (last.version === 1) return false;
   if (last.source !== source || last.created_by !== actor) return false;
   if (source !== SOURCE.SCHOLAR) return false;

@@ -21,11 +21,15 @@
 
 const CHECKS_VERSION = "checks-2026.1";
 
-const NUMBER_WORDS = new Set([
-  "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
-  "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
-  "hundred", "thousand", "million", "billion", "half", "quarter", "third", "twice", "double", "triple",
-]);
+const UNITS = {
+  two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13,
+  fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const TENS = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const MULTIPLIERS = { hundred: 100, thousand: 1000, million: 1000000, billion: 1000000000 };
+/* Kept as words: they are quantities a paper states, but not ones digits would replace. */
+const FRACTION_WORDS = new Set(["half", "quarter", "third", "twice", "double", "triple"]);
+const NUMBER_WORDS = new Set([...Object.keys(UNITS), ...Object.keys(TENS), ...Object.keys(MULTIPLIERS), ...FRACTION_WORDS]);
 
 const LIMITATION_CUES = [
   /\blimitation/i, /\blimited\b/i, /\bnot (?:tested|measured|examined|evaluated|studied|assessed)\b/i, /\bdid not\b/i, /\bwas not\b/i, /\bwere not\b/i,
@@ -36,15 +40,49 @@ const LIMITATION_CUES = [
 const plain = (html) =>
   String(html || "").replace(/<[^>]+>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 
-/** The numbers a passage of text states, as normalised tokens. */
+/**
+ * The numbers a passage of text states, as canonical tokens.
+ *
+ * "seventeen of forty trials" and "17 of 40 trials" state the same numbers,
+ * so words are read into digits: units, tens, and the multipliers hundred,
+ * thousand, million, billion, in the usual English order ("three hundred
+ * forty", "two thousand"). "one" counts only as the start of a compound
+ * ("one hundred"), because on its own it is mostly a pronoun. Digits keep
+ * their decimals; thousands separators and percent signs are dropped.
+ */
 function numbersIn(text) {
   const out = [];
   const t = plain(text).toLowerCase();
   for (const m of t.matchAll(/(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?:\s?%)?(?![\w])/g)) out.push(m[1].replace(/,/g, ""));
-  for (const w of t.split(/[^a-z-]+/)) {
-    if (NUMBER_WORDS.has(w)) out.push(w);
-    else if (w.includes("-")) for (const part of w.split("-")) if (NUMBER_WORDS.has(part)) out.push(part);
+
+  /* Punctuation and digits become a separator token, so "twelve, one hundred" is two numbers, not one. */
+  const words = t.replace(/[^a-z\s-]+/g, " | ").split(/[\s-]+/).filter(Boolean);
+  let total = 0;
+  let current = 0;
+  let inNumber = false;
+  let afterMultiplier = false;
+  const flush = () => {
+    if (inNumber && total + current > 0) out.push(String(total + current));
+    total = 0; current = 0; inNumber = false; afterMultiplier = false;
+  };
+  for (let i = 0; i < words.length; i += 1) {
+    const w = words[i];
+    if (UNITS[w] !== undefined) { current += UNITS[w]; inNumber = true; afterMultiplier = false; continue; }
+    if (TENS[w] !== undefined) { current += TENS[w]; inNumber = true; afterMultiplier = false; continue; }
+    if (w === "one" && MULTIPLIERS[words[i + 1]] !== undefined) { current += 1; inNumber = true; afterMultiplier = false; continue; }
+    if (MULTIPLIERS[w] !== undefined) {
+      if (w === "hundred") current = (current || 1) * 100;
+      else { total += (current || 1) * MULTIPLIERS[w]; current = 0; }
+      inNumber = true;
+      afterMultiplier = true;
+      continue;
+    }
+    /* "three hundred and forty" is one number; "forty and three hundred" is two. */
+    if (w === "and" && inNumber && afterMultiplier) continue;
+    if (FRACTION_WORDS.has(w)) { flush(); out.push(w); continue; }
+    flush();
   }
+  flush();
   return out;
 }
 

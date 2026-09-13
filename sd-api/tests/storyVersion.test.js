@@ -83,6 +83,10 @@ test("consecutive saves by one person collapse into one save point; anything els
     false,
   );
 
+  /* A deliberate act with a note stands on its own, in either direction. */
+  assert.equal(shouldCoalesce({ last, source: SOURCE.SCHOLAR, actor: "a@x.edu", note: "Approved the levels", at: soon }), false);
+  assert.equal(shouldCoalesce({ last: { ...last, note: "Approved the levels" }, source: SOURCE.SCHOLAR, actor: "a@x.edu", at: soon }), false);
+
   /* The machine's first draft is never overwritten by a later save. */
   assert.equal(shouldCoalesce({ last: { ...last, version: 1 }, source: SOURCE.SCHOLAR, actor: "a@x.edu", at: soon }), false);
   assert.equal(shouldCoalesce({ last: null, source: SOURCE.SCHOLAR, actor: "a@x.edu", at: soon }), false);

@@ -14,24 +14,35 @@ const passages = [
   { id: "p3", text: "The array was not tested with moving interferers. Multipath in a real building would present many more apparent sources, so the degradation is expected to appear at lower interferer counts. Future work should test a larger array." },
 ];
 
-test("numbers are read as digits, decimals, thousands, percentages and the words a paper uses", () => {
+test("numbers are read as digits, decimals, thousands, percentages, and words are the same number as digits", () => {
   assert.deepEqual(checks.numbersIn("11 decibels, 1.8 watts, 2,400 mAh, 95% of trials"), ["11", "1.8", "2400", "95"]);
-  assert.deepEqual(checks.numbersIn("eleven decibels and forty-three trials, one interferer"), ["eleven", "forty", "three"]);
-  assert.deepEqual(checks.numbersIn("<b>seven</b> with two"), ["seven", "two"]);
+  assert.deepEqual(checks.numbersIn("eleven decibels and forty-three trials, one interferer"), ["11", "43"], "one alone is a pronoun");
+  assert.deepEqual(checks.numbersIn("<b>seven</b> with two"), ["7", "2"]);
+  assert.deepEqual(checks.numbersIn("seventeen of forty trials, between forty and three hundred updates"), ["17", "40", "40", "300"]);
+  assert.deepEqual(checks.numbersIn("two thousand three hundred and twelve, one hundred, half a wavelength"), ["2312", "100", "half"]);
   assert.deepEqual(checks.numbersIn("version v2.5 p10"), [], "a number glued to a word is not a stated number");
+});
+
+test("a paper that says seventeen supports an article that says 17", () => {
+  const r = checks.numericConsistency({
+    blocks: [{ type: "paragraph", html: "In 17 of 40 trials the gain fell by more than 2 decibels; convergence took up to 300 updates.", sourceRefs: [{ passageId: "p1" }] }],
+    passages: [{ id: "p1", text: "In seventeen of forty trials the array reduced desired-signal gain by more than two decibels. Convergence took between forty and three hundred updates." }],
+  });
+  assert.deepEqual(r.misses, []);
+  assert.equal(r.numbers, 4);
 });
 
 test("a number that appears in a cited passage passes; one that does not is a miss, by block", () => {
   const blocks = [
     { type: "subheading", html: "Results" },
-    { type: "paragraph", html: "The array improved the signal by eleven decibels and converged in forty updates.", sourceRefs: [{ passageId: "p1" }] },
+    { type: "paragraph", html: "The array improved the signal by 11 decibels and converged in forty updates.", sourceRefs: [{ passageId: "p1" }] },
     { type: "paragraph", html: "The processor used 1.8 watts, and the whole system ran for about 12 hours.", sourceRefs: [{ passageId: "p2" }] },
     { type: "paragraph", html: "I think twelve is the right figure.", ownView: true },
     { type: "paragraph", html: "A hand-written paragraph with the number 99.", },
   ];
   const r = checks.numericConsistency({ blocks, passages });
   assert.equal(r.checked, 2, "only paragraphs drawn from the paper are checked");
-  assert.equal(r.numbers, 4, "eleven, forty, 1.8 and 12");
+  assert.equal(r.numbers, 4, "11 (as eleven in the paper), forty, 1.8 and 12");
   assert.deepEqual(r.misses, [{ block: 3, number: "12" }]);
   assert.equal(r.ok, false);
   assert.equal(checks.numericConsistency({ blocks: blocks.slice(0, 2), passages }).ok, true);

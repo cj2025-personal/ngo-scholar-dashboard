@@ -47,6 +47,9 @@ const FIDELITY_VERSION = "fidelity-judge-2026.2";
 
 const VERDICT = { SUPPORTED: "supported", PARTIAL: "partial", UNSUPPORTED: "unsupported" };
 
+/** Paragraphs per judge call. Claims with quoted evidence add up; past this the answer is cut off mid-JSON. */
+const JUDGE_BATCH = 3;
+
 /** Bounds on what is stored per paragraph. Past these, the judge is confused, not thorough. */
 const CLAIM_LIMITS = { perParagraph: 12, textChars: 300, evidenceChars: 400, passages: 6 };
 
@@ -231,7 +234,7 @@ async function judgeSection({ blocks, passages, generate }) {
   const citedIds = [...new Set(toJudge.flatMap((p) => p.refs))];
   const cited = citedIds.map((id) => byId.get(id));
   const prompt = buildJudgePrompt({ paragraphs: toJudge.map((p) => ({ index: p.index, text: p.text })), passages: cited });
-  const r = await generate({ prompt, systemInstruction: JUDGE_SYSTEM, responseSchema: JUDGE_SCHEMA, temperature: 0, maxOutputTokens: 4096 });
+  const r = await generate({ prompt, systemInstruction: JUDGE_SYSTEM, responseSchema: JUDGE_SCHEMA, temperature: 0, maxOutputTokens: 8192 });
   const verdicts = parseJudgeResponse(r.text, toJudge.map((p) => p.index), new Set(citedIds));
 
   for (const p of toJudge) {
@@ -270,4 +273,4 @@ function unescapeHtml(value) {
   return String(value || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
-module.exports = { FIDELITY_VERSION, VERDICT, CLAIM_LIMITS, JUDGE_SYSTEM, JUDGE_SCHEMA, buildJudgePrompt, deriveVerdict, parseJudgeResponse, judgeSection, fidelityNote };
+module.exports = { FIDELITY_VERSION, VERDICT, CLAIM_LIMITS, JUDGE_BATCH, JUDGE_SYSTEM, JUDGE_SCHEMA, buildJudgePrompt, deriveVerdict, parseJudgeResponse, judgeSection, fidelityNote };
