@@ -17,6 +17,10 @@ const AUTH_API_URL =
 
 const NAV = [
   { label: "Home", href: "/" },
+  /* Ahead of Editorial on purpose: a scholar's first question is what this
+     platform already says about them, not what they have written. Most of it
+     they did not write. */
+  { label: "My content", href: "/content" },
   { label: "Editorial", href: "/editorial" },
   { label: "Podcasts", href: "/podcasts" },
   { label: "Profile", href: "/profile" },

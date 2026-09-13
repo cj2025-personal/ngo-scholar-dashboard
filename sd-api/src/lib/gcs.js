@@ -83,6 +83,7 @@ function getEditorialImagesBucket() {
 }
 
 module.exports = {
+  resolveKeyFilename,
   getEditorialImagesBucket,
   getStorageClient,
 };

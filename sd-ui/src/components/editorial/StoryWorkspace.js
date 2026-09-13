@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FaArrowLeft,
   FaArrowUpRightFromSquare,
@@ -15,6 +15,9 @@ import RichTextBlockEditor, {
   getPlainTextFromBlocks,
 } from "@/components/editorial/RichTextBlockEditor";
 import StoryPreview from "@/components/editorial/StoryPreview";
+import DraftSourcesPanel from "@/components/editorial/DraftSourcesPanel";
+import { createDraftJob, watchDraftJob } from "@/lib/drafting";
+import { plainText, shortSourceLabel } from "@/lib/provenance";
 
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000";
@@ -71,6 +74,8 @@ function storyToForm(story) {
     coverPreviewUrl: "",
     retainedImageIds,
     updatedAt: story?.updatedAt || null,
+    /* Resolved at read time by the API; null for a story written by hand. */
+    provenance: story?.provenance || null,
   };
 }
 
@@ -98,6 +103,7 @@ function collectInlineImagePayload(bodyBlocks) {
       serializedBlocks.push({
         type: block.type,
         html: block.html || "",
+        ...(block.sourceRefs ? { sourceRefs: block.sourceRefs, draftedText: block.draftedText || "", fidelity: block.fidelity || null } : {}),
       });
       continue;
     }
@@ -164,7 +170,15 @@ export default function StoryWorkspace({ initialStory = null }) {
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [draftingKey, setDraftingKey] = useState(null);
+  const [draftProgress, setDraftProgress] = useState("");
+  /* The job whose draft is in the editor and has not yet been saved into a
+     story. Once the story saves, the job is told which story took it. */
+  const [pendingDraftJob, setPendingDraftJob] = useState(null);
+  const stopWatchingRef = useRef(null);
   const [mode, setMode] = useState("write"); // "write" | "preview"
+
+  useEffect(() => () => { if (stopWatchingRef.current) stopWatchingRef.current(); }, []);
 
   const plainTextContent = useMemo(
     () => getPlainTextFromBlocks(form.bodyBlocks),
@@ -201,6 +215,104 @@ export default function StoryWorkspace({ initialStory = null }) {
       ...current,
       bodyBlocks,
     }));
+  }
+
+  /**
+   * A machine draft arrives in the editor, never in the database.
+   *
+   * Drafting is a job: created, watched to completion, then placed. An empty
+   * editor is replaced; one with anything in it gets the draft appended, so
+   * a paragraph the scholar has already written is never lost to a button
+   * press. Title, deck and summary are filled only where blank for the same
+   * reason. Saving is still the scholar's act, through the same route as
+   * every other story, and only then is the job told which story took it.
+   */
+  function placeDraft(job, source) {
+    const draft = job.draft || {};
+    /* Each drafted block records the text it arrived with, so the chip can
+       tell later whether the scholar's edits left it traceable. */
+    const stamped = (draft.bodyBlocks || []).map((block) =>
+      block.type === "image" || !Array.isArray(block.sourceRefs) || block.sourceRefs.length === 0
+        ? block
+        : { ...block, draftedText: plainText(block.html) },
+    );
+    const incoming = createInitialBlocks(stamped, `drafted-${Date.now()}`);
+
+    setForm((current) => {
+      const hasText = getPlainTextFromBlocks(current.bodyBlocks).trim().length > 0;
+      const hasImages = current.bodyBlocks.some((block) => block.type === "image");
+      return {
+        ...current,
+        title: current.title.trim() ? current.title : draft.title || "",
+        subtitle: current.subtitle.trim() ? current.subtitle : draft.subtitle || "",
+        excerpt: current.excerpt.trim() ? current.excerpt : draft.excerpt || "",
+        bodyBlocks: hasText || hasImages ? [...current.bodyBlocks, ...incoming] : incoming,
+      };
+    });
+    setActiveBlockId(incoming[0]?.id || null);
+    setMode("write");
+    setPendingDraftJob({
+      id: job.id,
+      sourceTitle: job.source?.title || source.title,
+      sourceYear: job.source?.year || source.year || null,
+    });
+
+    const notes = Array.isArray(job.warnings) && job.warnings.length ? ` ${job.warnings.join(" ")}` : "";
+    setFeedback(
+      `Drafted ${Number(draft.words || 0).toLocaleString()} words from “${job.source?.title || source.title}”. ` +
+        `This is a machine first draft under your name — read every line before you publish.${notes}`,
+    );
+  }
+
+  async function handleDraft(source, audience) {
+    setError("");
+    setFeedback("");
+    setDraftProgress("Starting…");
+    setDraftingKey(`${source.origin}:${source.id}`);
+
+    const created = await createDraftJob({ origin: source.origin, sourceId: source.id, audience });
+    if (!created.ok) {
+      setError(created.error);
+      setDraftingKey(null);
+      setDraftProgress("");
+      return;
+    }
+
+    const job = created.data.job;
+    if (job.status === "awaiting_review") {
+      /* An identical request already ran; its draft is reused, not repaid. */
+      setDraftingKey(null);
+      setDraftProgress("");
+      placeDraft(job, source);
+      return;
+    }
+    if (job.terminal) {
+      setError(job.failure?.sentence || "That draft did not complete.");
+      setDraftingKey(null);
+      setDraftProgress("");
+      return;
+    }
+
+    if (stopWatchingRef.current) stopWatchingRef.current();
+    stopWatchingRef.current = watchDraftJob(job.id, {
+      onProgress: ({ message }) => setDraftProgress(message),
+      onSettled: (settled) => {
+        stopWatchingRef.current = null;
+        setDraftingKey(null);
+        setDraftProgress("");
+        if (settled.status === "awaiting_review") {
+          placeDraft(settled, source);
+        } else {
+          setError(settled.failure?.sentence || "That draft did not complete.");
+        }
+      },
+      onError: (message) => {
+        stopWatchingRef.current = null;
+        setDraftingKey(null);
+        setDraftProgress("");
+        setError(message);
+      },
+    });
   }
 
   function handleCoverFileChange(event) {
@@ -271,6 +383,12 @@ export default function StoryWorkspace({ initialStory = null }) {
     payload.set("status", nextStatus);
     payload.set("scheduledFor", nextStatus === "scheduled" ? form.scheduledFor : "");
     payload.set("retainImageIds", JSON.stringify(retainedIds));
+    /* The draft job whose text is in this story. The API verifies it is the
+       scholar's, stores the story's provenance from it, and marks the job as
+       taken into this story once the save succeeds. */
+    if (pendingDraftJob?.id) {
+      payload.set("draftJobId", pendingDraftJob.id);
+    }
 
     if (form.coverFile) {
       payload.append("coverImage", form.coverFile);
@@ -309,6 +427,12 @@ export default function StoryWorkspace({ initialStory = null }) {
       const nextForm = storyToForm(savedStory);
       setForm(nextForm);
       setActiveBlockId(nextForm.bodyBlocks[0]?.id || null);
+
+      /* The API linked the job to this story as part of the save; the story
+         now carries the provenance, so the pending job is no longer needed. */
+      if (pendingDraftJob) {
+        setPendingDraftJob(null);
+      }
       setFeedback(
         nextStatus === "published"
           ? "Story published successfully."
@@ -328,6 +452,14 @@ export default function StoryWorkspace({ initialStory = null }) {
   const effectiveCoverImageUrl = form.coverPreviewUrl || form.coverImageUrl;
   const hasCover = Boolean(effectiveCoverImageUrl);
 
+  /* The chip label: from the draft being placed, or from the saved story's
+     resolved provenance. */
+  const sourceLabel = pendingDraftJob
+    ? shortSourceLabel({ title: pendingDraftJob.sourceTitle, year: pendingDraftJob.sourceYear })
+    : form.provenance
+      ? shortSourceLabel({ title: form.provenance.title, year: form.provenance.year })
+      : "";
+
   return (
     <div className={`sc-writer mode-${mode}`}>
       {/* Slim editor bar — sticks under the app top bar */}
@@ -339,6 +471,21 @@ export default function StoryWorkspace({ initialStory = null }) {
           <span className="sc-write-status">
             {form.id ? `Editing ${form.status}` : "New draft"}
           </span>
+          {/* Only when the story is actually live. `publicUrl` is null for a
+              draft and for a scheduled piece that has not reached its time, so
+              this never offers a link to a page that would 404. */}
+          {form.publicUrl ? (
+            <a
+              className="sc-write-live"
+              href={form.publicUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View as reader{" "}
+              <FaArrowUpRightFromSquare size={10} aria-hidden="true" />
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          ) : null}
           <span className="sc-write-metatext">
             {totalWords} {totalWords === 1 ? "word" : "words"} &middot; {readingTime} min &middot;{" "}
             {formatDate(form.updatedAt)}
@@ -421,8 +568,28 @@ export default function StoryWorkspace({ initialStory = null }) {
               onChange={updateBodyBlocks}
               activeBlockId={activeBlockId}
               onActiveBlockChange={setActiveBlockId}
+              sourceLabel={sourceLabel}
             />
           </div>
+
+          {form.provenance?.line ? (
+            <p className="sc-write-provenance">
+              {form.provenance.line}
+              {form.provenance.url ? (
+                <>
+                  {" "}
+                  <a href={form.provenance.url} target="_blank" rel="noreferrer">
+                    view source <FaArrowUpRightFromSquare size={10} aria-hidden />
+                  </a>
+                </>
+              ) : null}
+            </p>
+          ) : null}
+
+          {/* What of their work we can draft from, and how to add more. Sits
+              above settings because it is about the article's material, not
+              its scheduling. */}
+          <DraftSourcesPanel onDraft={handleDraft} draftingKey={draftingKey} progress={draftProgress} />
 
           <details className="sc-write-settings">
             <summary>

@@ -1,6 +1,7 @@
 const { ObjectId } = require("mongodb");
 
-const { getDb } = require("../db/mongo");
+const { COLLECTIONS, getDb } = require("../db/mongo");
+const { ownedByScholarFilter } = require("../lib/identity");
 const { ApiError } = require("../lib/api-error");
 const { serializeMongoValue } = require("../lib/serialize");
 
@@ -196,22 +197,12 @@ function buildProfileCoverage(scholar, editorialStories) {
 }
 
 function buildScholarStoryFilters({ scholarId, profileId }) {
-  const filters = [
-    { scholar_id: scholarId },
-    { profile_id: profileId },
-    { authorId: scholarId },
-    { authorId: profileId },
-  ];
-
-  if (ObjectId.isValid(scholarId)) {
-    filters.push({ authorId: new ObjectId(scholarId) });
-  }
-
-  if (ObjectId.isValid(profileId)) {
-    filters.push({ authorId: new ObjectId(profileId) });
-  }
-
-  return filters;
+  /* One writer, one shape, one indexed equality.
+     The six-way $or this replaces existed because the collection was shared
+     with a service that keyed rows to `authorId` in the `users` namespace.
+     Nothing writes that shape here, so matching on it could only ever return
+     another service's rows. */
+  return [ownedByScholarFilter(profileId)];
 }
 
 async function findScholarRecord({ scholarId, profileId }) {
@@ -225,7 +216,7 @@ async function findScholarRecord({ scholarId, profileId }) {
 async function findScholarEditorialStories({ scholarId, profileId }) {
   const db = await getDb();
   const stories = await db
-    .collection("scholarstories")
+    .collection(COLLECTIONS.scholarEditorials)
     .find({
       $or: buildScholarStoryFilters({ scholarId, profileId }),
     })
@@ -259,7 +250,7 @@ async function getDashboardData({ scholarId, profileId, user = null }) {
     source: {
       scholar_id: scholarId,
       profile_id: profileId,
-      editorial_collection: "scholarstories",
+      editorial_collection: COLLECTIONS.scholarEditorials,
       profile_collection: "scholars",
     },
   });

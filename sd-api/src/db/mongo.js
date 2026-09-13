@@ -1,13 +1,20 @@
 const { MongoClient } = require("mongodb");
 
 const { env } = require("../config/env");
+const { OWNER, WRITE_OPERATIONS, canWrite, ownerOf } = require("./ownership");
 
 const COLLECTIONS = {
   credentials: "scholar_credentials",
   sessions: "scholar_sessions",
-  scholarStories: "scholarstories",
+  scholarEditorials: "scholar_editorials",
   editorialImageAssets: "editorial_story_images",
   suggestions: "scholar_suggestions",
+  /* One row per "Draft from my research" model call. Private to this service:
+     not in the ownership manifest because nothing else reads it. */
+  draftRuns: "scholar_draft_runs",
+  /* One row per requested draft: idempotent, lease-locked, with its own
+     event log. Owned here; listed in the shared manifest. */
+  draftJobs: "scholar_draft_jobs",
 };
 
 let clientPromise;
@@ -26,7 +33,63 @@ async function getClient() {
   return clientPromise;
 }
 
+
+/**
+ * A database handle that refuses to write collections this service does not own.
+ *
+ * ── Why a proxy rather than a lint rule ────────────────────────────────────
+ * The failure being prevented — `scholarstories` acquiring a second writer with
+ * an incompatible shape — produced no error at all. Both writes succeeded; the
+ * documents were simply unreadable by the other service. A guard that only runs
+ * in CI can be outrun by a hotfix, and a convention in a comment can be missed
+ * by anyone who did not read it. This throws at the call site, names the owner,
+ * and cannot be bypassed by adding a new file.
+ *
+ * Reads pass through untouched. Reading another service's collection is normal
+ * and necessary — this service reads `scholarstories` and `reading_passages` to
+ * tell a scholar what is published about them.
+ */
+function guardCollection(collection, name) {
+  return new Proxy(collection, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+
+      if (typeof prop === "string" && WRITE_OPERATIONS.has(prop) && !canWrite(name)) {
+        return () => {
+          throw new Error(
+            `sd-api may not ${prop} on "${name}" — that collection is owned by ` +
+              `${ownerOf(name)}. Two services writing one collection with different ` +
+              `shapes is what left scholarstories unreadable; ask the owner to expose ` +
+              `an endpoint instead. See src/db/ownership.js.`,
+          );
+        };
+      }
+
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+/** Wraps `db` so every `.collection()` handle is guarded. */
+function guardDb(db) {
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop === "collection") {
+        return (name, ...rest) => guardCollection(target.collection(name, ...rest), name);
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
 async function getDb() {
+  const client = await getClient();
+  return guardDb(client.db(env.mongodbDb));
+}
+
+/** The unguarded handle, for index creation on collections this service owns. */
+async function getRawDb() {
   const client = await getClient();
   return client.db(env.mongodbDb);
 }
@@ -34,12 +97,14 @@ async function getDb() {
 async function ensureIndexes() {
   if (!indexesPromise) {
     indexesPromise = (async () => {
-      const db = await getDb();
+      const db = await getRawDb();
       const credentials = db.collection(COLLECTIONS.credentials);
       const sessions = db.collection(COLLECTIONS.sessions);
-      const scholarStories = db.collection(COLLECTIONS.scholarStories);
+      const scholarEditorials = db.collection(COLLECTIONS.scholarEditorials);
       const editorialImageAssets = db.collection(COLLECTIONS.editorialImageAssets);
       const suggestions = db.collection(COLLECTIONS.suggestions);
+      const draftRuns = db.collection(COLLECTIONS.draftRuns);
+      const draftJobs = db.collection(COLLECTIONS.draftJobs);
 
       // Enforce credential uniqueness idempotently, tolerating indexes that
       // already exist under Mongo's default names.
@@ -89,17 +154,17 @@ async function ensureIndexes() {
         { scholar_id: 1, profile_id: 1 },
         { name: "idx_scholar_sessions_scholar_profile" },
       );
-      await scholarStories.createIndex(
-        { scholar_id: 1, updatedAt: -1 },
-        { name: "idx_scholarstories_scholar_updated_at" },
-      );
-      await scholarStories.createIndex(
+      /* `profile_id` is the canonical scholar identity, so this is the index
+         every portal read uses. No `scholar_id` twin: nothing writes one to
+         this collection, and an index over a field that is always the same
+         value as another is a second copy of the first. */
+      await scholarEditorials.createIndex(
         { profile_id: 1, updatedAt: -1 },
-        { name: "idx_scholarstories_profile_updated_at" },
+        { name: "idx_scholar_editorials_profile_updated_at" },
       );
-      await scholarStories.createIndex(
+      await scholarEditorials.createIndex(
         { slug: 1 },
-        { name: "slug_1" },
+        { unique: true, name: "idx_scholar_editorials_slug" },
       );
       await editorialImageAssets.createIndex(
         { scholar_id: 1, profile_id: 1, uploaded_at: -1 },
@@ -136,6 +201,29 @@ async function ensureIndexes() {
         { status: 1, created_at: -1 },
         { name: "idx_scholar_suggestions_status_created_at" },
       );
+
+      // Draft runs: "what has this scholar drafted, most recent first" is the
+      // only read; everything else about the row is audit.
+      await draftRuns.createIndex(
+        { profile_id: 1, started_at: -1 },
+        { name: "idx_scholar_draft_runs_profile_started_at" },
+      );
+
+      // Draft jobs. The unique key is what makes "the same request twice"
+      // return one job; the status index is the worker's claim query; the
+      // profile index is the composer's list and the daily-cap count.
+      await draftJobs.createIndex(
+        { idempotency_key: 1 },
+        { unique: true, name: "idx_scholar_draft_jobs_idempotency_key" },
+      );
+      await draftJobs.createIndex(
+        { status: 1, lease_expires_at: 1, created_at: 1 },
+        { name: "idx_scholar_draft_jobs_status_lease_created" },
+      );
+      await draftJobs.createIndex(
+        { profile_id: 1, created_at: -1 },
+        { name: "idx_scholar_draft_jobs_profile_created" },
+      );
     })();
   }
 
@@ -160,6 +248,7 @@ async function getCollections() {
 
 module.exports = {
   COLLECTIONS,
+  getRawDb,
   connectToMongo,
   getCollections,
   getDb,

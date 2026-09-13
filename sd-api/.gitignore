@@ -9,3 +9,10 @@ node_modules
 *.key.json
 service-account*.json
 gcp-*.json
+
+# Purge run artefacts: data dumps and the log of what was deleted
+.purge-backup/
+purge-log.txt
+
+# Local eval output
+eval-results.json

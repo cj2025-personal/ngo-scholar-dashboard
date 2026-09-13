@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { chipFor } from "@/lib/provenance";
 
 const BLOCK_TYPE_OPTIONS = [
   { value: "paragraph", label: "Paragraph" },
@@ -70,11 +72,44 @@ function normalizeBlock(block, id) {
     };
   }
 
-  return {
+  const text = {
     id,
     type: block?.type || "paragraph",
     html: block?.html || "",
   };
+
+  /* Provenance travels with a drafted block: which passages it cites, the
+     text it had when drafted, and the fact-checker's verdict. Absent on a
+     block the scholar wrote by hand. */
+  if (Array.isArray(block?.sourceRefs) && block.sourceRefs.length > 0) {
+    text.sourceRefs = block.sourceRefs.map((r) => ({ passageId: String(r?.passageId || "") })).filter((r) => r.passageId);
+    text.draftedText = typeof block.draftedText === "string" ? block.draftedText : "";
+    text.fidelity = block.fidelity || null;
+  }
+  return text;
+}
+
+/** Chip under a drafted block. Renders nothing for a hand-written one. */
+function ProvenanceChip({ block, sourceLabel }) {
+  const chip = chipFor(block, sourceLabel);
+  if (!chip) return null;
+  return (
+    <div className="block-chip-row">
+      <span
+        className={chip.traceable ? (chip.partial ? "block-chip is-partial" : "block-chip") : "block-chip is-lost"}
+        title={chip.title}
+      >
+        {chip.label}
+        {chip.partial ? " · partly supported" : ""}
+      </span>
+      {chip.partial && chip.unsupportedClaims.length ? (
+        <span className="block-chip-note" title={chip.unsupportedClaims.join(" — ")}>
+          check: {chip.unsupportedClaims[0]}
+          {chip.unsupportedClaims.length > 1 ? ` (+${chip.unsupportedClaims.length - 1})` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 function getBlockPlaceholder(type) {
@@ -147,6 +182,98 @@ function execFormattingCommand(command, value) {
   }
 
   document.execCommand(command, false, value);
+}
+
+/**
+ * Inline formatting, shown only while text is selected.
+ *
+ * The row this replaces was always on screen and always enabled, including
+ * with nothing selected — where "Bold" does nothing at all. A control that is
+ * visible when it cannot act teaches people to ignore the toolbar.
+ *
+ * Positioned from the selection's own rectangle, clamped so it cannot sit off
+ * the left edge on a selection that starts at the margin.
+ */
+/* Bubble height plus breathing room. Below this, it goes under the selection. */
+const TOOLBAR_CLEARANCE = 46;
+
+function SelectionToolbar({ containerRef, onCommand, onLink }) {
+  const [rect, setRect] = useState(null);
+
+  const sync = useCallback(() => {
+    const selection = window.getSelection();
+    const host = containerRef.current;
+
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0 || !host) {
+      setRect(null);
+      return;
+    }
+
+    /* Only for selections inside this editor — a selection in the title or
+       anywhere else on the page must not raise it. */
+    const range = selection.getRangeAt(0);
+    if (!host.contains(range.commonAncestorContainer)) {
+      setRect(null);
+      return;
+    }
+    if (!String(selection.toString()).trim()) {
+      setRect(null);
+      return;
+    }
+
+    const bounds = range.getBoundingClientRect();
+    const hostBounds = host.getBoundingClientRect();
+    const top = bounds.top - hostBounds.top;
+
+    /* Flip below when there is no room above. Selecting in the first block
+       always lacks it, and the bubble would sit on top of the subtitle. */
+    const flip = top < TOOLBAR_CLEARANCE;
+    setRect({
+      top: flip ? bounds.bottom - hostBounds.top : top,
+      left: Math.max(0, bounds.left - hostBounds.left + bounds.width / 2),
+      below: flip,
+    });
+  }, [containerRef]);
+
+  useEffect(() => {
+    document.addEventListener("selectionchange", sync);
+    window.addEventListener("scroll", sync, true);
+    window.addEventListener("resize", sync);
+    return () => {
+      document.removeEventListener("selectionchange", sync);
+      window.removeEventListener("scroll", sync, true);
+      window.removeEventListener("resize", sync);
+    };
+  }, [sync]);
+
+  if (!rect) {
+    return null;
+  }
+
+  const act = (fn) => (event) => {
+    /* Keep the selection: losing it on mousedown would make every button a
+       no-op, which is the classic way a floating toolbar ships broken. */
+    event.preventDefault();
+    fn();
+    sync();
+  };
+
+  return (
+    <div
+      className={rect.below ? "sel-toolbar is-below" : "sel-toolbar"}
+      style={{ top: rect.top, left: rect.left }}
+      role="toolbar"
+      aria-label="Formatting"
+    >
+      <button type="button" className="sel-btn" onMouseDown={act(() => onCommand("bold"))} aria-label="Bold"><b>B</b></button>
+      <button type="button" className="sel-btn" onMouseDown={act(() => onCommand("italic"))} aria-label="Italic"><i>i</i></button>
+      <button type="button" className="sel-btn" onMouseDown={act(() => onCommand("underline"))} aria-label="Underline"><u>U</u></button>
+      <button type="button" className="sel-btn" onMouseDown={act(() => onCommand("strikeThrough"))} aria-label="Strikethrough"><s>S</s></button>
+      <span className="sel-sep" aria-hidden="true" />
+      <button type="button" className="sel-btn" onMouseDown={act(onLink)} aria-label="Add link">Link</button>
+      <button type="button" className="sel-btn" onMouseDown={act(() => onCommand("unlink"))} aria-label="Remove link">Unlink</button>
+    </div>
+  );
 }
 
 function EditableTextBlock({
@@ -288,6 +415,9 @@ function coerceBlockType(block, nextType) {
     id: block.id,
     type: nextType,
     html: block.type === "image" ? "" : block.html || "",
+    /* A paragraph turned into a heading is still the paragraph that was
+       drafted; its receipt comes along. */
+    ...(block.sourceRefs ? { sourceRefs: block.sourceRefs, draftedText: block.draftedText, fidelity: block.fidelity } : {}),
   };
 }
 
@@ -296,7 +426,25 @@ export default function RichTextBlockEditor({
   onChange,
   activeBlockId,
   onActiveBlockChange,
+  /** Short label for provenance chips, e.g. "Gupta 2011". */
+  sourceLabel = "",
 }) {
+  const shellRef = useRef(null);
+  /* Which block's gutter menu is open. Null is the resting state, which is
+     also the state the page loads in. */
+  const [menuFor, setMenuFor] = useState(null);
+
+  /* A click anywhere else closes it — a menu that only closes via its own
+     button is one people leave open and then fight with. */
+  useEffect(() => {
+    if (!menuFor) return undefined;
+    const close = (event) => {
+      if (!event.target.closest?.(".block-menu, .gutter-btn")) setMenuFor(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menuFor]);
+
   const activeBlock = blocks.find((block) => block.id === activeBlockId) || null;
   const activeBlockText =
     activeBlock && activeBlock.type !== "image"
@@ -527,197 +675,135 @@ export default function RichTextBlockEditor({
   ];
 
   return (
-    <div className="block-editor-shell">
-      <div className="block-toolbar">
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => execFormattingCommand("bold")}
-        >
-          Bold
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => execFormattingCommand("italic")}
-        >
-          Italic
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => execFormattingCommand("underline")}
-        >
-          Underline
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => execFormattingCommand("strikeThrough")}
-        >
-          Strike
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={handleLink}
-        >
-          Link
-        </button>
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={() => execFormattingCommand("unlink")}
-        >
-          Unlink
-        </button>
-      </div>
-
-      <div className="block-insert-row">
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => {
-            const nextBlock = getEmptyBlock("paragraph");
-            onChange([...blocks, nextBlock]);
-            onActiveBlockChange(nextBlock.id);
-            focusElementById(nextBlock.id);
-          }}
-        >
-          Add paragraph
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => {
-            const nextBlock = getEmptyBlock("heading");
-            onChange([...blocks, nextBlock]);
-            onActiveBlockChange(nextBlock.id);
-            focusElementById(nextBlock.id);
-          }}
-        >
-          Add heading
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => {
-            const nextBlock = getEmptyBlock("quote");
-            onChange([...blocks, nextBlock]);
-            onActiveBlockChange(nextBlock.id);
-            focusElementById(nextBlock.id);
-          }}
-        >
-          Add quote
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => {
-            const nextBlock = getEmptyBlock("image");
-            onChange([...blocks, nextBlock]);
-            onActiveBlockChange(nextBlock.id);
-          }}
-        >
-          Add image
-        </button>
-      </div>
+    <div className="block-editor-shell" ref={shellRef}>
+      <SelectionToolbar
+        containerRef={shellRef}
+        onCommand={execFormattingCommand}
+        onLink={handleLink}
+      />
 
       <div className="block-editor-stack">
         {blocks.map((block, index) => (
           <div
             key={block.id}
-            className="block-editor-row"
-            draggable
-            onDragStart={(event) => {
-              event.dataTransfer.setData("text/plain", block.id);
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-            }}
+            className={
+              activeBlockId === block.id ? "block-row is-active" : "block-row"
+            }
+            onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
               const draggedBlockId = event.dataTransfer.getData("text/plain");
               moveBlockToIndex(draggedBlockId, index);
             }}
           >
-            <div className="block-editor-controls">
-              <select
-                value={block.type}
-                onChange={(event) =>
-                  handleTypeChange(block.id, event.target.value)
-                }
-                className="block-type-select"
+            {/* Gutter. Sits outside the text column and only appears on hover
+                or focus, so the resting page is prose and nothing else. */}
+            <div className="block-gutter">
+              <button
+                type="button"
+                className="gutter-btn"
+                aria-label="Insert a block below"
+                onClick={() => setMenuFor(menuFor === block.id ? null : block.id)}
               >
-                {BLOCK_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-
-              <div className="block-order-controls">
-                <span className="block-drag-handle">Drag</span>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => moveBlock(block.id, "up")}
-                  disabled={index === 0}
-                >
-                  Up
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => moveBlock(block.id, "down")}
-                  disabled={index === blocks.length - 1}
-                >
-                  Down
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => insertBlockAfter(block.id, "paragraph")}
-                >
-                  Add text
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => insertBlockAfter(block.id, "image")}
-                >
-                  Add image
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => removeBlock(block.id)}
-                >
-                  Remove
-                </button>
-              </div>
+                +
+              </button>
+              <span
+                className="gutter-btn is-grab"
+                draggable
+                onDragStart={(event) => event.dataTransfer.setData("text/plain", block.id)}
+                aria-label="Drag to reorder"
+                role="button"
+                tabIndex={-1}
+              >
+                ⠿
+              </span>
             </div>
 
-            {block.type === "image" ? (
-              <ImageBlockCard
-                block={block}
-                onChangeImageFile={handleImageFileChange}
-                onUpdateBlock={updateBlock}
-                onRemoveImageFile={handleImageRemoval}
-              />
-            ) : (
-              <EditableTextBlock
-                block={block}
-                isActive={activeBlockId === block.id}
-                onFocus={() => onActiveBlockChange(block.id)}
-                onHtmlChange={(html) =>
-                  updateBlock(block.id, {
-                    html,
-                  })
-                }
-                onKeyDown={(event) => handleTextBlockKeyDown(event, block, index)}
-              />
-            )}
+            {menuFor === block.id ? (
+              <div className="block-menu" role="menu">
+                <p className="block-menu-label">Insert below</p>
+                {BLOCK_TYPE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className="block-menu-item"
+                    onClick={() => {
+                      insertBlockAfter(block.id, option.value);
+                      setMenuFor(null);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+
+                <p className="block-menu-label">This block</p>
+                <select
+                  value={block.type}
+                  onChange={(event) => {
+                    handleTypeChange(block.id, event.target.value);
+                    setMenuFor(null);
+                  }}
+                  className="block-menu-select"
+                  aria-label="Change block type"
+                >
+                  {BLOCK_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      Turn into {option.label.toLowerCase()}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="block-menu-item"
+                  disabled={index === 0}
+                  onClick={() => { moveBlock(block.id, "up"); setMenuFor(null); }}
+                >
+                  Move up
+                </button>
+                <button
+                  type="button"
+                  className="block-menu-item"
+                  disabled={index === blocks.length - 1}
+                  onClick={() => { moveBlock(block.id, "down"); setMenuFor(null); }}
+                >
+                  Move down
+                </button>
+                {/* The only destructive action here, and the only one in red. */}
+                <button
+                  type="button"
+                  className="block-menu-item is-danger"
+                  disabled={blocks.length === 1}
+                  onClick={() => { removeBlock(block.id); setMenuFor(null); }}
+                >
+                  Delete block
+                </button>
+              </div>
+            ) : null}
+
+            <div className="block-body">
+              {block.type === "image" ? (
+                <ImageBlockCard
+                  block={block}
+                  onChangeImageFile={handleImageFileChange}
+                  onUpdateBlock={updateBlock}
+                  onRemoveImageFile={handleImageRemoval}
+                />
+              ) : (
+                <>
+                  <EditableTextBlock
+                    block={block}
+                    isActive={activeBlockId === block.id}
+                    onFocus={() => {
+                      onActiveBlockChange(block.id);
+                      setMenuFor(null);
+                    }}
+                    onHtmlChange={(html) => updateBlock(block.id, { html })}
+                    onKeyDown={(event) => handleTextBlockKeyDown(event, block, index)}
+                  />
+                  <ProvenanceChip block={block} sourceLabel={sourceLabel} />
+                </>
+              )}
+            </div>
           </div>
         ))}
       </div>

@@ -9,6 +9,7 @@ const { getScholarProfileData } = require("../services/profile.service");
 const {
   createSuggestion,
   listSuggestionsForScholar,
+  withdrawSuggestion,
 } = require("../services/suggestion.service");
 
 const router = express.Router();
@@ -61,6 +62,25 @@ router.get(
     });
 
     res.status(200).json({ suggestions });
+  }),
+);
+
+/**
+ * A scholar changing their mind before anyone has acted.
+ *
+ * Scoped to the session, never to a parameter: the service refuses a request
+ * that is not this scholar's, and reports it as absent rather than forbidden so
+ * a guessed id cannot confirm that someone else's correction exists.
+ */
+router.post(
+  "/suggestions/:suggestionId/withdraw",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await withdrawSuggestion({
+      suggestionId: req.params.suggestionId,
+      user: req.auth.user,
+    });
+    res.status(200).json(result);
   }),
 );
 

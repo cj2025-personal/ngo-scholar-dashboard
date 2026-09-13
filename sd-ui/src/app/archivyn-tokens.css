@@ -11,6 +11,12 @@
   --ark-navy-ink: #172554;
   --ark-navy: #1e3a8a;
   --ark-blue: #2563eb;
+  /* Text-safe blue. #2563eb is the brand blue and is correct on fills and
+     gradients, but as *text* on the pale blue chip and badge backgrounds it
+     lands at 4.06-4.41:1 — every WCAG AA contrast failure in the learner
+     surfaces was this one pairing. One step darker clears it at 5.26:1 worst
+     case while staying the same hue, so chips read as the same colour. */
+  --ark-blue-text: #1d4ed8;
   --ark-blue-deep: #1e40af;
   --ark-red: #b22234;         /* brand signature — stripe, key CTAs, kickers */
   --ark-red-bright: #dc2626;  /* destructive / error semantics only */
@@ -23,18 +29,25 @@
   --ark-border-soft: #e7ecf6;
   --ark-text: #172033;
   --ark-text-muted: #344056;
-  --ark-text-faint: #64748b;
+  /* Darkened from #64748b, which sat at 4.48:1 on --ark-bg and 4.27:1 on
+     --ark-surface-2 — just under AA for body text, and the single largest
+     source of contrast failures in the app (39 of 49 measured). #586777
+     clears 5.45:1 and 5.20:1 on those grounds and 5.99:1 on white, while
+     staying visibly a muted grey rather than body colour. */
+  --ark-text-faint: #586777;
 
   /* Semantic — one meaning, one color */
-  --ark-success: #16a34a;
-  --ark-success-strong: #15803d;
+  /* #16a34a reached only 3.30:1 on white. */
+  --ark-success: #15803d;
+  --ark-success-strong: #136b34;
   --ark-success-soft: #e5f6ec;
   --ark-warning: #b45309;
   --ark-warning-soft: #fdf1e2;
   --ark-danger: #dc2626;
   --ark-danger-soft: #fdeaec;
-  --ark-info: #2563eb;
-  --ark-info-strong: #1d4ed8;
+  /* #2563eb reached only 4.31:1 on --ark-info-soft. */
+  --ark-info: #1d4ed8;
+  --ark-info-strong: #1e40af;
   --ark-info-soft: #e3f0fd;
   --ark-navy-soft: #e3ebfd;
 
@@ -57,8 +70,14 @@
   --ark-shadow-md: 0 2px 4px rgba(23, 37, 84, 0.06), 0 14px 34px -18px rgba(23, 37, 84, 0.25);
   --ark-shadow-lg: 0 4px 8px rgba(23, 37, 84, 0.07), 0 28px 60px -24px rgba(23, 37, 84, 0.35);
 
-  /* Type — Geist for UI, Fraunces for editorial headlines & reading surfaces */
-  --ark-font-ui: "Geist", "Geist Sans", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  /* Type — Plus Jakarta Sans for UI and reading, Fraunces for editorial headlines.
+   *
+   * Plus Jakarta Sans fits the product between classroom and AI workspace:
+   * geometric enough to feel current, warmer than Inter or Geist, and open
+   * enough at small sizes for navigation, metadata, prompts and dashboards.
+   * It gives Archivyn a sleeker voice without drifting into a cold developer
+   * tool or a childish rounded classroom face. */
+  --ark-font-ui: "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   --ark-font-serif: "Fraunces", Georgia, "Times New Roman", serif;
 
   /* Layout constants */

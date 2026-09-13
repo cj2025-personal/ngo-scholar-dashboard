@@ -8,8 +8,17 @@ const { COLLECTIONS, getDb } = require("../db/mongo");
 const { ApiError } = require("../lib/api-error");
 const { getEditorialImagesBucket } = require("../lib/gcs");
 const { serializeMongoValue } = require("../lib/serialize");
+const { ownedByScholarFilter } = require("../lib/identity");
+const { buildByline } = require("../lib/byline");
+const { humanPublisher, makesPublic } = require("../lib/actor");
+const {
+  normalizeBlockProvenance,
+  presentBlockProvenance,
+  storyProvenanceFromJob,
+  provenanceLine,
+} = require("../lib/provenance");
 
-const STORY_COLLECTION = COLLECTIONS.scholarStories;
+const STORY_COLLECTION = COLLECTIONS.scholarEditorials;
 const IMAGE_ASSET_COLLECTION = COLLECTIONS.editorialImageAssets;
 const MAX_IMAGE_COUNT = 16;
 const BLOCK_TYPES = new Set([
@@ -46,22 +55,12 @@ const INLINE_SANITIZE_OPTIONS = {
 };
 
 function buildScholarStoryFilters({ scholarId, profileId }) {
-  const filters = [
-    { scholar_id: scholarId },
-    { profile_id: profileId },
-    { authorId: scholarId },
-    { authorId: profileId },
-  ];
-
-  if (ObjectId.isValid(scholarId)) {
-    filters.push({ authorId: new ObjectId(scholarId) });
-  }
-
-  if (ObjectId.isValid(profileId)) {
-    filters.push({ authorId: new ObjectId(profileId) });
-  }
-
-  return filters;
+  /* One writer, one shape, one indexed equality.
+     The six-way $or this replaces existed because the collection was shared
+     with a service that keyed rows to `authorId` in the `users` namespace.
+     Nothing writes that shape here, so matching on it could only ever return
+     another service's rows. */
+  return [ownedByScholarFilter(profileId)];
 }
 
 function getStoryCollection(db) {
@@ -154,11 +153,19 @@ function normalizeRawBodyBlocks(blocks, fallbackContent = "") {
           : typeof block?.text === "string"
             ? escapeHtml(block.text).replace(/\n/g, "<br>")
             : "";
+      const html = sanitizeInlineMarkup(rawHtml);
 
-      return {
-        type,
-        html: sanitizeInlineMarkup(rawHtml),
-      };
+      /* Provenance rides on drafted text blocks and nowhere else. Measured
+         here against the html being saved, so the stored chip state is the
+         server's verdict, not the client's. */
+      const provenance = normalizeBlockProvenance({
+        sourceRefs: block?.sourceRefs,
+        draftedText: block?.draftedText,
+        fidelity: block?.fidelity,
+        currentHtml: html,
+      });
+
+      return provenance ? { type, html, provenance } : { type, html };
     })
     .filter((block) => {
       if (block.type === "image") {
@@ -335,6 +342,29 @@ function ensureAuthoringInput({ title, content, excerpt, status, hasFiles }) {
       throw new ApiError(400, "Story content is required before publishing.");
     }
   }
+}
+
+/**
+ * The person making a story public, or a refusal.
+ *
+ * A draft may be saved by whatever the session admits; a draft reaches no
+ * reader. The moment a story is published or scheduled, the actor must be a
+ * person with a scholar login — see `lib/actor.js` for the counter-example
+ * this exists to prevent — and their identity is written to `published_by`.
+ */
+function resolvePublisher({ status, user, currentStory = null }) {
+  if (!makesPublic(status)) {
+    return null;
+  }
+  const verdict = humanPublisher(user);
+  if (!verdict.ok) {
+    throw new ApiError(403, `Only a signed-in scholar can publish: ${verdict.reason}.`);
+  }
+  /* Already public and staying so: the original publisher stands. */
+  if (currentStory && makesPublic(currentStory.status) && currentStory.published_by) {
+    return currentStory.published_by;
+  }
+  return verdict.actor;
 }
 
 function ensurePublicationSettings({ status, scheduledFor }) {
@@ -676,6 +706,7 @@ function resolveBodyBlocksWithImages({
       resolvedBlocks.push({
         type: block.type,
         html: block.html,
+        ...(block.provenance ? { provenance: block.provenance } : {}),
       });
       continue;
     }
@@ -709,7 +740,123 @@ function resolveBodyBlocksWithImages({
   };
 }
 
-function mapStoryDocument(story) {
+/**
+ * The author of a story, from the curated record.
+ *
+ * Read-only against `scholars`, which is owned by the curation pipeline — the
+ * byline is a view of that record, never a copy, so a scholar who changes
+ * institution does not have to re-publish old work to stop it misstating where
+ * they are.
+ *
+ * A story whose `profile_id` resolves to nothing returns null rather than a
+ * guess. That should be impossible here (this service is the only writer and
+ * always sets it), so it is logged: a published article with no resolvable
+ * author is a defect worth seeing, not a case to paper over.
+ */
+async function resolveStoryAuthor(db, profileId) {
+  if (!profileId) return null;
+
+  const scholar = await db
+    .collection("scholars")
+    .findOne(
+      { profile_id: profileId },
+      { projection: { profile_id: 1, name: 1, "about.current_position": 1, "about.institution": 1, "about.avatar_initial": 1 } },
+    );
+
+  if (!scholar) {
+    console.warn(
+      `[byline] published story references profile_id ${profileId}, which matches no scholar record`,
+    );
+    return null;
+  }
+
+  return buildByline(scholar);
+}
+
+/**
+ * The source a story was drafted from, looked up now rather than copied then.
+ *
+ * Same principle as the byline: the story holds the source's id, and the
+ * title, year and URL are read from the source record at read time, so a
+ * corrected title or a withdrawn licence shows without republishing. An
+ * unresolvable source yields no line at all — a "drawn from" claim that
+ * cannot name what it was drawn from is not one worth printing.
+ */
+async function resolveStoryProvenance(db, provenance) {
+  if (!provenance || !provenance.source_id) return null;
+  const base = {
+    origin: provenance.origin,
+    sourceId: provenance.source_id,
+    draftedAt: provenance.drafted_at || null,
+    promptVersion: provenance.prompt_version || null,
+  };
+
+  try {
+    if (provenance.origin === "contributed") {
+      const doc = await db
+        .collection("scholar_documents")
+        .findOne({ document_id: provenance.source_id }, { projection: { title: 1, document_type: 1, status: 1 } });
+      if (!doc) return { ...base, title: null, year: null, url: null, line: null };
+      const title = doc.title || provenance.source_title || null;
+      return { ...base, title, year: provenance.source_year ?? null, url: null, line: provenanceLine({ title, year: provenance.source_year }) };
+    }
+    const src = await db
+      .collection("source_texts")
+      .findOne({ source_id: provenance.source_id }, { projection: { title: 1, source_url: 1, resolved_url: 1, allowed_use: 1, license_type: 1 } });
+    if (!src) return { ...base, title: null, year: null, url: null, line: null };
+    const title = src.title || provenance.source_title || null;
+    return {
+      ...base,
+      title,
+      year: provenance.source_year ?? null,
+      url: src.resolved_url || src.source_url || null,
+      licence: src.license_type || null,
+      line: provenanceLine({ title, year: provenance.source_year }),
+    };
+  } catch (error) {
+    console.warn("[provenance] could not resolve story source:", error.message);
+    return { ...base, title: provenance.source_title || null, year: provenance.source_year ?? null, url: null, line: null };
+  }
+}
+
+/**
+ * A draft job's provenance, claimed for a story being saved.
+ *
+ * Verifies the job is the scholar's and holds a draft, then returns the
+ * story-level provenance to store. The job itself is told which story took
+ * its draft after the save succeeds (see `linkDraftJob`).
+ */
+async function claimDraftProvenance(db, { draftJobId, profileId }) {
+  if (!draftJobId) return null;
+  if (!ObjectId.isValid(String(draftJobId))) throw new ApiError(400, "Draft job id is invalid.");
+  const job = await db
+    .collection(COLLECTIONS.draftJobs)
+    .findOne({ _id: new ObjectId(String(draftJobId)), profile_id: profileId }, { projection: { source: 1, status: 1, prompt_version: 1, graph_version: 1, finished_at: 1, created_at: 1 } });
+  if (!job) throw new ApiError(404, "Draft job not found.");
+  if (job.status !== "awaiting_review" && job.status !== "published") {
+    throw new ApiError(409, "That draft is not ready to be saved into a story.");
+  }
+  return storyProvenanceFromJob(job);
+}
+
+async function linkDraftJob({ draftJobId, profileId, storyId }) {
+  if (!draftJobId) return;
+  try {
+    /* Lazy: draftJob.service requires drafting.service, and neither requires
+       this file, so the require cannot loop — but keeping it here keeps the
+       editorial service loadable in tests that stub nothing. */
+    const { resumeJob } = require("./draftJob.service");
+    await resumeJob({ jobId: String(draftJobId), profileId, action: "publish", storyId: String(storyId) });
+  } catch (error) {
+    /* Already linked on an earlier save is the common case; anything else is
+       logged. A failure to annotate the job must never fail the scholar's save. */
+    if (!(error instanceof ApiError && error.statusCode === 409)) {
+      console.warn("[provenance] could not link draft job to story:", error.message);
+    }
+  }
+}
+
+function mapStoryDocument(story, author = null, provenance = null) {
   const now = new Date();
   const images = Array.isArray(story.images) ? story.images : [];
   const coverImage = images.find((image) => image.kind === "cover") || null;
@@ -741,6 +888,7 @@ function mapStoryDocument(story) {
             return {
               type: normalizeBlockType(block.type),
               html: typeof block.html === "string" ? block.html : "",
+              ...presentBlockProvenance(block.provenance),
             };
           })
           .filter(Boolean)
@@ -751,6 +899,13 @@ function mapStoryDocument(story) {
   return {
     id: story._id,
     title,
+    /* Null where it could not be resolved. The reader renders nothing rather
+       than "Unknown Author", which on a piece of scholarship reads as our
+       mistake rather than as missing data. */
+    author,
+    /* The source the draft was drawn from, resolved at read time like the
+       byline. Null for a story written by hand. */
+    provenance,
     subtitle: story.subtitle || "",
     excerpt: buildExcerpt(story.excerpt, plainTextContent),
     content: plainTextContent,
@@ -1021,9 +1176,17 @@ async function listEditorialStories({ scholarId, profileId, status = "all" }) {
 
 async function getEditorialStory({ storyId, scholarId, profileId }) {
   const story = await findOwnedStory({ storyId, scholarId, profileId });
+  const db = await getDb();
 
+  /* The same byline a reader will see. Carried here so the editor can show a
+     scholar how their work will be attributed before they publish it, rather
+     than after. */
+  const [author, provenance] = await Promise.all([
+    resolveStoryAuthor(db, story.profile_id),
+    resolveStoryProvenance(db, story.provenance),
+  ]);
   return serializeMongoValue({
-    story: mapStoryDocument(story),
+    story: mapStoryDocument(story, author, provenance),
   });
 }
 
@@ -1038,8 +1201,12 @@ async function getPublishedStoryBySlug(slug) {
     throw new ApiError(404, "Published story not found.");
   }
 
+  const [author, provenance] = await Promise.all([
+    resolveStoryAuthor(db, story.profile_id),
+    resolveStoryProvenance(db, story.provenance),
+  ]);
   return serializeMongoValue({
-    story: mapStoryDocument(story),
+    story: mapStoryDocument(story, author, provenance),
   });
 }
 
@@ -1095,6 +1262,8 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
       status,
       scheduledFor,
     });
+    const publishedBy = resolvePublisher({ status, user });
+    const provenance = await claimDraftProvenance(db, { draftJobId: body.draftJobId, profileId });
 
     const retainedImageIds = new Set(referencedImageIds);
     const persistedImages = uploadedImages.filter((image) => {
@@ -1129,6 +1298,8 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
       }),
       scheduled_for: status === "scheduled" ? scheduledFor : null,
       unpublished_at: null,
+      published_by: publishedBy,
+      provenance,
       source: "native_dashboard_editor",
       editor_version: 4,
     };
@@ -1136,6 +1307,7 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
     await insertAssetDocuments(assetCollection, uploadedAssetDocuments);
     await collection.insertOne(story);
     storyInserted = true;
+    await linkDraftJob({ draftJobId: body.draftJobId, profileId, storyId });
   } catch (error) {
     if (!storyInserted) {
       await rollbackUploadedAssets({
@@ -1243,6 +1415,11 @@ async function updateEditorialStory({
       status,
       scheduledFor: status === "scheduled" ? scheduledFor : null,
     });
+    const publishedBy = resolvePublisher({ status, user, currentStory: existingStory });
+    /* A story keeps the provenance it has unless a new draft is being saved
+       into it, in which case the newer job wins. */
+    const claimed = await claimDraftProvenance(db, { draftJobId: body.draftJobId, profileId });
+    const provenance = claimed || existingStory.provenance || null;
 
     const retainedIdValues = parseRetainedIds(body.retainImageIds);
     const retainedIds = new Set(retainedIdValues || []);
@@ -1311,6 +1488,8 @@ async function updateEditorialStory({
           existingStory.status === "scheduled")
           ? now
           : null,
+      published_by: publishedBy,
+      provenance,
       editor_version: 4,
     };
 
@@ -1332,11 +1511,14 @@ async function updateEditorialStory({
           published_at: nextStory.published_at,
           scheduled_for: nextStory.scheduled_for,
           unpublished_at: nextStory.unpublished_at,
+          published_by: nextStory.published_by,
+          provenance: nextStory.provenance,
           editor_version: nextStory.editor_version,
         },
       },
     );
     storyUpdated = true;
+    await linkDraftJob({ draftJobId: body.draftJobId, profileId, storyId: existingStory._id });
   } catch (error) {
     if (!storyUpdated) {
       await rollbackUploadedAssets({

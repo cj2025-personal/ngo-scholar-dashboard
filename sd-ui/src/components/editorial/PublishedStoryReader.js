@@ -20,10 +20,25 @@ function buildStructuredData(story) {
   const canonical = `${siteUrl.replace(/\/+$/, "")}/stories/${story.slug}`;
   const image = buildPublicImageUrl(story?.coverImage?.url);
 
+  /* Omitted entirely when unresolved. Structured data naming an unknown
+     author is a machine-readable version of the same false claim the visible
+     byline is careful not to make. */
+  const author = story?.author?.name
+    ? {
+        "@type": "Person",
+        name: story.author.name,
+        ...(story.author.position ? { jobTitle: story.author.position } : {}),
+        ...(story.author.institution
+          ? { affiliation: { "@type": "Organization", name: story.author.institution } }
+          : {}),
+      }
+    : undefined;
+
   return {
     "@context": "https://schema.org",
     "@type": "Article",
     headline: story.title,
+    author,
     description: story.excerpt || undefined,
     datePublished: story.publishedAt || undefined,
     dateModified: story.updatedAt || undefined,
@@ -137,6 +152,44 @@ export default function PublishedStoryReader({ story }) {
             {story?.subtitle ? (
               <p className="public-story-subtitle">{story.subtitle}</p>
             ) : null}
+            {/* The whole portal exists so that what Archivyn publishes under
+                a person's name is something that person stands behind. An
+                article with no byline says the opposite. Absent rather than
+                guessed when the curated record cannot be resolved. */}
+            {story?.author?.name ? (
+              <div className="public-story-byline">
+                {story.author.initials ? (
+                  <span className="public-story-byline-mark" aria-hidden="true">
+                    {story.author.initials}
+                  </span>
+                ) : null}
+                <span className="public-story-byline-text">
+                  <b>{story.author.name}</b>
+                  {story.author.affiliation ? (
+                    <span>{story.author.affiliation}</span>
+                  ) : null}
+                </span>
+              </div>
+            ) : null}
+
+            {/* Same read-time join as the byline: the story holds the source
+                id and the title is looked up now, so this line is never a
+                stale copy. Absent for a hand-written story and for a source
+                that could not be resolved. */}
+            {story?.provenance?.line ? (
+              <p className="public-story-provenance">
+                {story.provenance.line}
+                {story.provenance.url ? (
+                  <>
+                    {" "}
+                    <a href={story.provenance.url} target="_blank" rel="noreferrer noopener">
+                      Read the source
+                    </a>
+                  </>
+                ) : null}
+              </p>
+            ) : null}
+
             <div className="public-story-meta">
               {publishedDate ? <span>{publishedDate}</span> : null}
               <span>{story?.readingTimeMinutes || 0} min read</span>

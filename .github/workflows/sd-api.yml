@@ -1,0 +1,111 @@
+name: sd-api
+
+# Unit and contract tests on every change; the draft evals when the model
+# credentials are available to the run. A prompt, graph or model change that
+# drops an eval score below its floor fails this workflow — that is the gate
+# the plan calls for, and it lives here so it cannot be skipped by being busy.
+
+on:
+  push:
+    paths: ["sd-api/**", "sd-ui/**", ".github/workflows/sd-api.yml"]
+  pull_request:
+    paths: ["sd-api/**", "sd-ui/**", ".github/workflows/sd-api.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sd-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: sd-api/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  e2e:
+    # The whole path a scholar's click takes, against an in-memory MongoDB and
+    # a fake model. No credentials, no external calls, no shared state.
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sd-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: sd-api/package-lock.json
+      - run: npm ci
+      - run: npm run test:e2e
+
+  browser:
+    # The composer in a real browser: Next.js dev server, sd-api, in-memory
+    # MongoDB, fake model. Asserts on rendered content only.
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+        working-directory: sd-api
+      - run: npm ci
+        working-directory: sd-ui
+      - run: npx playwright install --with-deps chromium
+        working-directory: sd-ui
+      - run: npm run test:e2e
+        working-directory: sd-ui
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: sd-ui/tests-e2e/results
+          if-no-files-found: ignore
+
+  evals:
+    # Needs a Vertex service account; skipped on forks and where the secret is unset.
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    defaults:
+      run:
+        working-directory: sd-api
+    env:
+      MONGODB_URI: mongodb://localhost:27017/evals-unused
+      MONGODB_DB: evals-unused
+      LLM_PROVIDER: vertex
+      STORY_LLM_MODEL: ${{ vars.STORY_LLM_MODEL || 'gemini-2.5-flash' }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_LOCATION: ${{ vars.GCP_LOCATION || 'us-central1' }}
+      GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGSMITH_PROJECT: archivyn-drafting-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: sd-api/package-lock.json
+      - run: npm ci
+      - name: Draft evals (skipped without model credentials)
+        run: |
+          if [ -z "$GCP_SERVICE_ACCOUNT_JSON" ] || [ -z "$GCP_PROJECT_ID" ]; then
+            echo "No Vertex credentials in this run; evals skipped."
+            exit 0
+          fi
+          npm run eval:drafts -- --json eval-results.json ${LANGSMITH_API_KEY:+--langsmith}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: draft-eval-results
+          path: sd-api/eval-results.json
+          if-no-files-found: ignore

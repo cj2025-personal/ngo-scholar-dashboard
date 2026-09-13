@@ -1,5 +1,6 @@
 const { env } = require("../config/env");
 const { getCollections } = require("../db/mongo");
+const { loginEmailCandidates } = require("../lib/loginEmail");
 const { ApiError } = require("../lib/api-error");
 const {
   assertStrongPassword,
@@ -46,15 +47,22 @@ function sanitizeCredential(credential) {
 }
 
 async function findCredentialByEmail(credentialsCollection, email) {
-  const normalizedEmail = normalizeEmail(email);
+  /* Canonical form first, the address as typed second: a row not yet migrated
+     still resolves, and a scholar typing the old address is still recognised
+     after migration. `$in` preserves neither order nor preference, so the two
+     are tried in sequence. */
+  const candidates = loginEmailCandidates(email);
 
-  if (!normalizedEmail) {
+  if (candidates.length === 0) {
     return null;
   }
 
-  const directMatch = await credentialsCollection.findOne({
-    login_email: normalizedEmail,
-  });
+  let directMatch = null;
+  for (const candidate of candidates) {
+    directMatch = await credentialsCollection.findOne({ login_email: candidate });
+    if (directMatch) break;
+  }
+  const normalizedEmail = candidates[0];
 
   if (directMatch) {
     return directMatch;

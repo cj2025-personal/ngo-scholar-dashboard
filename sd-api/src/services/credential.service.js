@@ -5,22 +5,24 @@ const { getCollections, getDb } = require("../db/mongo");
 const { ApiError } = require("../lib/api-error");
 const { assertStrongPassword, hashPassword } = require("../lib/passwords");
 const { serializeMongoValue } = require("../lib/serialize");
+const { canonicalLoginEmail } = require("../lib/loginEmail");
 const { deleteSessionsForScholar } = require("./session.service");
 
-const SCHOLAR_EMAIL_DOMAIN = (
-  process.env.SCHOLAR_EMAIL_DOMAIN || "scholars.archivyn.com"
-)
-  .trim()
-  .replace(/^@+/, "")
-  .toLowerCase();
+/* The login domain is no longer configurable here. It was, and the value
+   diverged from the documents portal's — same credentials table, two
+   conventions, and the only Legacy scholar with a login locked out of the
+   portal. The rule now lives in lib/loginEmail.js, ported from the portal and
+   held equal to it by a contract test. */
 
 // Ambiguity-free character sets for generated temp passwords (no 0/O/1/l/I).
 const LOWER = "abcdefghijkmnpqrstuvwxyz";
 const UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const DIGITS = "23456789";
 
+/* Every address this service stores or compares goes through the shared
+   rule, so an admin-typed address and a generated one land on one shape. */
 function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
+  return canonicalLoginEmail(email);
 }
 
 function pickFrom(set) {
@@ -69,7 +71,7 @@ function generateLoginEmail(scholar) {
     .replace(/-/g, "")
     .slice(0, 8);
   const local = idSuffix ? `${slug}.${idSuffix}` : slug;
-  return `${local}@${SCHOLAR_EMAIL_DOMAIN}`;
+  return canonicalLoginEmail(local);
 }
 
 /** Resolve a scholar record from the `scholars` collection by its UUID (_id or profile_id). */
