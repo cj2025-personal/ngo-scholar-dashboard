@@ -2849,7 +2849,16 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
    Three bands: the one thing to do, the shape of the work, then the detail.
    See components/scholar/StudioHome.js.
    ═══════════════════════════════════════════════════════════════════════ */
-.st-page { max-width: 1160px; margin: 0 auto; padding: 24px 24px 44px; display: flex; flex-direction: column; gap: 18px; }
+/* One grid for the whole page, and a rail that runs the length of it. It was
+   two stacked grids before — a launch row and a detail row — which left the
+   rail cut in half, a band of dead space under the short half, and a ragged
+   seam where the two bands met. The learner dashboard runs one rail down the
+   page; so does this. */
+.st-page { max-width: 1180px; margin: 0 auto; padding: 24px 24px 44px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+.st-main { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+.st-rail { display: flex; flex-direction: column; gap: 18px; }
+.st-rail__big { margin: 10px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ark-text-muted); }
+.st-rail__big b { font-family: var(--sd-display); font-size: 24px; font-weight: 700; color: var(--ark-navy); }
 
 .st-page .st-card, .st-next, .st-shape {
   position: relative; overflow: hidden;
@@ -2865,9 +2874,27 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 }
 
 /* ── 1 · What to do now ───────────────────────────────────────────────── */
-.st-launch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 340px); gap: 18px; align-items: start; }
 
 .st-next { display: flex; flex-direction: column; padding: 26px 30px 24px; }
+.st-next__main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
+.st-next__copy { flex: 1 1 22rem; min-width: 0; display: flex; flex-direction: column; }
+
+/* Where the work stands. The reference puts a progress ring here; a scholar
+   has no percentage worth showing, but the same question — how is the work
+   moving — is answered by the three states it moves through. */
+.st-pipe { flex: 0 0 auto; align-self: center; display: flex; flex-direction: column; gap: 2px; min-width: 190px; }
+.st-pipe__step {
+  position: relative; display: flex; align-items: baseline; gap: 10px; padding: 9px 12px;
+  border-radius: 10px; transition: background 140ms ease;
+}
+.st-pipe__step:hover { background: var(--ark-surface-2); }
+/* The line that makes them one pipeline rather than three numbers. */
+.st-pipe__step:not(.is-last)::after {
+  content: ""; position: absolute; left: 25px; bottom: -2px; width: 1px; height: 6px; background: var(--ark-border);
+}
+.st-pipe__n { font-family: var(--sd-display); font-size: 25px; font-weight: 700; line-height: 1; color: var(--ark-navy); min-width: 26px; }
+.st-pipe__label { font-size: 12.5px; line-height: 1.35; color: var(--ark-text-muted); }
+.st-pipe__step.is-warn .st-pipe__n { color: var(--ark-warning); }
 .st-next__date { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--ark-text-faint); }
 .st-next__greet {
   margin: 4px 0 0; font-family: var(--sd-display); font-size: 20px; font-weight: 700;
@@ -2936,7 +2963,6 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .st-shape__note { margin-top: 12px; font-size: 11.5px; line-height: 1.55; color: var(--ark-text-faint); }
 
 /* ── 3 · The detail ───────────────────────────────────────────────────── */
-.st-below { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
 .st-story-main { min-width: 0; }
 .st-todo { border-inline-start-width: 3px; }
 .st-todo.is-grave { border-inline-start-color: var(--ark-red); }
@@ -2947,8 +2973,14 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .st-dot.is-info { background: var(--ark-navy); }
 
 @media (max-width: 1000px) {
-  .st-launch, .st-below { grid-template-columns: minmax(0, 1fr); }
-  .st-rail { order: -1; }
+  .st-page { grid-template-columns: minmax(0, 1fr); }
+  .st-rail { order: 2; }
+}
+@media (max-width: 760px) {
+  .st-next__main { gap: 14px; }
+  .st-pipe { align-self: stretch; flex-direction: row; min-width: 0; }
+  .st-pipe__step { flex: 1; flex-direction: column; gap: 2px; padding: 8px; }
+  .st-pipe__step:not(.is-last)::after { display: none; }
 }
 @media (max-width: 620px) {
   .st-page { padding: 16px 14px 32px; }

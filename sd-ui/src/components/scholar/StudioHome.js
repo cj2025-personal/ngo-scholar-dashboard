@@ -121,11 +121,14 @@ export default function StudioHome({ me, sources, jobs, stories }) {
 
   return (
     <div className="st-page">
-      {/* ── 1 · What to do now ─────────────────────────────────────────── */}
-      <section className="st-launch" aria-labelledby="st-next-title">
+      <div className="st-main">
+        {/* ── 1 · What to do now ───────────────────────────────────────── */}
+        <section aria-labelledby="st-next-title">
         <article className={`st-next${next ? ` is-${next.tone}` : " is-clear"}`}>
           <p className="st-next__date">{today()}</p>
           <p className="st-next__greet">{greeting()}, {firstName}</p>
+          <div className="st-next__main">
+            <div className="st-next__copy">
 
           {next ? (
             <>
@@ -176,55 +179,28 @@ export default function StudioHome({ me, sources, jobs, stories }) {
               </div>
             </>
           )}
+            </div>
+
+            {/* The reference fills this half with a progress ring. A scholar
+                has no percentage to show, but they do have a pipeline, and it
+                is the same question: how is the work moving? */}
+            <div className="st-pipe" aria-label="Where your work stands">
+              {[
+                { n: counts.draftable, label: counts.draftable === 1 ? "paper ready to draft" : "papers ready to draft", href: "/papers" },
+                { n: inReview, label: inReview === 1 ? "draft in review" : "drafts in review", href: "/editorial", warn: inReview > 0 },
+                { n: published, label: published === 1 ? "story published" : "stories published", href: "/editorial" },
+              ].map((step, i) => (
+                <Link key={step.label} href={step.href} className={`st-pipe__step${step.warn ? " is-warn" : ""}${i === 2 ? " is-last" : ""}`}>
+                  <span className="st-pipe__n">{step.n}</span>
+                  <span className="st-pipe__label">{step.label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
         </article>
+        </section>
 
-        {/* ── 2 · The shape of the work ─────────────────────────────────── */}
-        <aside className="st-shape" aria-label="Your work at a glance">
-          <div className="st-shape__lead">
-            <span className="st-shape__icon" aria-hidden><HiOutlineDocumentText size={20} /></span>
-            <span className="st-shape__headline">
-              <span className="st-shape__big">{counts.draftable}</span>
-              <span className="st-shape__big-label">
-                {counts.draftable === 1 ? "paper ready to draft from" : "papers ready to draft from"}
-              </span>
-            </span>
-          </div>
-
-          <div className="st-shape__row">
-            <span className={`st-shape__stat${inReview ? " is-warn" : ""}`}>
-              <span className="st-shape__stat-label">In review</span>
-              <span className="st-shape__stat-value">{inReview}</span>
-            </span>
-            <span className="st-shape__stat">
-              <span className="st-shape__stat-label">Published</span>
-              <span className="st-shape__stat-value">{published}</span>
-            </span>
-            <span className={`st-shape__stat${todos.length ? " is-warn" : ""}`}>
-              <span className="st-shape__stat-label">Waiting on you</span>
-              <span className="st-shape__stat-value">{todos.length}</span>
-            </span>
-          </div>
-
-          <div className="st-shape__links">
-            <Link href="/papers" className="st-link">All papers <HiOutlineArrowRight size={12} aria-hidden /></Link>
-            <a href={DOCS_PORTAL_URL} target="_blank" rel="noreferrer" className="st-link">
-              <HiOutlineArrowUpTray size={12} aria-hidden /> Add a paper
-            </a>
-          </div>
-
-          {counts.citable > 0 && counts.draftable > 0 ? (
-            <p className="st-shape__note">
-              {counts.citable} of your papers can be quoted but not built on. Adding a version you hold the rights to changes that.
-            </p>
-          ) : inventory?.nudge ? (
-            <p className="st-shape__note">{inventory.nudge}</p>
-          ) : null}
-        </aside>
-      </section>
-
-      {/* ── 3 · The rest, and the work itself ─────────────────────────── */}
-      <div className="st-below">
-        <div className="st-main">
+        {/* ── 2 · The detail ───────────────────────────────────── */}
           {rest.length ? (
             <section className="st-card" id="st-queue" aria-labelledby="st-queue-title">
               <div className="st-card-head">
@@ -276,20 +252,39 @@ export default function StudioHome({ me, sources, jobs, stories }) {
               ))
             )}
           </section>
-        </div>
-
-        <aside className="st-rail">
-          <section className="st-card">
-            <span className="sc-kicker">Profile</span>
-            <div className="st-profile-name">{me.name}</div>
-            {me.institution ? <div className="st-todo-detail">{me.institution}</div> : null}
-            <div className="st-actions" style={{ marginTop: 12 }}>
-              <Link href="/profile" className="st-link">Your record</Link>
-              <Link href="/content" className="st-link">What Archivyn says about you</Link>
-            </div>
-          </section>
-        </aside>
       </div>
+
+      {/* ── 3 · The rail, the length of the page ─────────────────── */}
+      <aside className="st-rail">
+        <section className="st-card">
+          <span className="sc-kicker">Your papers</span>
+          <p className="st-rail__big">
+            <b>{counts.draftable}</b> {counts.draftable === 1 ? "paper is ready to draft from" : "papers are ready to draft from"}
+          </p>
+          <div className="st-shape__links">
+            <Link href="/papers" className="st-link">All papers <HiOutlineArrowRight size={12} aria-hidden /></Link>
+            <a href={DOCS_PORTAL_URL} target="_blank" rel="noreferrer" className="st-link">
+              <HiOutlineArrowUpTray size={12} aria-hidden /> Add a paper
+            </a>
+          </div>
+          {counts.citable > 0 && counts.draftable > 0 ? (
+            <p className="st-shape__note">
+              {counts.citable} of your papers can be quoted but not built on. Adding a version you hold the rights to changes that.
+            </p>
+          ) : inventory?.nudge ? (
+            <p className="st-shape__note">{inventory.nudge}</p>
+          ) : null}
+        </section>
+        <section className="st-card">
+          <span className="sc-kicker">Profile</span>
+          <div className="st-profile-name">{me.name}</div>
+          {me.institution ? <div className="st-todo-detail">{me.institution}</div> : null}
+          <div className="st-actions" style={{ marginTop: 12 }}>
+            <Link href="/profile" className="st-link">Your record</Link>
+            <Link href="/content" className="st-link">What Archivyn says about you</Link>
+          </div>
+        </section>
+      </aside>
     </div>
   );
 }
