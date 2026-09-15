@@ -1851,35 +1851,120 @@ select {
 }
 .sc-serif { font-family: var(--sd-serif); }
 
-/* Top nav */
-.sc-topbar {
-  position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 18px;
-  height: var(--ark-topbar-height); padding: 0 24px; background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(18px) saturate(130%); border-bottom: 1px solid rgba(214, 223, 240, 0.72);
-  box-shadow: 0 10px 28px -26px rgba(23, 37, 84, 0.36);
+/* ── Top nav ────────────────────────────────────────────────────────────────
+   Matched to the user dashboard's GlobalNavbar: a floating glass pill sitting
+   on the page rather than a bar fastened to the window, so a scholar moving
+   between the two apps does not feel they have changed product. Radius,
+   materials, brand sizing, the grouped bell-and-avatar control and the
+   dropdown's measurements all come from there; see
+   components/scholar/Topbar.js for what deliberately differs and why.
+
+   This bar is 68px tall, not the 64px of --ark-topbar-height: 8 top + 56 bar
+   + 4 bottom, where the bar is the 42px bell-and-avatar cluster plus its
+   padding and border. That is what the reference measures too, so the
+   difference is the token being wrong for this design rather than the design
+   drifting. --ark-topbar-height is not corrected here because it belongs to
+   the shared token sheet, which is changed in every repo or not at all; the
+   height of *this* bar is a fact about this app, so it is stated here and
+   read by the one surface that needs it, the composer. Change the padding
+   below and you must change this number with it. */
+:root { --sc-nav-height: 68px; }
+.nb-header { position: relative; z-index: 50; padding: 8px 0 4px; }
+.nb-container { width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 16px; }
+.nb-bar {
+  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 20px; border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: linear-gradient(132deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.12));
+  backdrop-filter: blur(40px) saturate(140%); -webkit-backdrop-filter: blur(40px) saturate(140%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25), 0 20px 44px -30px rgba(2, 17, 30, 0.75);
+  animation: nb-enter 650ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.sc-brand { display: flex; align-items: center; gap: 10px; font-family: var(--sd-display); font-weight: 800; font-size: 19px; letter-spacing: 0; color: var(--ink); }
-.sc-brand .mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; font-weight: 800;
-  background: linear-gradient(150deg, var(--navy-2), var(--navy) 60%, var(--navy-ink)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25); }
-.sc-brand .accent { color: var(--burgundy); }
-.sc-nav { display: flex; gap: 4px; margin-left: 6px; padding: 4px; border-radius: 14px; background: rgba(238, 243, 251, 0.72); }
-.sc-nav a { padding: 7px 12px; border-radius: var(--ark-radius-control); font-weight: 650; font-size: 13px; color: var(--sd-muted); transition: color 0.15s, background 0.15s, box-shadow 0.15s; }
-.sc-nav a.on { color: var(--navy); background: #fff; box-shadow: var(--sd-sh-sm); }
-.sc-nav a:hover { color: var(--navy); background: rgba(255, 255, 255, 0.78); }
-.sc-search { flex: 1; max-width: 360px; margin-left: 6px; display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 14px;
-  border: 1px solid rgba(214, 223, 240, 0.9); border-radius: 13px; background: rgba(255, 255, 255, 0.82); color: var(--sd-faint); font-size: 13px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72); }
-.sc-search input { flex: 1; border: 0; outline: 0; background: transparent; font: inherit; color: var(--ink); }
-.sc-spacer { flex: 1; }
-.sc-write { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 12px; font-weight: 800; font-size: 14px; color: #fff;
-  background: linear-gradient(180deg, var(--burgundy-2), var(--burgundy));
-  box-shadow: 0 1px 2px rgba(178, 34, 52, 0.3), 0 10px 20px -8px rgba(178, 34, 52, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  transition: transform 0.15s; }
-.sc-write:hover { transform: translateY(-1px); }
-.sc-iconbtn { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--sd-line); background: rgba(255, 255, 255, 0.82); display: grid; place-items: center; color: var(--sd-muted); box-shadow: var(--sd-sh-sm); }
+@keyframes nb-enter { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .nb-bar { animation: none; } }
+
+.nb-brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.nb-logo { position: relative; display: flex; width: 32px; height: 32px; align-items: center; justify-content: center; overflow: visible; }
+/* Drawn larger than its box, as the reference does, so the mark reads at the
+   size of the wordmark without the bar growing to contain it. */
+.nb-logo img { width: 44px; height: 44px; max-width: none; object-fit: contain; }
+.nb-wordmark { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.025em; line-height: 1; color: var(--ark-navy); }
+
+/* Links the reference has no equivalent for, dressed in the pill vocabulary
+   it uses for "Back to dashboard" so they belong to the same bar. */
+.nb-nav { display: flex; align-items: center; gap: 2px; margin-left: 10px; min-width: 0; }
+.nb-link {
+  display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid transparent; font-size: 13px; font-weight: 600; white-space: nowrap;
+  color: var(--ark-text-muted); transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.nb-link:hover { background: rgba(255, 255, 255, 0.55); color: var(--ark-navy); }
+.nb-link.on {
+  background: rgba(255, 255, 255, 0.72); border-color: rgba(255, 255, 255, 0.6); color: var(--ark-navy);
+  box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.55);
+}
+
+.nb-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+/* The one action that starts work. Red because the token sheet reserves the
+   brand red for key calls to action, and because the avatar already owns the
+   navy gradient — two navy pills side by side would compete. */
+.nb-cta {
+  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 15px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; white-space: nowrap; color: #fff; background: var(--ark-red);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 12px 24px -16px rgba(178, 34, 52, 0.9);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.nb-cta:hover { transform: translateY(-1px); box-shadow: 0 16px 28px -16px rgba(178, 34, 52, 0.95); }
+
+/* Bell and avatar share one control, as in the reference. */
+.nb-cluster {
+  display: flex; align-items: center; padding: 2px; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.55);
+}
+.nb-bell {
+  position: relative; display: grid; place-items: center; width: 32px; height: 32px; border: 0;
+  background: transparent; border-radius: 999px; color: var(--ark-text-muted); cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.nb-bell svg { width: 17px; height: 17px; }
+.nb-bell:hover { background: rgba(255, 255, 255, 0.55); color: var(--ark-text); }
+.nb-dot { position: absolute; right: 7px; top: 7px; width: 6px; height: 6px; border-radius: 999px; background: var(--ark-red-bright); }
+
+.nb-acct { position: relative; margin-left: 4px; }
+.nb-avatar-btn {
+  display: flex; align-items: center; gap: 4px; padding: 2px 4px 2px 2px; border: 0;
+  background: transparent; border-radius: 999px; cursor: pointer; transition: background 0.2s;
+}
+.nb-avatar-btn:hover { background: rgba(255, 255, 255, 0.55); }
+.nb-avatar {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 999px; color: #fff;
+  font-size: 10px; font-weight: 600; background: linear-gradient(150deg, #0a1f4f, #0a2b62);
+  box-shadow: 0 12px 20px -14px rgba(2, 6, 23, 0.82);
+}
+.nb-chev { width: 14px; height: 14px; color: var(--ark-text-faint); flex-shrink: 0; }
+
+.nb-menu {
+  position: absolute; right: 0; top: calc(100% + 12px); z-index: 50; width: 208px; padding: 8px;
+  border-radius: 16px; border: 1px solid rgba(214, 223, 240, 0.8); background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 20px 50px -30px rgba(15, 23, 42, 0.45);
+}
+.nb-menu__id { padding: 8px; }
+.nb-menu__id p { margin: 0; font-size: 12px; font-weight: 600; color: var(--ark-text); }
+.nb-menu__id span { display: block; margin-top: 2px; font-size: 11px; color: var(--ark-text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-menu__rule { height: 1px; margin: 8px 0; background: rgba(214, 223, 240, 0.7); }
+.nb-menu__item {
+  display: block; width: 100%; padding: 8px 12px; border: 0; background: transparent; border-radius: 12px;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--ark-text-muted); text-align: left; cursor: pointer;
+}
+.nb-menu__item:hover { background: var(--ark-surface-2); }
+.nb-menu__item--danger { color: var(--ark-red-bright); }
+.nb-menu__item--danger:hover { background: var(--ark-danger-soft); }
+.nb-menu__item:disabled { opacity: 0.6; cursor: default; }
 .sc-me { border-radius: 50%; color: #fff; display: grid; place-items: center; font-weight: 800; font-family: var(--sd-display);
   background: linear-gradient(150deg, #2b5aa0, var(--navy)); box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px var(--sd-line); }
-.sc-topbar .sc-me { width: 34px; height: 34px; flex: 0 0 34px; font-size: 12px; }
 
 /* Layout */
 .sc-wrap { max-width: 1152px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; }
@@ -1976,8 +2061,6 @@ select {
 .sc-empty .go { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: var(--ark-radius-control); font-weight: 500; font-size: 12px; color: #fff;
   background: var(--navy); box-shadow: none; }
 
-.sc-brand .sc-logo { display: block; width: 26px; height: auto; }
-.sc-brand .wordmark { color: var(--ink); }
 
 /* Real-content additions: status pills, open link, static tags, quick actions */
 .sc-status { margin-left: auto; font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 999px; letter-spacing: 0; white-space: nowrap; color: var(--sd-faint); background: var(--sd-surface-2); border: 1px solid var(--sd-line); }
@@ -2018,26 +2101,9 @@ select {
 .sc-pod-summary { margin-top: 6px; }
 .sc-pod .sc-open { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; }
 
-/* Account dropdown menu (navbar avatar) */
-.sc-acct { position: relative; }
-.sc-topbar .sc-me { border: 0; cursor: pointer; padding: 0; }
-.sc-menu {
-  position: absolute; top: calc(100% + 10px); right: 0; z-index: 50; width: 244px; padding: 8px;
-  border: 1px solid var(--sd-line); border-radius: var(--ark-radius-card); background: var(--sd-surface);
-  box-shadow: var(--sd-sh-lg);
-}
-.sc-menu__head { display: flex; align-items: center; gap: 10px; padding: 8px 8px 12px; border-bottom: 1px solid var(--sd-line-soft); margin-bottom: 6px; }
+/* The avatar at the size the publish check shows it. The dropdown this used
+   to sit beside is now .nb-menu, with the navbar. */
 .sc-me--sm { width: 34px; height: 34px; flex: 0 0 34px; font-size: 12px; }
-.sc-menu__id { min-width: 0; }
-.sc-menu__id b { font-size: 12px; font-weight: 600; display: block; line-height: 1.3; color: var(--sd-heading); }
-.sc-menu__id span { font-size: 11px; color: var(--sd-faint); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sc-menu__item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; background: transparent; border-radius: var(--ark-radius-control); font: inherit; font-size: 13px; font-weight: 500; color: var(--ink); cursor: pointer; text-align: left; }
-.sc-menu__item:hover { background: var(--sd-surface-2); }
-.sc-menu__item svg { color: var(--sd-muted); flex-shrink: 0; }
-.sc-menu__item--danger { color: var(--burgundy); }
-.sc-menu__item--danger svg { color: var(--burgundy); }
-.sc-menu__item--danger:hover { background: rgba(178, 34, 52, 0.07); }
-.sc-menu__item:disabled { opacity: 0.6; cursor: default; }
 
 /* ============================================================
    Scholar profile page (/profile)
@@ -2858,10 +2924,14 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .ws-center .sc-write-title { font-size: 34px; }
 .ws-center .sc-write-subtitle { font-size: 18px; margin-bottom: 36px; }
 @media (max-width: 760px) {
-  .sc-topbar { flex-wrap: wrap; row-gap: 4px; height: auto; min-height: var(--ark-topbar-height); padding: 8px 16px; gap: 10px; }
-  .sc-search { display: none; }
-  .sc-nav { order: 5; flex-basis: 100%; overflow-x: auto; margin-left: 0; }
-  .sc-nav a { white-space: nowrap; }
+  /* The bar wraps its links onto a second row rather than shrinking them to
+     nothing. It is then taller than --sc-nav-height, which only the composer
+     reads, and the composer is not a phone-width surface. */
+  .nb-bar { flex-wrap: wrap; row-gap: 6px; padding: 6px 14px; }
+  .nb-nav { order: 5; flex-basis: 100%; margin-left: 0; overflow-x: auto; scrollbar-width: none; }
+  .nb-nav::-webkit-scrollbar { display: none; }
+  .nb-wordmark { font-size: 1.3rem; }
+  .nb-cta span, .nb-cta { font-size: 11px; padding: 0 12px; }
 }
 
 /* ══ Agent console (Codex-style thread with a docked composer) ═══════════ */
@@ -2922,7 +2992,7 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .ag-hint kbd { font-family: inherit; font-size: 10.5px; padding: 0 4px; border: 1px solid var(--sd-line); border-radius: 4px; background: var(--sd-surface); }
 
 /* ══ New story as a conversation ═══════════════════════════════════════════ */
-.ch-wrap { max-width: 900px; margin: 0 auto; padding: 28px 24px 0; display: flex; flex-direction: column; height: calc(100vh - var(--ark-topbar-height)); min-height: 520px; }
+.ch-wrap { max-width: 900px; margin: 0 auto; padding: 28px 24px 0; display: flex; flex-direction: column; height: calc(100vh - var(--sc-nav-height)); min-height: 520px; }
 .ch-head {
   position: relative;
   display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;
@@ -3007,7 +3077,7 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
    thread from butting into it. */
 .sc-shell--fill { display: flex; flex-direction: column; height: 100dvh; }
 .sc-shell--fill .ch-wrap { flex: 1; min-height: 0; height: auto; }
-.ch-wrap { height: calc(100dvh - var(--ark-topbar-height)); min-height: 420px; padding: 28px 24px 0; }
+.ch-wrap { height: calc(100dvh - var(--sc-nav-height)); min-height: 420px; padding: 28px 24px 0; }
 .ch-composer {
   border: 1px solid rgba(214, 223, 240, 0.9);
   border-bottom: 0;
@@ -3110,8 +3180,10 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .rec-body { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: var(--sd-heading); }
 .rec-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 2px; }
 
-.ch-check { gap: 6px; cursor: pointer; }
-.ch-check input { accent-color: var(--navy); }
+/* `gap` alone did nothing here — the label was not a flex container, so the
+   box sat flush against its text ("☐Ages 8–11"). */
+.ch-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.ch-check input { accent-color: var(--navy); margin: 0; }
 
 /* the reader's side */
 .reader-notice { margin: 0 0 18px; padding: 12px 16px; border-radius: 12px; border: 1px solid rgba(178, 34, 52, 0.35); background: rgba(178, 34, 52, 0.06); color: var(--ink); font-size: 14px; line-height: 1.5; }
