@@ -2,10 +2,7 @@ import Link from "next/link";
 import {
   HiOutlineArrowRight,
   HiOutlineArrowUpTray,
-  HiOutlineBookOpen,
-  HiOutlineCheckBadge,
   HiOutlineDocumentText,
-  HiOutlinePencilSquare,
   HiOutlineSparkles,
 } from "react-icons/hi2";
 
@@ -79,20 +76,6 @@ function shortTitle(title, max = 70) {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
-/** One number and what it counts, linked to the surface that holds it. */
-function Stat({ icon: Icon, value, label, sub, href, tone = "" }) {
-  return (
-    <Link href={href} className={`st-stat-tile${tone ? ` is-${tone}` : ""}`}>
-      <span className="st-stat-tile__icon" aria-hidden><Icon size={17} /></span>
-      <span className="st-stat-tile__body">
-        <span className="st-stat-tile__value">{value}</span>
-        <span className="st-stat-tile__label">{label}</span>
-        {sub ? <span className="st-stat-tile__sub">{sub}</span> : null}
-      </span>
-    </Link>
-  );
-}
-
 export default function StudioHome({ me, sources, jobs, stories }) {
   const firstName = (me.name || "").split(/\s+/)[0] || "there";
   const inventory = sources || null;
@@ -146,27 +129,39 @@ export default function StudioHome({ me, sources, jobs, stories }) {
 
           {next ? (
             <>
-              <span className={`st-next__tag is-${next.tone}`}>{next.kind}</span>
+              <div className="st-next__tagrow">
+                <span className={`st-next__eyebrow${next.tone === "grave" ? " is-grave" : ""}`}>
+                  <HiOutlineSparkles size={13} aria-hidden />
+                  Next
+                </span>
+                <span className={`st-next__chip is-${next.tone}`}>{next.kind}</span>
+              </div>
               <h1 id="st-next-title" className="st-next__title">{next.lead}</h1>
               <p className="st-next__detail">{next.detail}</p>
               <div className="st-next__actions">
                 <Link href={next.href} className="st-btn-xl">
-                  {next.spark ? <HiOutlineSparkles size={16} aria-hidden /> : null}
                   {next.cta}
                   <HiOutlineArrowRight size={15} aria-hidden />
                 </Link>
+                {rest.length ? (
+                  <a href="#st-queue" className="st-btn-xl is-quiet">See everything waiting</a>
+                ) : null}
                 {next.jobId ? <DiscardJobButton jobId={next.jobId} /> : null}
               </div>
-              {rest.length ? (
-                <p className="st-next__note">
-                  {rest.length === 1 ? "One more thing is" : `${rest.length} more things are`} waiting below.
-                </p>
-              ) : (
-                <p className="st-next__note">Nothing else is waiting on you.</p>
-              )}
+              <p className="st-next__note">
+                {rest.length
+                  ? `${rest.length === 1 ? "One more thing is" : `${rest.length} more things are`} waiting below.`
+                  : "Nothing else is waiting on you."}
+              </p>
             </>
           ) : (
             <>
+              <div className="st-next__tagrow">
+                <span className="st-next__eyebrow">
+                  <HiOutlineSparkles size={13} aria-hidden />
+                  All clear
+                </span>
+              </div>
               <h1 id="st-next-title" className="st-next__title">Nothing is waiting on you</h1>
               <p className="st-next__detail">
                 {counts.draftable > 0
@@ -175,7 +170,6 @@ export default function StudioHome({ me, sources, jobs, stories }) {
               </p>
               <div className="st-next__actions">
                 <Link href={counts.draftable > 0 ? "/editorial/new" : "/papers"} className="st-btn-xl">
-                  <HiOutlineSparkles size={16} aria-hidden />
                   {counts.draftable > 0 ? "Start a story" : "See your papers"}
                   <HiOutlineArrowRight size={15} aria-hidden />
                 </Link>
@@ -186,25 +180,44 @@ export default function StudioHome({ me, sources, jobs, stories }) {
 
         {/* ── 2 · The shape of the work ─────────────────────────────────── */}
         <aside className="st-shape" aria-label="Your work at a glance">
-          <span className="sc-kicker">Your work</span>
-          <div className="st-shape__grid">
-            <Stat icon={HiOutlineDocumentText} value={counts.draftable} label="ready to draft" sub={counts.citable ? `${counts.citable} quotable only` : null} href="/papers" />
-            <Stat icon={HiOutlinePencilSquare} value={inReview} label="in review" sub={inReview ? "drafted, not yet yours" : null} href="/editorial" tone={inReview ? "warn" : ""} />
-            <Stat icon={HiOutlineCheckBadge} value={published} label="published" href="/editorial" tone={published ? "ok" : ""} />
-            <Stat icon={HiOutlineBookOpen} value={todos.length} label="waiting on you" href="#st-queue" tone={todos.length ? "warn" : "ok"} />
+          <div className="st-shape__lead">
+            <span className="st-shape__icon" aria-hidden><HiOutlineDocumentText size={20} /></span>
+            <span className="st-shape__headline">
+              <span className="st-shape__big">{counts.draftable}</span>
+              <span className="st-shape__big-label">
+                {counts.draftable === 1 ? "paper ready to draft from" : "papers ready to draft from"}
+              </span>
+            </span>
           </div>
-          <div className="st-actions">
-            <Link href="/papers" className="sc-write-secondary st-btn">See all papers</Link>
-            <a href={DOCS_PORTAL_URL} target="_blank" rel="noreferrer" className="sc-write-secondary st-btn">
+
+          <div className="st-shape__row">
+            <span className={`st-shape__stat${inReview ? " is-warn" : ""}`}>
+              <span className="st-shape__stat-label">In review</span>
+              <span className="st-shape__stat-value">{inReview}</span>
+            </span>
+            <span className="st-shape__stat">
+              <span className="st-shape__stat-label">Published</span>
+              <span className="st-shape__stat-value">{published}</span>
+            </span>
+            <span className={`st-shape__stat${todos.length ? " is-warn" : ""}`}>
+              <span className="st-shape__stat-label">Waiting on you</span>
+              <span className="st-shape__stat-value">{todos.length}</span>
+            </span>
+          </div>
+
+          <div className="st-shape__links">
+            <Link href="/papers" className="st-link">All papers <HiOutlineArrowRight size={12} aria-hidden /></Link>
+            <a href={DOCS_PORTAL_URL} target="_blank" rel="noreferrer" className="st-link">
               <HiOutlineArrowUpTray size={12} aria-hidden /> Add a paper
             </a>
           </div>
+
           {counts.citable > 0 && counts.draftable > 0 ? (
-            <p className="st-muted st-shape__note">
+            <p className="st-shape__note">
               {counts.citable} of your papers can be quoted but not built on. Adding a version you hold the rights to changes that.
             </p>
           ) : inventory?.nudge ? (
-            <p className="st-muted st-shape__note">{inventory.nudge}</p>
+            <p className="st-shape__note">{inventory.nudge}</p>
           ) : null}
         </aside>
       </section>
