@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -137,16 +138,23 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
     <header className="nb-header">
       <div className="nb-container">
         <div className="nb-bar">
-          <Link href="/" className="nb-brand">
-            <span className="nb-logo" aria-hidden>
-              {/* A plain <img>, not next/image: the mark is an SVG and
-                  next/image rejects SVG unless dangerouslyAllowSVG is on,
-                  which it is not. The user dashboard renders it this way for
-                  the same reason. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/archivyn-logo.svg" alt="" width={64} height={64} />
-            </span>
-            <span className="nb-wordmark">Archivyn</span>
+          {/* The full lockup — mark, wordmark and tagline in one image — so the
+              brand is the artwork rather than the mark beside live text.
+
+              Not `archivyn-full.png` itself: that file is 2172x724, 889KB, and
+              has no alpha channel, so on the glass bar it draws a white
+              rectangle. `archivyn-full-nav.png` is the same artwork trimmed of
+              its canvas whitespace with white turned to transparency on a soft
+              ramp, at 3x the size it is drawn. See scripts/brand-lockup.js. */}
+          <Link href="/" className="nb-brand" aria-label="Archivyn — home">
+            <Image
+              src="/archivyn-full-nav.png"
+              alt="Archivyn — from Archives to You, Accelerated by AI"
+              width={518}
+              height={138}
+              className="nb-lockup"
+              priority
+            />
           </Link>
 
           <nav className="nb-nav" aria-label="Sections">

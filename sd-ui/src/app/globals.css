@@ -1882,12 +1882,13 @@ select {
 @keyframes nb-enter { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .nb-bar { animation: none; } }
 
-.nb-brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.nb-logo { position: relative; display: flex; width: 32px; height: 32px; align-items: center; justify-content: center; overflow: visible; }
-/* Drawn larger than its box, as the reference does, so the mark reads at the
-   size of the wordmark without the bar growing to contain it. */
-.nb-logo img { width: 44px; height: 44px; max-width: none; object-fit: contain; }
-.nb-wordmark { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.025em; line-height: 1; color: var(--ark-navy); }
+.nb-brand { display: flex; align-items: center; flex-shrink: 0; }
+/* The asset is trimmed and transparent, so the box is the artwork: no padding
+   to compensate for, and no blend mode. mix-blend-mode was tried first and
+   does nothing here — the bar's backdrop-filter isolates it, leaving only a
+   translucent backdrop to multiply against. Measured, not assumed: identical
+   pixels with the blend on and off. */
+.nb-lockup { display: block; width: auto; height: 40px; object-fit: contain; }
 
 /* Links the reference has no equivalent for, dressed in the pill vocabulary
    it uses for "Back to dashboard" so they belong to the same bar. */
