@@ -141,6 +141,17 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
     if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
   }, [messages, busy]);
 
+  /* The field is one line until there is more than one line to show. Reset to
+     `auto` first or scrollHeight only ever reports the height it already has,
+     and the box would grow but never shrink back. The ceiling is the CSS
+     max-height; past it the textarea scrolls on its own. */
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
+
   function showOutline(j, { replans = 0 } = {}) {
     setMessages((cur) => [...cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m)), { id: `outline-${j.id}-${replans}`, role: "outline", outline: j.outline, replans, jobId: j.id }]);
   }
@@ -244,10 +255,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
   return (
     <div className="ch-wrap">
       <div className="ch-head">
-        <div>
-          <span className="sc-kicker">New story</span>
-          <h1 className="st-h1">Tell the agent what to write</h1>
-        </div>
+        <span className="sc-kicker">New story</span>
         <Link href="/editorial/new?blank=1" className="st-link">Start blank instead</Link>
       </div>
 
@@ -271,6 +279,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       </div>
 
       <form className="ch-composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
+        <div className="ch-dock">
         <div className="ch-options">
           <label className="ch-opt">
             <span>Paper</span>
@@ -311,14 +320,15 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
           <textarea
             ref={inputRef}
             className="ag-input"
-            rows={2}
+            rows={1}
             placeholder={outlineWaiting ? PLACEHOLDER_REPLY : PLACEHOLDER_START}
             value={text}
             disabled={busy || (locked && !outlineWaiting)}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
           />
-          <button type="submit" className="sc-write-publish ag-send" disabled={busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><FaPaperPlane size={12} aria-hidden /></button>
+          <button type="submit" className="ag-send" disabled={busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><FaPaperPlane size={13} aria-hidden /></button>
+        </div>
         </div>
         <div className="ag-hint">
           <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>

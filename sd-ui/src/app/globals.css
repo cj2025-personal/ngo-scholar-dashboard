@@ -1866,6 +1866,11 @@ select {
    the borders are easy to forget and the composer ends up two pixels tall
    past the fold. */
 :root { --sc-nav-height: 112px; --sc-nav-border: #d6dff0; }
+/* Below 768px the second row is not rendered, so the bar is the utility row
+   and its border. Pages that size themselves against the bar — the chat, the
+   workspace — were reserving a row that was not there and hung their footer
+   below the fold. */
+@media (max-width: 767.98px) { :root { --sc-nav-height: 65px; } }
 
 .nb-utility {
   position: relative; z-index: 39; flex-shrink: 0;
@@ -3266,74 +3271,116 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .ag-hint { display: flex; justify-content: space-between; font-size: 11px; color: var(--sd-faint); }
 .ag-hint kbd { font-family: inherit; font-size: 10.5px; padding: 0 4px; border: 1px solid var(--sd-line); border-radius: 4px; background: var(--sd-surface); }
 
-/* ══ New story as a conversation ═══════════════════════════════════════════ */
-.ch-wrap { max-width: 900px; margin: 0 auto; padding: 28px 24px 0; display: flex; flex-direction: column; height: calc(100vh - var(--sc-nav-height)); min-height: 520px; }
-.ch-head {
-  position: relative;
-  display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;
-  padding: 20px 22px; border: 1px solid rgba(214, 223, 240, 0.78); border-radius: 18px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(238, 243, 251, 0.86)),
-    radial-gradient(circle at 100% 0%, rgba(178, 34, 52, 0.1), transparent 30%);
-  box-shadow: var(--sd-sh-sm);
+/* ══ New story, as a conversation ══════════════════════════════════════════
+   The shape is the one everybody already knows from chat: one narrow column,
+   the agent speaking as plain prose rather than from inside a box, the
+   scholar's own words in a bubble on their side, and a single rounded dock at
+   the foot holding the controls and the field together as one object.
+
+   Only the shape is borrowed. The palette, the type and the tokens are the
+   dashboard's, so this reads as the same product one page further in.
+   ═══════════════════════════════════════════════════════════════════════ */
+.ch-wrap {
+  max-width: 820px; margin: 0 auto; padding: 14px 24px 0;
+  display: flex; flex-direction: column;
+  height: calc(100vh - var(--sc-nav-height)); min-height: 520px;
 }
-.ch-head::after {
-  content: "";
-  position: absolute;
-  left: 22px;
-  right: 22px;
-  bottom: -1px;
-  height: 3px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--burgundy), var(--navy), transparent);
-  opacity: 0.82;
+
+/* A thin line, not a banner. The agent's first message already greets the
+   scholar; a headline above it said the same thing twice. */
+.ch-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 4px 2px 0; }
+.ch-head .st-link { font-size: 13px; }
+
+/* The conversation grows up from the dock rather than hanging from the top,
+   so a chat with one message in it is not a greeting stranded above a void.
+   `safe` keeps a long thread scrollable; browsers without it fall back to
+   flex-start, which is the same thing minus the improvement.
+   The mask is for what scrolls past the top: a fade rather than a cut. */
+.ch-thread {
+  flex: 1; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; justify-content: safe flex-end; gap: 26px;
+  padding: 22px 2px 12px; scrollbar-gutter: stable;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
 }
-.ch-head .st-h1 { font-size: clamp(24px, 2.5vw, 34px); letter-spacing: 0; }
-.ch-head .st-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(30, 58, 138, 0.12);
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: var(--sd-sh-sm);
-  white-space: nowrap;
+
+.ch-msg { display: flex; gap: 12px; align-items: flex-start; max-width: 100%; }
+.ch-bubble { min-width: 0; font-size: 15px; line-height: 1.72; color: var(--ink); }
+.ch-text { margin: 0 0 10px; }
+.ch-text:last-child { margin-bottom: 0; }
+
+/* The agent speaks on the page. A border around every answer turns a
+   conversation into a stack of receipts. */
+.ch-msg.is-agent .ch-bubble { padding: 0; border: 0; background: none; box-shadow: none; }
+/* "Reading the paper…" is the agent thinking out loud, not a notice to be
+   boxed. In the workspace panel it keeps its strip; here it is prose. */
+.ch-wrap .ag-working { padding: 3px 0 0; border-left: 0; background: none; border-radius: 0; font-size: 14px; }
+.ch-wrap .ag-avatar { flex: 0 0 26px; width: 26px; height: 26px; margin-top: 4px; font-size: 11px; }
+
+/* The scholar's own words: a bubble, on their side. */
+.ch-msg.is-user { align-self: flex-end; justify-content: flex-end; max-width: 78%; }
+.ch-msg.is-user .ch-bubble {
+  padding: 11px 16px; border: 1px solid var(--sd-line-soft); border-radius: 18px;
+  background: var(--ark-surface-2); white-space: pre-wrap;
 }
-.ch-thread { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 18px; padding: 24px 6px; scrollbar-gutter: stable; }
-.ch-msg { display: flex; gap: 12px; align-items: flex-start; max-width: 92%; }
-.ch-msg.is-user { align-self: flex-end; justify-content: flex-end; }
-.ch-msg.is-user .ch-bubble { background: linear-gradient(180deg, #eff5ff, var(--ark-navy-soft)); color: var(--sd-heading); border: 1px solid rgba(30, 58, 138, 0.1); border-radius: 16px 16px 4px 16px; white-space: pre-wrap; }
-.ch-msg.is-agent .ch-bubble { background: rgba(255, 255, 255, 0.96); border: 1px solid rgba(214, 223, 240, 0.92); border-radius: 4px 16px 16px 16px; box-shadow: var(--sd-sh-sm); }
-.ch-bubble { padding: 13px 16px; font-size: 14px; line-height: 1.6; color: var(--ink); }
-.ch-bubble.is-error { border-color: rgba(178, 34, 52, 0.3); background: rgba(178, 34, 52, 0.06); color: var(--burgundy); }
-.ch-text { margin: 0 0 8px; }
+.ch-bubble.is-error {
+  padding: 11px 16px; border: 1px solid rgba(178, 34, 52, 0.25);
+  border-radius: 14px; background: rgba(178, 34, 52, 0.06); color: var(--burgundy);
+}
+
+/* The outline keeps a panel — it is the one thing in the thread that is a
+   document rather than a remark. */
 .ch-msg.is-outline { max-width: 100%; }
-.ch-msg.is-outline .ch-bubble { flex: 1; min-width: 0; }
-.ch-outline-title { font-family: var(--sd-display); font-weight: 800; font-size: 18px; color: var(--sd-heading); margin-top: 6px; letter-spacing: 0; }
-.ch-beats { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.ch-beat { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--sd-line-soft); border-radius: 12px; background: linear-gradient(180deg, #fff, #f8fbff); }
+.ch-msg.is-outline .ch-bubble {
+  flex: 1; min-width: 0; padding: 18px 20px;
+  border: 1px solid var(--sd-line-soft); border-radius: 16px;
+  background: var(--sd-surface); box-shadow: 0 7px 22px rgba(20, 33, 61, 0.05);
+}
+.ch-outline-title { font-family: var(--sd-display); font-weight: 700; font-size: 19px; letter-spacing: -0.02em; color: var(--sd-heading); margin-top: 12px; }
+.ch-beats { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ch-beat { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--sd-line-soft); border-radius: 12px; background: var(--ark-surface-2); }
 .ch-beat.is-cut { opacity: 0.5; } .ch-beat.is-cut .ch-beat-heading { text-decoration: line-through; }
 .ch-beat-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .ch-beat-heading { font-weight: 700; font-size: 13.5px; color: var(--sd-heading); }
 .ch-beat-refs { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
 .ch-beat-kind { display: inline-block; margin-left: 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; background: #efeaf9; color: #4a3b7a; vertical-align: middle; cursor: help; }
-.ch-coverage { margin: 8px 0 0; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; border: 1px solid rgba(180, 83, 9, 0.35); background: var(--ark-warning-soft); color: var(--sd-heading); }
+.ch-coverage { margin: 10px 0 0; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; border: 1px solid rgba(180, 83, 9, 0.3); background: var(--ark-warning-soft); color: var(--sd-heading); }
+.ch-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.ch-discard { color: var(--burgundy); margin-left: auto; }
+
+/* ── The dock ──────────────────────────────────────────────────────────────
+   Controls and field inside one rounded container, so the thing you type into
+   is a single object rather than a toolbar stacked on a box. */
+/* The shell's background is a gradient that ends at #eef3fb, so a flat fill
+   behind the dock drew a visible seam across the page. This fades into it. */
+.ch-composer {
+  position: sticky; bottom: 0; display: flex; flex-direction: column; gap: 8px;
+  padding: 14px 0 18px;
+  background: linear-gradient(to bottom, rgba(238, 243, 251, 0), #eef3fb 26px);
+}
+.ch-dock {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 8px;
+  border: 1px solid var(--sd-line); border-radius: 24px; background: var(--sd-surface);
+  box-shadow: 0 10px 28px -20px rgba(23, 37, 84, 0.45);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.ch-dock:focus-within {
+  border-color: rgba(30, 58, 138, 0.42);
+  box-shadow: 0 10px 30px -20px rgba(23, 37, 84, 0.5), 0 0 0 3px rgba(30, 58, 138, 0.08);
+}
+.ch-options { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; padding: 2px 4px 0; }
+.ch-opt { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 650; color: var(--sd-faint); }
+.ch-opt select {
+  border: 1px solid var(--sd-line-soft); border-radius: 9px; background: var(--ark-surface-2);
+  padding: 4px 8px; max-width: 300px; font: inherit; font-size: 12px; font-weight: 650;
+  color: var(--sd-heading); cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.ch-opt select:hover:enabled { border-color: var(--sd-line); background: var(--sd-surface); }
+.ch-opt select:disabled { opacity: 0.7; cursor: default; }
 .ch-bands { border: 0; padding: 0; margin: 0; min-width: 0; }
 .ch-bands legend { padding: 0; font-size: inherit; color: inherit; }
 .ch-bands-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .ch-bands[disabled] { opacity: 0.6; }
-.ch-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
-.ch-discard { color: var(--burgundy); margin-left: auto; }
-.ch-composer { border-top: 1px solid var(--sd-line); background: var(--sd-surface); padding: 12px 0 16px; display: flex; flex-direction: column; gap: 8px; position: sticky; bottom: 0; }
-.ch-options { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.ch-opt { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 650; color: var(--sd-muted); }
-.ch-opt select {
-  font: inherit; font-size: 12.5px; min-height: 32px; padding: 5px 32px 5px 10px;
-  border: 1px solid var(--sd-line); border-radius: 999px; background: var(--sd-surface-2); color: var(--sd-heading); max-width: 320px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
-}
-.ch-opt select:disabled { opacity: 0.7; }
 .ch-locked { margin-left: auto; }
 
 /* Delete and discard, asked once in place. */
@@ -3346,47 +3393,46 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .sc-elist-actions .del-btn { margin-left: 4px; }
 .st-story-actions { display: flex; align-items: center; gap: 10px; }
 
-/* The composer must not read as a slab of white with its sides cut off, which
-   is what it was. It is a card: rounded at the top, bordered, lifted off the
-   page, so its edges are obviously deliberate. A short fade above keeps the
-   thread from butting into it. */
+/* The page is a fixed-height column: the thread scrolls, the dock does not.
+   The field and the send button inside the dock are the workspace agent
+   panel's classes, so every rule here is scoped to this page. */
 .sc-shell--fill { display: flex; flex-direction: column; height: 100dvh; }
 .sc-shell--fill .ch-wrap { flex: 1; min-height: 0; height: auto; }
-.ch-wrap { height: calc(100dvh - var(--sc-nav-height)); min-height: 420px; padding: 28px 24px 0; }
-.ch-composer {
-  border: 1px solid rgba(214, 223, 240, 0.9);
-  border-bottom: 0;
-  border-radius: 18px 18px 0 0;
-  background: rgba(255, 255, 255, 0.9);
-  padding: 14px 16px 16px;
-  gap: 11px;
-  box-shadow: 0 -16px 36px -32px rgba(23, 37, 84, 0.4), var(--sd-sh-sm);
-  backdrop-filter: blur(14px);
+.ch-wrap { height: calc(100dvh - var(--sc-nav-height)); min-height: 420px; }
+
+/* The dock carries the border, so the box inside it carries none. */
+.ch-composer .ag-box { display: flex; align-items: flex-end; gap: 8px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.ch-composer .ag-box:focus-within { border: 0; box-shadow: none; }
+.ch-wrap .ag-input {
+  flex: 1; min-height: 34px; max-height: 190px; padding: 5px 6px;
+  border: 0; outline: 0; background: none; resize: none;
+  font: inherit; font-size: 15px; line-height: 1.6; color: var(--ink);
 }
-.ch-composer::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 30px; background: linear-gradient(to top, var(--paper), rgba(246, 248, 252, 0)); pointer-events: none; }
-.ch-composer .ag-box { background: #fff; border: 1.5px solid rgba(214, 223, 240, 0.98); border-radius: 16px; padding: 11px 11px 11px 15px; box-shadow: var(--sd-sh-sm); }
-.ch-composer .ag-box:focus-within { border-color: rgba(30, 58, 138, 0.45); box-shadow: 0 0 0 4px rgba(30, 58, 138, 0.08), var(--sd-sh-sm); }
-.ch-composer .ag-input { min-height: 46px; font-size: 14px; }
-.ch-composer .ag-send { width: 38px; height: 38px; flex-basis: 38px; border-radius: 12px; }
-.ch-opt select { max-width: 340px; }
-.ch-composer .ag-hint { gap: 16px; flex-wrap: wrap; }
+.ch-wrap .ag-send {
+  flex: 0 0 34px; width: 34px; height: 34px; padding: 0; display: grid; place-items: center;
+  border: 0; border-radius: 999px; background: var(--navy); color: #fff; cursor: pointer;
+  box-shadow: none; transition: background 140ms ease, opacity 140ms ease;
+}
+.ch-wrap .ag-send:hover:enabled { background: var(--sd-heading); }
+.ch-wrap .ag-send:disabled { background: var(--sd-line); color: var(--sd-surface); cursor: default; }
+.ch-wrap .ag-input::placeholder { color: #9aa7bd; }
+.ch-wrap .ag-hint { justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 0 10px; font-size: 11.5px; }
+/* Under the dock the keys are a footnote, not controls to be outlined. */
+.ch-wrap .ag-hint kbd { border: 0; background: none; padding: 0; font-weight: 700; color: var(--sd-muted); }
 @media (max-height: 660px) {
-  .ch-wrap { padding-top: 12px; }
-  .ch-head { padding-bottom: 10px; }
-  .ch-head .st-h1 { font-size: 21px; }
-  .ch-thread { padding: 14px 4px; gap: 12px; }
+  .ch-wrap { padding-top: 8px; }
+  .ch-thread { padding: 14px 2px 8px; gap: 18px; }
   .ch-composer { padding-bottom: 12px; }
 }
 @media (max-width: 760px) {
-  .ch-wrap { padding: 14px 14px 0; }
-  .ch-head { align-items: flex-start; flex-direction: column; padding: 16px; }
-  .ch-head .st-link { min-height: 32px; }
-  .ch-msg { max-width: 100%; }
+  .ch-wrap { padding: 10px 14px 0; }
+  .ch-msg.is-user { max-width: 100%; }
   .ch-options { align-items: stretch; }
   .ch-opt { width: 100%; justify-content: space-between; }
   .ch-opt select { flex: 1; min-width: 0; max-width: none; }
-  .ch-composer { padding: 12px; }
-  .ch-composer .ag-hint { display: none; }
+  .ch-composer { padding: 8px 0 12px; }
+  .ch-dock { border-radius: 20px; }
+  .ch-wrap .ag-hint { display: none; }
 }
 
 /* ══ Versions: what is saved, and what came before ═════════════════════════ */
