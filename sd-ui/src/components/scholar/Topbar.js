@@ -44,11 +44,15 @@ import {
  * that starts work, because that is the thing a scholar comes here to do.
  *
  * ── The search ─────────────────────────────────────────────────────────────
- * A trigger that opens a palette, as the reference's is — not an input. The
- * reference's searches the whole archive through its own service; this one
+ * Closed, it is a trigger. Opened, the trigger becomes a live field in the
+ * same place and the results hang from it — a dropdown at the search bar, not
+ * a palette floating in the middle of the screen, because it is a list of
+ * what you are typing at rather than a separate place you have gone to.
+ *
+ * The reference searches the whole archive through its own service; this one
  * searches what this app can answer for without one: the places a scholar can
- * go. It is deliberately not a box that looks like it searches your papers and
- * does nothing, which is what used to sit here.
+ * go, and it says so. It is deliberately not a box that looks like it searches
+ * your papers and does nothing, which is what used to sit here.
  */
 
 const AUTH_API_URL =
@@ -90,17 +94,17 @@ function useDismiss(ref, open, close) {
 }
 
 /**
+ * The open state of the search: the trigger has become a live field, and the
+ * results hang from it.
+ *
  * Mounted only while it is open, so each opening starts empty without an
  * effect resetting state after the fact — which React now rightly treats as
  * an error, because it renders once with the old query before clearing it.
  */
-function SearchPalette({ onClose }) {
+function SearchOpen({ onClose }) {
   const router = useRouter();
-  const ref = useRef(null);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
-
-  useDismiss(ref, true, onClose);
 
   const results = useMemo(() => {
     const all = [...NAV, ...ACTIONS];
@@ -118,35 +122,46 @@ function SearchPalette({ onClose }) {
   );
 
   return (
-    <div className="nb-palette-scrim" role="presentation">
-      <div className="nb-palette" role="dialog" aria-modal="true" aria-label="Search" ref={ref}>
-        <label className="nb-palette__field">
-          <HiOutlineMagnifyingGlass size={18} aria-hidden />
-          <input
-            /* eslint-disable-next-line jsx-a11y/no-autofocus -- it is a search
-               palette the scholar just opened with a keystroke; anywhere else
-               would be the wrong place for the caret. */
-            autoFocus
-            value={query}
-            placeholder="Search your work…"
-            aria-label="Search"
-            onChange={(e) => { setQuery(e.target.value); setCursor(0); }}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => Math.min(c + 1, results.length - 1)); }
-              if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
-              if (e.key === "Enter" && results[cursor]) { e.preventDefault(); go(results[cursor].href); }
-            }}
-          />
-        </label>
+    <>
+      {/* The trigger's twin: same height, border and radius, so opening the
+          search does not move the thing you clicked. */}
+      <label className="nb-search__field">
+        <HiOutlineMagnifyingGlass size={16} aria-hidden />
+        <input
+          /* eslint-disable-next-line jsx-a11y/no-autofocus -- the scholar just
+             opened a search, by click or by Ctrl-K; the caret belongs here and
+             nowhere else. */
+          autoFocus
+          value={query}
+          placeholder="Search your work…"
+          aria-label="Search"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="nb-search-results"
+          aria-autocomplete="list"
+          onChange={(e) => { setQuery(e.target.value); setCursor(0); }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") { e.preventDefault(); setCursor((c) => Math.min(c + 1, results.length - 1)); }
+            if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
+            if (e.key === "Enter" && results[cursor]) { e.preventDefault(); go(results[cursor].href); }
+          }}
+        />
+        <kbd>Esc</kbd>
+      </label>
+
+      {/* Hangs from the field rather than floating in the middle of the
+          screen: it is a list of what you are typing at, not a separate
+          place you have gone to. */}
+      <div className="nb-search__panel">
         {results.length ? (
-          <ul className="nb-palette__list" role="listbox" aria-label="Results">
+          <ul className="nb-search__list" id="nb-search-results" role="listbox" aria-label="Results">
             {results.map((r, i) => (
               <li key={r.href}>
                 <button
                   type="button"
                   role="option"
                   aria-selected={i === cursor}
-                  className={i === cursor ? "nb-palette__row on" : "nb-palette__row"}
+                  className={i === cursor ? "nb-search__row on" : "nb-search__row"}
                   onMouseEnter={() => setCursor(i)}
                   onClick={() => go(r.href)}
                 >
@@ -157,13 +172,13 @@ function SearchPalette({ onClose }) {
             ))}
           </ul>
         ) : (
-          <p className="nb-palette__empty">Nothing here by that name.</p>
+          <p className="nb-search__empty">Nothing here by that name.</p>
         )}
         {/* Said plainly rather than left to be discovered by typing a paper's
             title and getting nothing back. */}
-        <p className="nb-palette__note">Searches the places you can go. Your papers and stories are not searched from here yet.</p>
+        <p className="nb-search__note">Searches the places you can go. Your papers and stories are not searched from here yet.</p>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -224,7 +239,11 @@ function AccountMenu({ me }) {
 
 export default function Topbar({ activeHref = "/", me = { initials: "SC", name: "Scholar" } }) {
   const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef(null);
   const closeSearch = useCallback(() => setSearchOpen(false), []);
+  /* The wrapper holds the dismiss, not the open subtree, so clicking the field
+     itself does not count as clicking outside it. */
+  useDismiss(searchRef, searchOpen, closeSearch);
 
   /* The reference offers Ctrl-K and says so on the trigger, so this does too
      rather than printing a shortcut that does nothing. */
@@ -257,12 +276,16 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
             </Link>
           </div>
 
-          <div className="nb-search">
-            <button type="button" className="nb-search__trigger" onClick={() => setSearchOpen(true)}>
-              <HiOutlineMagnifyingGlass size={16} aria-hidden />
-              <span>Search your work…</span>
-              <kbd>Ctrl K</kbd>
-            </button>
+          <div className={searchOpen ? "nb-search is-open" : "nb-search"} ref={searchRef}>
+            {searchOpen ? (
+              <SearchOpen onClose={closeSearch} />
+            ) : (
+              <button type="button" className="nb-search__trigger" onClick={() => setSearchOpen(true)}>
+                <HiOutlineMagnifyingGlass size={16} aria-hidden />
+                <span>Search your work…</span>
+                <kbd>Ctrl K</kbd>
+              </button>
+            )}
           </div>
 
           <div className="nb-actions">
@@ -298,7 +321,6 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
         </div>
       </nav>
 
-      {searchOpen ? <SearchPalette onClose={closeSearch} /> : null}
     </>
   );
 }
