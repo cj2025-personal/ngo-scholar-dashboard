@@ -2837,11 +2837,111 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .st-story { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--sd-line-soft); }
 .st-story:last-child { border-bottom: 0; }
 .st-story-title { font-weight: 600; color: var(--sd-heading); }
-.st-stats { display: flex; gap: 22px; margin-top: 10px; }
-.st-stat { font-family: var(--sd-display); font-size: 30px; font-weight: 700; color: var(--navy); line-height: 1; }
-.st-stat.is-info { color: var(--ark-info); } .st-stat.is-faint { color: var(--sd-faint); }
 .st-stat-label { font-size: 11px; color: var(--sd-faint); }
 .st-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+
+/* ══ Studio ═══════════════════════════════════════════════════════════════
+   Three bands, in the order the eye takes them and the order they matter:
+   the one thing to do now, the shape of the work, then the detail. See
+   components/scholar/StudioHome.js for why.
+   ═══════════════════════════════════════════════════════════════════════ */
+.st-page { max-width: 1160px; margin: 0 auto; padding: 28px 24px 40px; display: flex; flex-direction: column; gap: 22px; }
+
+/* ── 1 · What to do now ───────────────────────────────────────────────── */
+.st-launch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 20px; align-items: stretch; }
+
+.st-next {
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+  padding: 24px 26px 22px; border: 1px solid var(--sd-line); border-radius: 18px;
+  background: linear-gradient(180deg, #fff 0%, #fbfcff 100%); box-shadow: var(--sd-sh-sm);
+}
+/* The edge carries the tone, so severity is legible before a word is read and
+   the card itself stays white. Red is the record moving under a published
+   claim and nothing else. */
+.st-next::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--sd-line); }
+.st-next.is-grave::before { background: var(--ark-red); }
+.st-next.is-warn::before { background: var(--ark-warning); }
+.st-next.is-info::before { background: var(--navy); }
+.st-next.is-faint::before, .st-next.is-clear::before { background: var(--ark-success); }
+
+.st-next__date { margin: 0; font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--sd-faint); }
+.st-next__greet { margin: 2px 0 0; font-family: var(--sd-display); font-size: 15px; font-weight: 600; color: var(--sd-muted); }
+.st-next__tag {
+  align-self: flex-start; margin-top: 14px; padding: 3px 9px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  background: var(--sd-surface-2); color: var(--sd-muted);
+}
+.st-next__tag.is-grave { background: var(--ark-danger-soft); color: var(--ark-red); }
+.st-next__tag.is-warn { background: var(--ark-warning-soft); color: var(--ark-warning); }
+.st-next__tag.is-info { background: var(--ark-navy-soft); color: var(--navy); }
+.st-next__title {
+  margin: 10px 0 0; font-family: var(--sd-display); font-weight: 700; font-size: 27px;
+  line-height: 1.22; letter-spacing: -0.015em; color: var(--sd-heading); max-width: 24ch;
+}
+.st-next__detail { margin: 8px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--sd-muted); max-width: 60ch; }
+.st-next__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+/* Sinks to the bottom: the grid stretches this card to match the one beside
+   it, and without this the extra height reads as an unfinished card. */
+.st-next__note { margin: 14px 0 0; padding-top: 12px; font-size: 12px; color: var(--sd-faint); }
+.st-next__note:last-child { margin-top: auto; }
+
+/* The one action on the page given the size of a decision. */
+.st-btn-xl {
+  display: inline-flex; align-items: center; gap: 9px; height: 42px; padding: 0 20px;
+  border-radius: 11px; font-size: 14.5px; font-weight: 650; color: #fff; background: var(--navy);
+  box-shadow: 0 12px 24px -16px rgba(30, 58, 138, 0.8); white-space: nowrap;
+  transition: background 140ms ease, transform 140ms ease;
+}
+.st-btn-xl:hover { background: var(--navy-ink, #172554); transform: translateY(-1px); }
+
+/* ── 2 · The shape of the work ────────────────────────────────────────── */
+.st-shape {
+  display: flex; flex-direction: column; padding: 18px; border: 1px solid var(--sd-line);
+  border-radius: 18px; background: var(--sd-surface); box-shadow: var(--sd-sh-sm);
+}
+.st-shape__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.st-shape__note { margin-top: 12px; font-size: 11.5px; line-height: 1.55; }
+
+/* A number, what it counts, and the way to it. Four of these answer "is
+   anything off" faster than a list does. */
+.st-stat-tile {
+  display: flex; align-items: flex-start; gap: 9px; padding: 11px 11px 12px;
+  border: 1px solid var(--sd-line-soft); border-radius: 12px; background: var(--sd-surface-2);
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+.st-stat-tile:hover { border-color: var(--sd-line); background: #fff; transform: translateY(-1px); }
+.st-stat-tile__icon { display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 26px; border-radius: 8px; background: #fff; color: var(--sd-muted); border: 1px solid var(--sd-line-soft); }
+.st-stat-tile__body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.st-stat-tile__value { font-family: var(--sd-display); font-size: 23px; font-weight: 700; line-height: 1; color: var(--sd-heading); }
+.st-stat-tile__label { margin-top: 3px; font-size: 11.5px; text-wrap: balance; font-weight: 600; color: var(--sd-muted); line-height: 1.35; }
+.st-stat-tile__sub { margin-top: 1px; font-size: 10.5px; color: var(--sd-faint); line-height: 1.35; }
+.st-stat-tile.is-warn .st-stat-tile__icon { background: var(--ark-warning-soft); color: var(--ark-warning); border-color: transparent; }
+.st-stat-tile.is-warn .st-stat-tile__value { color: var(--ark-warning); }
+.st-stat-tile.is-ok .st-stat-tile__icon { background: var(--ark-success-soft); color: var(--ark-success); border-color: transparent; }
+
+/* ── 3 · The detail ───────────────────────────────────────────────────── */
+.st-below { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+.st-story-main { min-width: 0; }
+/* The queue keeps the same edge language as the card above it. */
+.st-todo { border-inline-start-width: 3px; }
+.st-todo.is-grave { border-inline-start-color: var(--ark-red); }
+.st-todo.is-warn { border-inline-start-color: var(--ark-warning); }
+.st-todo.is-info { border-inline-start-color: var(--navy); }
+.st-todo.is-faint { border-inline-start-color: var(--sd-line); }
+.st-dot.is-grave { background: var(--ark-red); }
+.st-dot.is-info { background: var(--navy); }
+
+@media (max-width: 1000px) {
+  .st-launch { grid-template-columns: minmax(0, 1fr); }
+  .st-below { grid-template-columns: minmax(0, 1fr); }
+  .st-rail { order: -1; }
+}
+@media (max-width: 620px) {
+  .st-page { padding: 18px 14px 30px; }
+  .st-next { padding: 18px 18px 16px; }
+  .st-next__title { font-size: 22px; }
+  .st-shape__grid { grid-template-columns: 1fr; }
+}
 .st-profile-name { font-weight: 700; margin-top: 8px; color: var(--sd-heading); }
 .st-row { display: flex; align-items: center; gap: 10px; }
 .sc-divider { height: 1px; background: var(--sd-line-soft); margin: 14px 0; }
