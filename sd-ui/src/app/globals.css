@@ -1852,118 +1852,153 @@ select {
 .sc-serif { font-family: var(--sd-serif); }
 
 /* ── Top nav ────────────────────────────────────────────────────────────────
-   Matched to the user dashboard's GlobalNavbar: a floating glass pill sitting
-   on the page rather than a bar fastened to the window, so a scholar moving
-   between the two apps does not feel they have changed product. Radius,
-   materials, brand sizing, the grouped bell-and-avatar control and the
-   dropdown's measurements all come from there; see
-   components/scholar/Topbar.js for what deliberately differs and why.
+   Ported from the learner dashboard: `community-utility-bar` +
+   `ark-identity` for the utility row and `dashboard-topnav` for the
+   navigation row, in user-dashboard/frontend/src/styles/globals.css. Both apps
+   are one brand; the chrome should not announce which of them you are in.
 
-   This bar is 68px tall, not the 64px of --ark-topbar-height: 8 top + 56 bar
-   + 4 bottom, where the bar is the 42px bell-and-avatar cluster plus its
-   padding and border. That is what the reference measures too, so the
-   difference is the token being wrong for this design rather than the design
-   drifting. --ark-topbar-height is not corrected here because it belongs to
-   the shared token sheet, which is changed in every repo or not at all; the
-   height of *this* bar is a fact about this app, so it is stated here and
-   read by the one surface that needs it, the composer. Change the padding
-   below and you must change this number with it. */
-:root { --sc-nav-height: 68px; }
-.nb-header { position: relative; z-index: 50; padding: 8px 0 4px; }
-.nb-container { width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 16px; }
-.nb-bar {
-  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 20px; border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: linear-gradient(132deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.12));
-  backdrop-filter: blur(40px) saturate(140%); -webkit-backdrop-filter: blur(40px) saturate(140%);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25), 0 20px 44px -30px rgba(2, 17, 30, 0.75);
-  animation: nb-enter 650ms cubic-bezier(0.16, 1, 0.3, 1) both;
+   Two rows because they answer different questions — who you are and what you
+   are looking for, then where you can go. Neither is pinned: they scroll away
+   with the page, as the reference's do.
+
+   Height is 112px — 64 and 46 of row plus each row's 1px rule — recorded
+   below because the composer sizes itself against it. Measured, not added up:
+   the borders are easy to forget and the composer ends up two pixels tall
+   past the fold. */
+:root { --sc-nav-height: 112px; --sc-nav-border: #d6dff0; }
+
+.nb-utility {
+  position: relative; z-index: 39; flex-shrink: 0;
+  border-bottom: 1px solid var(--sc-nav-border);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
 }
-@keyframes nb-enter { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .nb-bar { animation: none; } }
-
-.nb-brand { display: flex; align-items: center; flex-shrink: 0; }
-/* The asset is trimmed and transparent, so the box is the artwork: no padding
-   to compensate for, and no blend mode. mix-blend-mode was tried first and
-   does nothing here — the bar's backdrop-filter isolates it, leaving only a
-   translucent backdrop to multiply against. Measured, not assumed: identical
-   pixels with the blend on and off. */
-.nb-lockup { display: block; width: auto; height: 40px; object-fit: contain; }
-
-/* Links the reference has no equivalent for, dressed in the pill vocabulary
-   it uses for "Back to dashboard" so they belong to the same bar. */
-.nb-nav { display: flex; align-items: center; gap: 2px; margin-left: 10px; min-width: 0; }
-.nb-link {
-  display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 999px;
-  border: 1px solid transparent; font-size: 13px; font-weight: 600; white-space: nowrap;
-  color: var(--ark-text-muted); transition: background 0.2s, color 0.2s, border-color 0.2s;
-}
-.nb-link:hover { background: rgba(255, 255, 255, 0.55); color: var(--ark-navy); }
-.nb-link.on {
-  background: rgba(255, 255, 255, 0.72); border-color: rgba(255, 255, 255, 0.6); color: var(--ark-navy);
-  box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.55);
+/* Three tracks, so the search is centred on the page rather than on whatever
+   width the brand happens to take. */
+.nb-utility__inner {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 680px) minmax(0, 1fr);
+  align-items: center; gap: 18px; height: 64px; padding: 0 24px;
 }
 
-.nb-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
-/* The one action that starts work. Red because the token sheet reserves the
-   brand red for key calls to action, and because the avatar already owns the
-   navy gradient — two navy pills side by side would compete. */
-.nb-cta {
-  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 15px; border-radius: 999px;
-  font-size: 12px; font-weight: 600; white-space: nowrap; color: #fff; background: var(--ark-red);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 12px 24px -16px rgba(178, 34, 52, 0.9);
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-.nb-cta:hover { transform: translateY(-1px); box-shadow: 0 16px 28px -16px rgba(178, 34, 52, 0.95); }
+.nb-identity { grid-column: 1; justify-self: start; display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
+.nb-brand { display: inline-flex; align-items: center; width: max-content; }
+/* One drawn image, sized by height. 48px in a 64px row, as the reference. */
+.nb-lockup { display: block; height: 48px; width: auto; max-width: none; flex: 0 0 auto; object-fit: contain; }
 
-/* Bell and avatar share one control, as in the reference. */
-.nb-cluster {
-  display: flex; align-items: center; padding: 2px; border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.55);
+.nb-search { grid-column: 2; justify-self: center; width: min(100%, 680px); }
+/* A trigger, not an input — it opens a palette, as the reference's does. */
+.nb-search__trigger {
+  display: flex; width: 100%; height: 38px; align-items: center; gap: 10px;
+  border: 1px solid var(--ark-border); border-radius: 11px; padding: 0 12px;
+  background: var(--ark-surface-2); color: var(--ark-text-faint); text-align: left; cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
-.nb-bell {
-  position: relative; display: grid; place-items: center; width: 32px; height: 32px; border: 0;
-  background: transparent; border-radius: 999px; color: var(--ark-text-muted); cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+.nb-search__trigger:hover, .nb-search__trigger:focus-visible {
+  border-color: rgba(30, 58, 138, 0.34); box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.07);
 }
-.nb-bell svg { width: 17px; height: 17px; }
-.nb-bell:hover { background: rgba(255, 255, 255, 0.55); color: var(--ark-text); }
+.nb-search__trigger > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.nb-search__trigger kbd {
+  border: 1px solid var(--ark-border); border-radius: 5px; padding: 2px 6px;
+  background: #fff; font-size: 9px; font-family: inherit; color: var(--ark-text-faint);
+}
+
+.nb-actions { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 6px; }
+.nb-iconbtn {
+  position: relative; display: grid; place-items: center; width: 34px; height: 34px;
+  border: 1px solid transparent; border-radius: 10px; background: none;
+  color: var(--ark-text-faint); cursor: pointer; transition: background 140ms ease, color 140ms ease;
+}
+.nb-iconbtn:hover { background: var(--ark-surface-2); color: var(--ark-text); }
 .nb-dot { position: absolute; right: 7px; top: 7px; width: 6px; height: 6px; border-radius: 999px; background: var(--ark-red-bright); }
 
-.nb-acct { position: relative; margin-left: 4px; }
-.nb-avatar-btn {
-  display: flex; align-items: center; gap: 4px; padding: 2px 4px 2px 2px; border: 0;
-  background: transparent; border-radius: 999px; cursor: pointer; transition: background 0.2s;
-}
-.nb-avatar-btn:hover { background: rgba(255, 255, 255, 0.55); }
+.nb-acct { position: relative; }
 .nb-avatar {
-  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 999px; color: #fff;
-  font-size: 10px; font-weight: 600; background: linear-gradient(150deg, #0a1f4f, #0a2b62);
-  box-shadow: 0 12px 20px -14px rgba(2, 6, 23, 0.82);
+  display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 999px;
+  background: linear-gradient(150deg, #0a1f4f, #0a2b62); color: #fff; font-size: 11px; font-weight: 700;
+  font-family: var(--sd-display); cursor: pointer;
 }
-.nb-chev { width: 14px; height: 14px; color: var(--ark-text-faint); flex-shrink: 0; }
 
 .nb-menu {
-  position: absolute; right: 0; top: calc(100% + 12px); z-index: 50; width: 208px; padding: 8px;
-  border-radius: 16px; border: 1px solid rgba(214, 223, 240, 0.8); background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  position: absolute; right: 0; top: calc(100% + 10px); z-index: 50; width: 224px; padding: 8px;
+  border: 1px solid var(--ark-border); border-radius: 14px; background: var(--ark-surface);
   box-shadow: 0 20px 50px -30px rgba(15, 23, 42, 0.45);
 }
 .nb-menu__id { padding: 8px; }
-.nb-menu__id p { margin: 0; font-size: 12px; font-weight: 600; color: var(--ark-text); }
+.nb-menu__id p { margin: 0; font-size: 12.5px; font-weight: 700; color: var(--ark-text); }
 .nb-menu__id span { display: block; margin-top: 2px; font-size: 11px; color: var(--ark-text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nb-menu__rule { height: 1px; margin: 8px 0; background: rgba(214, 223, 240, 0.7); }
+.nb-menu__rule { height: 1px; margin: 6px 0; background: var(--ark-border-soft); }
 .nb-menu__item {
-  display: block; width: 100%; padding: 8px 12px; border: 0; background: transparent; border-radius: 12px;
-  font: inherit; font-size: 13px; font-weight: 600; color: var(--ark-text-muted); text-align: left; cursor: pointer;
+  display: block; width: 100%; padding: 8px 10px; border: 0; background: transparent; border-radius: 9px;
+  font: inherit; font-size: 13px; font-weight: 500; color: var(--ark-text); text-align: left; cursor: pointer;
 }
 .nb-menu__item:hover { background: var(--ark-surface-2); }
-.nb-menu__item--danger { color: var(--ark-red-bright); }
+.nb-menu__item--danger { color: var(--ark-red); }
 .nb-menu__item--danger:hover { background: var(--ark-danger-soft); }
 .nb-menu__item:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Navigation row ─────────────────────────────────────────────────────── */
+.nb-nav {
+  position: relative; z-index: 38; flex-shrink: 0; display: none;
+  border-bottom: 1px solid var(--sc-nav-border);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+/* Desktop only, as the reference: below this the row would be five dropdowns
+   fighting over 390px, and the sections are one tap away on each page. */
+@media (min-width: 768px) { .nb-nav { display: block; } }
+.nb-nav__inner { display: flex; align-items: center; gap: 0.15rem; min-height: 46px; padding: 0 24px; }
+.nb-nav__link {
+  display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.42rem 0.7rem;
+  border: 1px solid transparent; border-radius: 9px; background: none;
+  /* Navigation is a signpost, not a statement: muted and medium, so the one
+     place you are is the only dark thing in the row. */
+  color: var(--ark-text-faint); font-size: 14.25px; font-weight: 500; line-height: 1.2;
+  white-space: nowrap; transition: background 140ms ease, color 140ms ease;
+}
+.nb-nav__link:hover { background: var(--ark-surface-2); color: var(--ark-text); }
+.nb-nav__link.is-active { color: var(--ark-navy); background: rgba(30, 58, 138, 0.07); font-weight: 650; }
+.nb-nav__link svg { opacity: 0.85; flex-shrink: 0; }
+.nb-nav__end { display: flex; align-items: center; gap: 0.15rem; margin-inline-start: auto; }
+/* The reference ends this row with Help. A scholar comes here to write, so the
+   action that starts writing takes that rank. */
+.nb-nav__cta {
+  display: inline-flex; align-items: center; gap: 0.4rem; height: 32px; padding: 0 14px;
+  border-radius: 9px; font-size: 13px; font-weight: 650; color: #fff; background: var(--ark-red);
+  white-space: nowrap; transition: background 140ms ease;
+}
+.nb-nav__cta:hover { background: #9b1e2d; }
+
+/* ── Search palette ─────────────────────────────────────────────────────── */
+.nb-palette-scrim {
+  position: fixed; inset: 0; z-index: 90; display: flex; justify-content: center;
+  padding-top: 14vh; background: rgba(15, 23, 42, 0.28); backdrop-filter: blur(2px);
+}
+.nb-palette {
+  width: min(560px, calc(100vw - 32px)); height: max-content; padding: 10px;
+  border: 1px solid var(--ark-border); border-radius: 16px; background: var(--ark-surface);
+  box-shadow: 0 30px 70px -30px rgba(15, 23, 42, 0.5);
+}
+.nb-palette__field { display: flex; align-items: center; gap: 10px; padding: 8px 10px; color: var(--ark-text-faint); }
+.nb-palette__field input { flex: 1; border: 0; outline: 0; background: transparent; font: inherit; font-size: 15px; color: var(--ark-text); }
+.nb-palette__list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.nb-palette__row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0;
+  border-radius: 10px; background: transparent; font: inherit; color: var(--ark-text-faint);
+  text-align: left; cursor: pointer;
+}
+.nb-palette__row.on { background: var(--ark-surface-2); color: var(--ark-text); }
+.nb-palette__row b { display: block; font-size: 13.5px; font-weight: 650; color: var(--ark-text); }
+.nb-palette__row em { display: block; font-style: normal; font-size: 11.5px; color: var(--ark-text-faint); }
+.nb-palette__empty, .nb-palette__note { margin: 8px 10px 4px; font-size: 11.5px; color: var(--ark-text-faint); }
+.nb-palette__note { border-top: 1px solid var(--ark-border-soft); padding-top: 8px; }
+
+@media (max-width: 900px) {
+  .nb-utility__inner { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 0 16px; }
+  .nb-search { display: none; }
+  .nb-actions { grid-column: 2; }
+  .nb-lockup { height: 40px; }
+}
+
 .sc-me { border-radius: 50%; color: #fff; display: grid; place-items: center; font-weight: 800; font-family: var(--sd-display);
   background: linear-gradient(150deg, #2b5aa0, var(--navy)); box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px var(--sd-line); }
 
@@ -2924,16 +2959,6 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .sc-writer.is-review .sc-write-bar, .sc-writer.is-review > .sc-write-msg { margin-left: 24px; margin-right: 24px; }
 .ws-center .sc-write-title { font-size: 34px; }
 .ws-center .sc-write-subtitle { font-size: 18px; margin-bottom: 36px; }
-@media (max-width: 760px) {
-  /* The bar wraps its links onto a second row rather than shrinking them to
-     nothing. It is then taller than --sc-nav-height, which only the composer
-     reads, and the composer is not a phone-width surface. */
-  .nb-bar { flex-wrap: wrap; row-gap: 6px; padding: 6px 14px; }
-  .nb-nav { order: 5; flex-basis: 100%; margin-left: 0; overflow-x: auto; scrollbar-width: none; }
-  .nb-nav::-webkit-scrollbar { display: none; }
-  .nb-wordmark { font-size: 1.3rem; }
-  .nb-cta span, .nb-cta { font-size: 11px; padding: 0 12px; }
-}
 
 /* ══ Agent console (Codex-style thread with a docked composer) ═══════════ */
 .ws-right.is-agent { height: calc(100vh - 118px); }
