@@ -2854,7 +2854,10 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
    rail cut in half, a band of dead space under the short half, and a ragged
    seam where the two bands met. The learner dashboard runs one rail down the
    page; so does this. */
-.st-page { max-width: 1180px; margin: 0 auto; padding: 24px 24px 44px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+/* No page-width cap: the gutter is the same 24px the bar above uses, so a
+   card's edge lands on the brand's edge. A cap here left a wide screen with
+   more margin than rail. */
+.st-page { padding: 20px 24px 44px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 18px; align-items: start; }
 .st-main { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
 .st-rail { display: flex; flex-direction: column; gap: 18px; }
 .st-rail__big { margin: 10px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ark-text-muted); }
@@ -2919,9 +2922,9 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .st-next__chip.is-warn { background: var(--ark-warning-soft); color: var(--ark-warning); }
 .st-next__title {
   margin: 12px 0 0; font-family: var(--sd-display); font-weight: 700; font-size: 29px;
-  line-height: 1.16; letter-spacing: -0.03em; color: var(--ark-navy); max-width: 22ch; text-wrap: balance;
+  line-height: 1.16; letter-spacing: -0.03em; color: var(--ark-navy); max-width: 28ch; text-wrap: balance;
 }
-.st-next__detail { margin: 9px 0 0; font-size: 14px; line-height: 1.55; color: var(--ark-text-muted); max-width: 52ch; }
+.st-next__detail { margin: 9px 0 0; font-size: 14px; line-height: 1.55; color: var(--ark-text-muted); max-width: 66ch; }
 .st-next__meta { margin: 9px 0 0; font-size: 12.5px; color: var(--ark-text-faint); }
 .st-next__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
 .st-next__note { margin: 16px 0 0; font-size: 12.5px; color: var(--ark-text-faint); }
