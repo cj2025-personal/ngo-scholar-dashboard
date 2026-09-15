@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
+import { HiChevronDown, HiOutlineAcademicCap, HiOutlineDocumentText, HiOutlinePencilSquare, HiOutlinePlusSmall, HiOutlineUsers } from "react-icons/hi2";
 
 import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 
@@ -99,11 +100,22 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
   const stopRef = useRef(null);
   const threadRef = useRef(null);
   const inputRef = useRef(null);
+  const bandsRef = useRef(null);
+
+  useEffect(() => {
+    function onPointerDown(e) {
+      const el = bandsRef.current;
+      if (el && el.open && !el.contains(e.target)) el.open = false;
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, []);
 
   const draftable = inventory?.draftable || [];
   const selectedPaper = useMemo(() => draftable.find((p) => paperKey(p) === paper) || null, [draftable, paper]);
   const outlineWaiting = job?.status === "awaiting_outline";
   const locked = Boolean(job);
+  const extraBands = levelBands.filter((v) => v !== audience);
 
   const push = useCallback((m) => setMessages((cur) => [...cur, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...m }]), []);
   const setProgress = useCallback((textValue) => setMessages((cur) => {
@@ -280,55 +292,77 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
 
       <form className="ch-composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
         <div className="ch-dock">
-        <div className="ch-options">
-          <label className="ch-opt">
-            <span>Paper</span>
-            <select aria-label="Paper" value={paper || ""} disabled={locked || !inventory} onChange={(e) => setPaper(e.target.value || null)}>
-              <option value="">Choose a paper…</option>
-              {draftable.map((p) => <option key={paperKey(p)} value={paperKey(p)}>{p.title}{p.year ? ` (${p.year})` : ""}</option>)}
-            </select>
-          </label>
-          <label className="ch-opt">
-            <span>Reader age</span>
-            <select aria-label="Reader age" value={audience} disabled={locked} onChange={(e) => setAudience(e.target.value)}>
-              {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label} · reads at grade {a.grade}</option>)}
-            </select>
-          </label>
-          <label className="ch-opt" title={DRAFT_VOICES.find((v) => v.value === voice)?.hint}>
-            <span>Written as</span>
-            <select aria-label="Written as" value={voice} disabled={locked} onChange={(e) => setVoice(e.target.value)}>
-              {DRAFT_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-            </select>
-          </label>
-          <fieldset className="ch-opt ch-bands" disabled={locked}>
-            <legend>Also write it for</legend>
-            <div className="ch-bands-row" title="After the article, write it for these reading ages too, each on its own. More model calls; you approve each level before readers see it.">
-              {DRAFT_AUDIENCES.filter((a) => a.value !== audience).map((a) => (
-                <label key={a.value} className="ch-check">
-                  <input type="checkbox" checked={levelBands.includes(a.value)} onChange={(e) => setLevelBands((cur) => (e.target.checked ? [...cur, a.value] : cur.filter((v) => v !== a.value)))} />
-                  <span>{a.label}</span>
-                </label>
-              ))}
-              <button type="button" className="st-link" onClick={() => setLevelBands((cur) => (cur.filter((v) => v !== audience).length === DRAFT_AUDIENCES.length - 1 ? [] : DRAFT_AUDIENCES.map((a) => a.value).filter((v) => v !== audience)))}>
-                {levelBands.filter((v) => v !== audience).length === DRAFT_AUDIENCES.length - 1 ? "None" : "Every age"}
-              </button>
-            </div>
-          </fieldset>
-          {locked ? <span className="st-todo-detail ch-locked">Paper and reader are set for this draft. <button type="button" className="st-link" onClick={() => { if (stopRef.current) stopRef.current(); setJob(null); setBusy(false); setMessages((cur) => cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m))); }}>Start another</button></span> : null}
-        </div>
-        <div className="ag-box">
-          <textarea
-            ref={inputRef}
-            className="ag-input"
-            rows={1}
-            placeholder={outlineWaiting ? PLACEHOLDER_REPLY : PLACEHOLDER_START}
-            value={text}
-            disabled={busy || (locked && !outlineWaiting)}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          />
-          <button type="submit" className="ag-send" disabled={busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><FaPaperPlane size={13} aria-hidden /></button>
-        </div>
+          <div className="ag-box">
+            <textarea
+              ref={inputRef}
+              className="ag-input"
+              rows={1}
+              placeholder={outlineWaiting ? PLACEHOLDER_REPLY : PLACEHOLDER_START}
+              value={text}
+              disabled={busy || (locked && !outlineWaiting)}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            />
+          </div>
+
+          {/* The controls are pills under the field, the way an agent's input
+              carries its tools: what to read, who for, whose voice. Each pill
+              is a native select styled over, so the keyboard, the screen
+              reader and the browser suite all see an ordinary control. */}
+          <div className="ch-tools">
+            <span className="ch-pill" title={selectedPaper?.title || "The paper the article draws on"}>
+              <HiOutlineDocumentText size={15} className="ch-pill__ic" aria-hidden />
+              <select className="ch-pill__sel" aria-label="Paper" value={paper || ""} disabled={locked || !inventory} onChange={(e) => setPaper(e.target.value || null)}>
+                <option value="">Choose a paper…</option>
+                {draftable.map((p) => <option key={paperKey(p)} value={paperKey(p)}>{p.title}{p.year ? ` (${p.year})` : ""}</option>)}
+              </select>
+              <HiChevronDown size={13} className="ch-pill__chev" aria-hidden />
+            </span>
+
+            <span className="ch-pill" title="Who the article is written for">
+              <HiOutlineAcademicCap size={15} className="ch-pill__ic" aria-hidden />
+              <select className="ch-pill__sel" aria-label="Reader age" value={audience} disabled={locked} onChange={(e) => setAudience(e.target.value)}>
+                {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label} · grade {a.grade}</option>)}
+              </select>
+              <HiChevronDown size={13} className="ch-pill__chev" aria-hidden />
+            </span>
+
+            <span className="ch-pill" title={DRAFT_VOICES.find((v) => v.value === voice)?.hint}>
+              <HiOutlinePencilSquare size={15} className="ch-pill__ic" aria-hidden />
+              <select className="ch-pill__sel" aria-label="Written as" value={voice} disabled={locked} onChange={(e) => setVoice(e.target.value)}>
+                {DRAFT_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+              </select>
+              <HiChevronDown size={13} className="ch-pill__chev" aria-hidden />
+            </span>
+
+            {/* The other reading ages, behind one pill. Three checkboxes in
+                the row was the thing that made the input look like a form. */}
+            <details ref={bandsRef} className={locked ? "ch-more is-locked" : extraBands.length ? "ch-more is-set" : "ch-more"}>
+              <summary className="ch-pill is-summary" aria-disabled={locked || undefined} onClick={(e) => { if (locked) e.preventDefault(); }}>
+                {extraBands.length ? <HiOutlineUsers size={15} className="ch-pill__ic" aria-hidden /> : <HiOutlinePlusSmall size={17} className="ch-pill__ic" aria-hidden />}
+                <span className="ch-pill__text">{extraBands.length ? `Also for ${extraBands.length} more ${extraBands.length === 1 ? "age" : "ages"}` : "Other ages"}</span>
+                <HiChevronDown size={13} className="ch-pill__chev" aria-hidden />
+              </summary>
+              <fieldset className="ch-menu" disabled={locked}>
+                <legend className="ch-menu__title">Also write it for</legend>
+                <p className="ch-menu__note">After the article, the agent writes it again for each of these, on its own. You approve every level before readers see it.</p>
+                {DRAFT_AUDIENCES.filter((a) => a.value !== audience).map((a) => (
+                  <label key={a.value} className="ch-menu__row">
+                    <input type="checkbox" checked={levelBands.includes(a.value)} onChange={(e) => setLevelBands((cur) => (e.target.checked ? [...cur, a.value] : cur.filter((v) => v !== a.value)))} />
+                    <span>{a.label}</span>
+                    <span className="ch-menu__grade">reads at grade {a.grade}</span>
+                  </label>
+                ))}
+                <button type="button" className="st-link ch-menu__all" onClick={() => setLevelBands((cur) => (cur.filter((v) => v !== audience).length === DRAFT_AUDIENCES.length - 1 ? [] : DRAFT_AUDIENCES.map((a) => a.value).filter((v) => v !== audience)))}>
+                  {extraBands.length === DRAFT_AUDIENCES.length - 1 ? "None" : "Every age"}
+                </button>
+              </fieldset>
+            </details>
+
+            {locked ? <span className="ch-locked">Set for this draft · <button type="button" className="st-link" onClick={() => { if (stopRef.current) stopRef.current(); setJob(null); setBusy(false); setMessages((cur) => cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m))); }}>Start another</button></span> : null}
+
+            <button type="submit" className="ag-send" disabled={busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><FaPaperPlane size={13} aria-hidden /></button>
+          </div>
         </div>
         <div className="ag-hint">
           <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
