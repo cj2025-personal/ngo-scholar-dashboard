@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "test": "node --test tests/",
+    "test": "node --test \"tests/**/*.test.js\"",
     "eval:drafts": "node scripts/evalDrafts.js",
     "record:check": "node scripts/checkRecord.js",
     "eval:capture": "node scripts/captureDraftEvals.js",
-    "test:e2e": "node --test tests-e2e/",
+    "test:e2e": "node --test \"tests-e2e/**/*.test.js\"",
     "test:all": "npm test && npm run test:e2e"
   },
   "keywords": [
