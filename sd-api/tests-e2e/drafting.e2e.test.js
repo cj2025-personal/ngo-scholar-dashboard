@@ -730,8 +730,11 @@ test("a stale save is refused rather than overwriting, and an earlier version ca
   assert.equal(history.data.version, startedAt + 1);
   const first_ = versions.find((v) => v.version === 1);
   assert.ok(first_, "version 1 is kept");
-  assert.equal(first_.source, "scholar", "a person saved this story, even though a job wrote the words");
-  assert.equal(first_.createdBy, EMAIL);
+  /* The machine wrote version 1; the scholar's save only placed it. The
+     scholar's first change is theirs, under their own name, from version 2. */
+  assert.equal(first_.source, "drafter", "a job wrote the words, whoever pressed save");
+  assert.match(String(first_.createdBy), /^drafter:/);
+  assert.ok(versions.some((v) => v.source === "scholar" && v.createdBy === EMAIL), "the scholar's own save is on the record under their name");
   assert.ok(versions.some((v) => v.source === "agent"), "the agent's accepted change is on the record");
   assert.ok(versions.every((v) => v.words >= 0 && !("body_blocks" in v)), "a listing carries no bodies");
 

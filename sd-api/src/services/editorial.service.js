@@ -20,6 +20,8 @@ const {
   presentBlockProvenance,
   storyProvenanceFromJob,
   provenanceLine,
+  normalizeBlockContext,
+  presentBlockContext,
 } = require("../lib/provenance");
 
 const STORY_COLLECTION = COLLECTIONS.scholarEditorials;
@@ -176,7 +178,10 @@ function normalizeRawBodyBlocks(blocks, fallbackContent = "") {
          no citation on purpose, and says so, so the reader's chip can say
          "author" rather than nothing. */
       const ownView = Boolean(block?.ownView) && !provenance;
-      return { type, html, ...(provenance ? { provenance } : {}), ...(ownView ? { own_view: true } : {}) };
+      /* The author's own context rides with an own-view block: the judge's
+         verdict and the specifics to verify, with the author's ticks. */
+      const context = ownView ? normalizeBlockContext(block?.context) : null;
+      return { type, html, ...(provenance ? { provenance } : {}), ...(ownView ? { own_view: true, ...(context ? { context } : {}) } : {}) };
     })
     .filter((block) => {
       if (block.type === "image") {
@@ -194,7 +199,7 @@ function storedBlocksToInput(blocks) {
   return (Array.isArray(blocks) ? blocks : []).map((b) =>
     b.type === "image"
       ? { type: "image", imageId: b.image_file_id ? String(b.image_file_id) : null, caption: b.caption || "", alt: b.alt_text || "", width: b.width }
-      : { type: b.type, html: typeof b.html === "string" ? b.html : "", ...presentBlockProvenance(b.provenance), ...(b.own_view ? { ownView: true } : {}) },
+      : { type: b.type, html: typeof b.html === "string" ? b.html : "", ...presentBlockProvenance(b.provenance), ...(b.own_view ? { ownView: true, ...(b.context ? { context: presentBlockContext(b.context) } : {}) } : {}) },
   );
 }
 
@@ -340,6 +345,29 @@ function estimateReadingTimeMinutes(wordCount) {
   }
 
   return Math.max(1, Math.ceil(wordCount / 200));
+}
+
+/**
+ * Nothing the agent brought in from outside the paper reaches a reader
+ * without the author's eyes on it. A story with an unverified specific in
+ * the author's own context is not published or scheduled, whatever else is
+ * in order; the sentence names what is waiting.
+ */
+function ensureContextVerified({ bodyBlocks, status }) {
+  if (status !== "published" && status !== "scheduled") return;
+  const pending = [];
+  for (const b of Array.isArray(bodyBlocks) ? bodyBlocks : []) {
+    if (!b?.own_view || !b.context) continue;
+    for (const v of Array.isArray(b.context.to_verify) ? b.context.to_verify : []) {
+      if (v && v.text && v.verified !== true) pending.push(v.text);
+    }
+  }
+  if (!pending.length) return;
+  throw new ApiError(
+    400,
+    `${pending.length} specific${pending.length === 1 ? "" : "s"} in your own context ${pending.length === 1 ? "is" : "are"} not yet verified: ` +
+      `${pending.slice(0, 5).join(", ")}${pending.length > 5 ? ", …" : ""}. Tick each in Checks once you have checked it, or cut it, before publishing.`,
+  );
 }
 
 function ensureAuthoringInput({ title, content, excerpt, status, hasFiles }) {
@@ -727,7 +755,7 @@ function resolveBodyBlocksWithImages({
         type: block.type,
         html: block.html,
         ...(block.provenance ? { provenance: block.provenance } : {}),
-        ...(block.own_view ? { own_view: true } : {}),
+        ...(block.own_view ? { own_view: true, ...(block.context ? { context: block.context } : {}) } : {}),
       });
       continue;
     }
@@ -902,7 +930,7 @@ function presentStoredBlocks(rawBlocks, imageById) {
         type: normalizeBlockType(block.type),
         html: typeof block.html === "string" ? block.html : "",
         ...presentBlockProvenance(block.provenance),
-        ...(block.own_view ? { ownView: true } : {}),
+        ...(block.own_view ? { ownView: true, ...(block.context ? { context: presentBlockContext(block.context) } : {}) } : {}),
       };
     })
     .filter(Boolean);
@@ -1528,6 +1556,7 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
       status,
       hasFiles,
     });
+    ensureContextVerified({ bodyBlocks, status });
     ensurePublicationSettings({
       status,
       scheduledFor,
@@ -1697,6 +1726,7 @@ async function updateEditorialStory({
       status,
       hasFiles,
     });
+    ensureContextVerified({ bodyBlocks, status });
     ensurePublicationSettings({
       status,
       scheduledFor: status === "scheduled" ? scheduledFor : null,
@@ -1967,7 +1997,7 @@ async function applyStoryRevision({ storyId, scholarId, profileId, user, fields 
             /* A block the agent wrote has no drafted text yet; its own text is
                the baseline the chip will measure the scholar's edits against. */
             draftedText: b.draftedText || (Array.isArray(b.sourceRefs) && b.sourceRefs.length ? stripInlineHtml(b.html) : ""),
-            fidelity: b.fidelity, ownView: b.ownView, extension: b.extension, reach: b.reach,
+            fidelity: b.fidelity, ownView: b.ownView, extension: b.extension, reach: b.reach, context: b.context,
           },
     ),
   );
@@ -2029,6 +2059,8 @@ async function createStoryFromDraft({ job, draft }) {
       sourceRefs: b.sourceRefs, fidelity: b.fidelity,
       /* A paragraph that goes beyond the paper keeps its kind and the reach judge's verdict. */
       extension: b.extension, reach: b.reach,
+      /* The author's own context: theirs, with the list to verify. */
+      ownView: b.ownView, context: b.context,
       draftedText: stripInlineHtml(b.html),
     })),
   );

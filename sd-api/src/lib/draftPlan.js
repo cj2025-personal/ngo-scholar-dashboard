@@ -9,22 +9,35 @@
  * provenance chip on the block, and what the fidelity judge checks a claim
  * against. Without it "supported / unsupported" has nothing to point at.
  *
- * ── Two kinds of beat ───────────────────────────────────────────────────────
- * A `paper` beat reports what the paper says; every paragraph under it is
- * checked by the fidelity judge. An `extension` beat says what follows from
- * the paper for the reader — why it matters, where the same problem turns
- * up — and is planned only when the scholar's brief asks for something the
- * paper does not state. Its paragraphs still cite passages: the ones they
- * build on. The reach judge checks that each claim follows from those
- * passages, is said as an implication, and brings in nothing from outside.
- * Extension beats may not outnumber paper beats; an article that is mostly
- * what follows from the paper is no longer about the paper.
+ * ── The brief is the subject; the paper is the evidence ─────────────────────
+ * An article is planned to answer what the scholar asked, organised by the
+ * question rather than by the paper's own order, with the paper cited where
+ * it carries a point. An article that retells the paper section by section
+ * is what this file used to plan, and it is what a scholar means when they
+ * say the agent "dumped the paper into the article".
+ *
+ * ── Three kinds of beat ─────────────────────────────────────────────────────
+ * A `paper` beat makes its point with what the paper states; every
+ * paragraph under it is checked by the fidelity judge. An `extension` beat
+ * says what follows from the paper for the reader — implications only,
+ * checked by the reach judge to follow from the passages and to bring in
+ * nothing from outside. A `context` beat is the author's own context: what
+ * they know about the world around the work — where the problem turns up in
+ * practice, why a reader should care — written under their byline as their
+ * own view. It may say what the paper does not; it may never present that
+ * as the paper's finding, which the context judge checks, and every
+ * specific it brings in is listed for the author to verify before the story
+ * can be published. Beats of the last two kinds together may not outnumber
+ * paper beats: an article that is mostly not the paper is no longer about
+ * the paper. Without a brief there is nothing to answer, and every beat is
+ * a paper beat.
  *
  * ── The brief is answered, not silently trimmed ─────────────────────────────
- * The outline records how far the brief was met. Where the brief asks for
- * something no beat of either kind can do without outside facts, the plan
- * says so in a sentence, and the scholar reads that sentence before a word
- * is drafted. A brief that is quietly dropped is the failure this guards.
+ * The outline records how far the brief was met. With the author's own
+ * context available, little is out of reach; what is — a request contrary to
+ * what the paper found, or unfit for the reader — the plan says so in a
+ * sentence the scholar reads before a word is drafted. A brief that is
+ * quietly dropped is the failure this guards.
  *
  * The prompts here build on the rules in `draftComposer.js` — same system
  * instruction, same voice and quote checks — and add passage ids.
@@ -42,7 +55,7 @@ const PASSAGE = {
 
 const OUTLINE = { MIN_BEATS: 4, MAX_BEATS: 6 };
 
-const BEAT_KIND = { PAPER: "paper", EXTENSION: "extension" };
+const BEAT_KIND = { PAPER: "paper", EXTENSION: "extension", CONTEXT: "context" };
 
 /** How far the plan meets the brief. Stable names: the composer shows them. */
 const COVERAGE = { FULL: "full", PART: "part", NONE: "none" };
@@ -122,11 +135,28 @@ const OUTLINE_SCHEMA = {
         properties: {
           heading: { type: "STRING" },
           goal: { type: "STRING" },
-          kind: { type: "STRING", enum: ["paper", "extension"] },
+          kind: { type: "STRING", enum: ["paper", "extension", "context"] },
           passage_ids: { type: "ARRAY", items: { type: "STRING" } },
         },
         required: ["heading", "goal", "kind", "passage_ids"],
       },
+    },
+    /* The brief, split into what it asks for, each mapped to the kind of
+       section that answers it and that section's heading. The parser holds
+       the beats to this map; a plan that says an ask needs the author's own
+       context and then plans no such section is corrected or reported. */
+    brief_map: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          ask: { type: "STRING" },
+          answered_by: { type: "STRING", enum: ["paper", "extension", "context"] },
+          section: { type: "STRING" },
+        },
+        required: ["ask", "answered_by", "section"],
+      },
+      nullable: true,
     },
     brief_coverage: {
       type: "OBJECT",
@@ -138,7 +168,7 @@ const OUTLINE_SCHEMA = {
       nullable: true,
     },
   },
-  required: ["title", "deck", "beats", "brief_coverage"],
+  required: ["title", "deck", "beats", "brief_map", "brief_coverage"],
 };
 
 function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = false, audience, brief = null, voice = composer.DEFAULT_VOICE }) {
@@ -146,14 +176,15 @@ function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = f
   const name = scholar.name || "the scholar";
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
   const briefText = brief ? String(brief).trim() : "";
+  const by = authorVoice ? "" : `, by ${name}`;
   return [
-    authorVoice
-      ? `Plan an article about the paper below, for ${aud.brief}`
-      : `Plan an article about the paper below, by ${name}, for ${aud.brief}`,
+    briefText
+      ? `Plan an article that answers the scholar's brief below, with the paper as its evidence${by}, for ${aud.brief}`
+      : `Plan an article about the paper below${by}, for ${aud.brief}`,
     ...(authorVoice
       ? [
           "",
-          `The article is the author's own account of their own paper, published under their byline. Nothing in it`,
+          `The article is the author's own account of their own work, published under their byline. Nothing in it`,
           `refers to them: no "${name}", no "the author", no "he" or "she". Headings and goals name the work, not`,
           `the worker — "A mixed window", not "${String(name).split(" ").pop()}'s mixed window".`,
         ]
@@ -162,33 +193,56 @@ function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = f
       ? [
           "",
           `The scholar's brief for this article: "${briefText}"`,
-          "Follow it. Where the brief asks for what the paper states, plan paper sections. Where it asks for what the paper",
-          "does not state — why the work matters, what it means for readers, where the same problem turns up — plan",
-          "extension sections: each names the passages whose findings it builds on, and its goal says what follows from",
-          "them for the reader. An extension section may draw implications only from the paper; it may not need a",
-          "product, event, statistic, or practice the paper does not mention.",
-          "A brief that asks why the work matters, what it means for readers, or where it is useful is ANSWERED by an",
-          "extension section — it is not a reason to leave the brief out. The paper does not have to discuss society,",
-          "education or industry for you to plan one: the section draws out what the paper's own findings would mean",
-          "for a reader who meets the same problem. Plan at least one extension section for such a brief.",
-          'Reserve brief_coverage "part" or "none" for what no implication could reach — a request for a named product,',
-          "a market figure, an event, or a claim about what people actually do today, none of which the paper states.",
+          "",
+          "Work from the brief, not from the paper's table of contents:",
+          "1. Split the brief into the things it asks for, and put them in brief_map: for each, the ask in a few words,",
+          '   the kind of section that answers it ("paper", "extension" or "context"), and that section\'s heading. What',
+          "   the paper states answers a paper ask. What follows from the paper answers an extension ask. What the world",
+          "   is like — where the problem turns up today, who meets it, how the work helps them, how it sits beside other",
+          "   approaches — answers a context ask: the author's own knowledge, which the paper does not have to state.",
+          "2. Plan the sections so that every heading in brief_map is a section of the kind named there, in the order a",
+          "   reader needs to follow the answer. Cite the paper's passages where they carry a point; leave out what the",
+          "   paper says that the brief does not need. The title and deck say what the article answers.",
+          "A plan whose sections follow the paper's own order — the problem, earlier methods, the method, the tests, the",
+          "results — with no section of the kind an ask needs is a retelling of the paper. It is wrong for a brief, and",
+          "the scholar will send it back.",
+          "",
+          "Three kinds of section:",
+          '- "paper": makes its point with what the paper states. Its goal is the point, made from the passages it cites.',
+          '- "extension": says what follows from the paper for the reader — why a finding matters, where the same problem',
+          "  turns up — drawn only from the paper, as implication. Its goal says what follows from the passages it names.",
+          '- "context": the author\'s own context — what they know about the world around the work that the paper does not',
+          "  say: what the problem looks like in practice today, where the work would matter and to whom, how it sits",
+          "  beside other approaches, what a reader needs before the paper makes sense. Said as the author's own view under",
+          "  their byline, never as the paper's finding; every specific it brings in is listed for the author to verify",
+          "  before publication. Its passage_ids name the passages the context relates to, so the writer keeps it tied to",
+          "  the work. Plan a context section when the brief asks about the world beyond the paper; plan context a",
+          "  careful author could stand behind.",
+          "A brief that asks why the work matters, what it means for readers, where it is used or how it helps today has",
+          "at least one extension or context ask. It is ANSWERED by planning the section that ask needs; the paper does",
+          "not have to discuss society, industry or practice for you to plan it, and a plan of paper sections alone",
+          "does not answer it.",
+          'Reserve brief_coverage "part" or "none" for what neither an implication nor the author\'s own context can',
+          "answer: a request contrary to what the paper found, or content unfit for the reader.",
         ]
       : ["", "No brief was given: every section is a paper section, and brief_coverage is null."]),
     "",
     "Return:",
-    "- title: under 12 words, specific to what the paper found, no colon-and-subtitle pattern.",
-    "- deck: one or two sentences saying what the paper did. No claims about impact the paper does not make.",
+    "- title: under 12 words, specific to " + (briefText ? "the article's answer" : "what the paper found") + ", no colon-and-subtitle pattern.",
+    "- deck: one or two sentences saying what the article says. No claims about impact the paper does not make.",
     `- beats: ${OUTLINE.MIN_BEATS} to ${OUTLINE.MAX_BEATS} sections in reading order. Each has a short heading; a goal, which is the point the`,
     "  section makes, stated as one sentence a reader could disagree with, not a description of the section;",
-    '  kind, "paper" or "extension"; and passage_ids: the passages (by their [pN] label) the section will draw on',
-    "  or build on. Every beat must cite at least one passage. At least half the sections must be paper sections.",
-    "  Open with what the paper found. A paper section on what the paper says is unknown or next belongs where",
-    "  the paper says it; an extension section may close the article.",
+    '  kind, "paper", "extension" or "context"; and passage_ids: the passages (by their [pN] label) the section will',
+    "  draw on, build on, or relate to. Every beat must cite at least one passage. At least half the sections must be",
+    "  paper sections.",
+    briefText
+      ? "  Open with the point from the paper that bears most on the brief. A paper section on what the paper says is"
+      : "  Open with what the paper found. A paper section on what the paper says is",
+    "  unknown or next belongs where the paper says it; an extension or context section may close the article.",
     ...(briefText
       ? [
           '- brief_coverage: met is "full" when the sections do what the brief asked, "part" when some of it is left',
-          '  out, "none" when the paper cannot carry any of it; note is one sentence naming what was left out and why,',
+          '  out, "none" when none of it could be answered; note is one sentence naming what was left out and why,',
           "  or an empty string when nothing was.",
         ]
       : []),
@@ -208,7 +262,7 @@ function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = f
  * @param {string} raw
  * @param {{id:string}[]} passages
  * @param {object} [opts]
- * @param {boolean} [opts.allowExtension]  false without a brief: a beat marked extension is planned as paper
+ * @param {boolean} [opts.allowExtension]  false without a brief: a beat marked extension or context is planned as paper
  * @returns {{title, deck, beats, coverage, dropped: number}}
  */
 function parseOutline(raw, passages, { allowExtension = true } = {}) {
@@ -222,25 +276,38 @@ function parseOutline(raw, passages, { allowExtension = true } = {}) {
     throw new Error("The outline is missing its beats.");
   }
   const known = new Set(passages.map((p) => p.id));
+  const beyondKinds = new Set([BEAT_KIND.EXTENSION, BEAT_KIND.CONTEXT]);
+  /* The model's own account of what the brief asks and what answers each
+     ask. A beat the map names as beyond the paper is beyond the paper,
+     whatever kind the beat itself was given: the map is the decision, the
+     beat's kind is the slip. */
+  const briefMap = allowExtension && Array.isArray(data.brief_map)
+    ? data.brief_map
+        .map((m) => ({ ask: clean(m?.ask).slice(0, 160), kind: beyondKinds.has(m?.answered_by) ? m.answered_by : BEAT_KIND.PAPER, section: clean(m?.section).slice(0, 140) }))
+        .filter((m) => m.ask)
+        .slice(0, 8)
+    : [];
+  const key = (s) => clean(s).toLowerCase();
+  const mappedKind = (heading) => briefMap.find((m) => m.kind !== BEAT_KIND.PAPER && m.section && key(m.section) === key(heading))?.kind || null;
   const all = data.beats
     .slice(0, OUTLINE.MAX_BEATS)
     .map((b) => ({
       heading: clean(b?.heading),
       goal: clean(b?.goal) || "",
-      kind: allowExtension && b?.kind === BEAT_KIND.EXTENSION ? BEAT_KIND.EXTENSION : BEAT_KIND.PAPER,
+      kind: allowExtension ? (mappedKind(b?.heading) || (beyondKinds.has(b?.kind) ? b.kind : BEAT_KIND.PAPER)) : BEAT_KIND.PAPER,
       passageIds: (Array.isArray(b?.passage_ids) ? b.passage_ids : []).map(String).filter((id) => known.has(id)),
     }))
     /* A beat that cites nothing we gave it would be drafted from nothing. */
     .filter((b) => b.passageIds.length > 0);
 
-  /* The budget: no more extension beats than paper beats. Extras are cut from
-     the end, and the cut is counted so the run can say so. */
+  /* The budget: no more beats beyond the paper than beats drawn from it.
+     Extras are cut from the end, and the cut is counted so the run can say so. */
   const paper = all.filter((b) => b.kind === BEAT_KIND.PAPER).length;
   let allowed = paper;
   let dropped = 0;
   const beats = all
     .filter((b) => {
-      if (b.kind !== BEAT_KIND.EXTENSION) return true;
+      if (b.kind === BEAT_KIND.PAPER) return true;
       if (allowed > 0) { allowed -= 1; return true; }
       dropped += 1;
       return false;
@@ -251,14 +318,23 @@ function parseOutline(raw, passages, { allowExtension = true } = {}) {
     throw new Error("The outline cites too few passages to draft from.");
   }
   const c = data.brief_coverage;
-  const coverage = allowExtension && c && typeof c === "object" && Object.values(COVERAGE).includes(c.met)
+  let coverage = allowExtension && c && typeof c === "object" && Object.values(COVERAGE).includes(c.met)
     ? { met: c.met, note: clean(c.note).slice(0, 300) }
     : null;
+  /* An ask the map says needs a section beyond the paper, with no such
+     section planned, is not answered — whatever the model wrote in
+     brief_coverage. Said out loud, so the scholar sees it before a word is
+     drafted and can send the plan back. */
+  const unmet = briefMap.filter((m) => m.kind !== BEAT_KIND.PAPER && !beats.some((b) => b.kind === m.kind && key(b.heading) === key(m.section)));
+  if (unmet.length && (!coverage || coverage.met === COVERAGE.FULL)) {
+    coverage = { met: COVERAGE.PART, note: `Not planned: ${unmet.map((m) => m.ask).join("; ")}.` };
+  }
   return {
     title: clean(data.title).slice(0, composer.LIMITS.MAX_TITLE_CHARS),
     deck: clean(data.deck).slice(0, composer.LIMITS.MAX_DECK_CHARS),
     beats,
     coverage,
+    briefMap: briefMap.length ? briefMap : null,
     dropped,
   };
 }
@@ -293,27 +369,29 @@ const SECTION_SCHEMA = {
   required: ["paragraphs"],
 };
 
-function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, strictVoice = false, strictSelf = false, readabilityNote = null, fidelityNote = null, reachNote = null, voice = composer.DEFAULT_VOICE }) {
+function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, brief = null, strictVoice = false, strictSelf = false, readabilityNote = null, fidelityNote = null, reachNote = null, contextNote = null, voice = composer.DEFAULT_VOICE }) {
   const aud = composer.AUDIENCES[composer.normaliseAudience(audience)];
   const name = scholar.name || "the scholar";
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
   const cited = passages.filter((p) => beat.passageIds.includes(p.id));
-  const extension = beat.kind === BEAT_KIND.EXTENSION;
+  const kind = beat.kind === BEAT_KIND.EXTENSION || beat.kind === BEAT_KIND.CONTEXT ? beat.kind : BEAT_KIND.PAPER;
+  const briefText = brief ? String(brief).trim() : "";
   const lines = [
     authorVoice
       ? `Write section ${beat.index} of ${outline.beats.length} of an article, for ${aud.brief}`
       : `Write section ${beat.index} of ${outline.beats.length} of an article about a paper by ${name}, for ${aud.brief}`,
     ...(authorVoice
-      ? ["", `This is the author's own account of their own paper. Never refer to them: no "${name}", no "the author", no "he" or "she". The work is the subject of your sentences.`]
+      ? ["", `This is the author's own account of their own work. Never refer to them: no "${name}", no "the author", no "he" or "she". The work is the subject of your sentences.`]
       : []),
     "",
     `Article title: ${outline.title}`,
+    ...(briefText ? [`The scholar's brief for the whole article: "${briefText}"`, "This section serves that brief. Make its point; do not summarise the paper."] : []),
     `This section's heading: ${beat.heading}`,
     `This section's goal: ${beat.goal}`,
-    `Section kind: ${extension ? "extension" : "paper"}`,
+    `Section kind: ${kind}`,
     "",
   ];
-  if (extension) {
+  if (kind === BEAT_KIND.EXTENSION) {
     lines.push(
       "This section goes beyond the paper: it says what follows from the paper's findings for the reader, without",
       "adding any fact the paper does not state.",
@@ -330,11 +408,32 @@ function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, s
       ...(aud.young ? ["- The reader is a child: nothing frightening, and nothing that assumes a world beyond theirs."] : []),
       "Do not repeat the heading. Do not summarise the whole paper; write this section only.",
     );
+  } else if (kind === BEAT_KIND.CONTEXT) {
+    lines.push(
+      "This section is the author's own context, under their byline: what they know about the world around this",
+      "work that the paper does not say — where the problem turns up in practice, who meets it, why a reader should",
+      "care, how the work sits beside what else is done. It is their view, and it may say what the paper does not.",
+      "Return 1 to 3 paragraphs, 60 to 180 words each. For every paragraph list passage_ids: the passages below it",
+      "relates to (an empty list if none). Quote: null.",
+      "Rules:",
+      "- Say it as the author's knowledge, never as the paper's finding. Nothing the passages do not state may be",
+      '  introduced with "the paper shows", "the study found", "the results prove" or the like. Tie context to the',
+      '  work the other way round: "The gain with two interferers is the situation a receiver in a crowded band meets."',
+      "- Be concrete where you are confident: name the settings, systems and practices a reader would recognise.",
+      "  Prefer durable general facts to precise figures. Every specific — a number, a named study, product, company,",
+      "  standard, date or place — will be listed for the author to verify before publication, so include one only",
+      "  where it earns its place, and none you are unsure of.",
+      "- Keep to what serves the brief. No praise of the work; the reader decides what it is worth.",
+      ...(aud.young ? ["- The reader is a child: nothing frightening, and nothing that assumes a world beyond theirs."] : []),
+      "Do not repeat the heading. Do not summarise the paper; write this section only.",
+    );
   } else {
     lines.push(
       "Return 1 to 3 paragraphs, 60 to 180 words each. For every paragraph list passage_ids: the passages below",
       "that every fact in it comes from. A paragraph may cite only passages shown here. Optionally one quote:",
       "a sentence copied exactly from one passage, with its passage_id; otherwise null.",
+      "Write toward the section's goal: make its point with what the passages state, in the order the point needs,",
+      "not the order the passages come in. Leave out what the passages say that the point does not need.",
       "Do not repeat the heading. Do not summarise the whole paper; write this section only.",
     );
   }
@@ -362,14 +461,19 @@ function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, s
   if (reachNote) {
     lines.push("", reachNote);
   }
-  lines.push("", "=== PASSAGES THIS SECTION MAY USE ===", renderPassages(cited), "=== END ===");
+  if (contextNote) {
+    lines.push("", contextNote);
+  }
+  lines.push("", kind === BEAT_KIND.CONTEXT ? "=== PASSAGES THIS SECTION RELATES TO ===" : "=== PASSAGES THIS SECTION MAY USE ===", renderPassages(cited), "=== END ===");
   return lines.join("\n");
 }
 
 /**
  * One section, checked. Returns blocks (paragraph / quote) each with
  * `sourceRefs` — and `extension: true` on a paragraph that draws an
- * implication, in an extension beat — plus the first-person sentences found.
+ * implication, in an extension beat; in a context beat, paragraphs are the
+ * author's own (`ownView`) with a `context` record naming the passages they
+ * relate to, and no `sourceRefs` — plus the first-person sentences found.
  */
 function parseSection(raw, { beat, passages, voice = composer.DEFAULT_VOICE, scholarName = null }) {
   let data;
@@ -384,6 +488,7 @@ function parseSection(raw, { beat, passages, voice = composer.DEFAULT_VOICE, sch
   const allowed = new Set(beat.passageIds);
   const byId = new Map(passages.map((p) => [p.id, p]));
   const extensionBeat = beat.kind === BEAT_KIND.EXTENSION;
+  const contextBeat = beat.kind === BEAT_KIND.CONTEXT;
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
   const blocks = [];
   const violations = [];
@@ -394,7 +499,7 @@ function parseSection(raw, { beat, passages, voice = composer.DEFAULT_VOICE, sch
     const text = clean(para?.text);
     if (!text) continue;
     const refs = (Array.isArray(para?.passage_ids) ? para.passage_ids : []).map(String).filter((id) => allowed.has(id));
-    if (refs.length === 0) {
+    if (refs.length === 0 && !contextBeat) {
       /* A paragraph that cites nothing it was allowed is kept but marked: the
          judge decides; the chip shows nothing. */
       warnings.push(`A paragraph in "${beat.heading}" cited no passage and is untraceable.`);
@@ -406,6 +511,12 @@ function parseSection(raw, { beat, passages, voice = composer.DEFAULT_VOICE, sch
       const self = composer.selfReferenceSentences(text, scholarName);
       selfReferences.push(...self.named);
       for (const s of self.pronouns) warnings.push(`A sentence in "${beat.heading}" uses a personal pronoun: “${s.trim().slice(0, 120)}”. If it stands for you, rewrite it with the work as the subject.`);
+    }
+    if (contextBeat) {
+      /* The author's own: no citation, by design; the passages it relates to
+         go to the context judge, not onto a chip. */
+      blocks.push({ type: "paragraph", html: escapeHtml(text), ownView: true, context: { anchorIds: refs } });
+      continue;
     }
     /* Only an extension beat may hold an extension paragraph; a paper beat's
        paragraphs are the paper's, whatever the model marks them. */

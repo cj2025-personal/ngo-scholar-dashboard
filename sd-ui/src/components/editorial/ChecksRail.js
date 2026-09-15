@@ -26,17 +26,37 @@ export function summariseBlocks(blocks) {
   const reachPartial = beyond.filter((b) => b.reach?.verdict === "partial").length;
   const overreach = beyond.filter((b) => b.reach?.verdict === "overreach").length;
   const ownView = paragraphs.filter((b) => b.ownView).length;
+  /* The author's own context: theirs, judged for what it claims of the
+     paper, with the specifics the agent brought in listed to verify. */
+  const contextBlocks = paragraphs.filter((b) => b.ownView && b.context);
+  const contextAttention = contextBlocks.filter((b) => b.context.verdict && b.context.verdict !== "clear").length;
+  const verify = verifyItems(blocks);
   const edited = drafted.filter((b) => b.traceable === false).length;
   const uncited = paragraphs.length - drafted.length - ownView;
   return {
     paragraphs: paragraphs.length, drafted: drafted.length, supported, partial, unsupported,
     extension: beyond.length, follows, reachPartial, overreach,
-    ownView, edited, uncited, attention: partial + unsupported + reachPartial + overreach,
+    ownView, context: contextBlocks.length, contextAttention,
+    toVerify: verify.length, unverified: verify.filter((v) => !v.verified).length,
+    edited, uncited, attention: partial + unsupported + reachPartial + overreach + contextAttention,
   };
+}
+
+/** Every specific the author's own context brought in, with where it sits and whether the author has ticked it. */
+export function verifyItems(blocks) {
+  const out = [];
+  blocks.forEach((b, i) => {
+    if (!b.ownView || !b.context) return;
+    (b.context.toVerify || []).forEach((v, k) => {
+      if (v && v.text) out.push({ blockId: b.id, blockIndex: i, itemIndex: k, text: v.text, kind: v.kind || "other", verified: Boolean(v.verified) });
+    });
+  });
+  return out;
 }
 
 /** Whether a drafted block still needs the scholar: short of supported, or short of following. */
 export function needsAttention(b) {
+  if (b.ownView && b.context) return Boolean(b.context.verdict) && b.context.verdict !== "clear";
   if (!Array.isArray(b.sourceRefs) || !b.sourceRefs.length) return false;
   if (b.extension) return Boolean(b.reach) && b.reach.verdict !== "follows";
   return Boolean(b.fidelity) && b.fidelity.verdict !== "supported";
@@ -57,7 +77,7 @@ function Meter({ assessment }) {
   );
 }
 
-export default function ChecksRail({ blocks, assessment, audience, warnings, draftChecks = null, record = null, storyId = null, levels = [], onGoTo, onStoryChanged, onOpenEvidence }) {
+export default function ChecksRail({ blocks, assessment, audience, warnings, draftChecks = null, record = null, storyId = null, levels = [], onGoTo, onStoryChanged, onOpenEvidence, onVerify = null }) {
   const s = summariseBlocks(blocks);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState("");
@@ -104,10 +124,29 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
         {s.reachPartial ? <div className="ck-item"><span className="st-dot is-warn" /><span>{s.reachPartial} partly follow{s.reachPartial === 1 ? "s" : ""} from the paper · the claims that go too far are marked</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
         {s.overreach ? <div className="ck-item"><span className="st-dot is-bad" /><span>{s.overreach} go{s.overreach === 1 ? "es" : ""} beyond what the paper supports · rewrite or remove</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
         {s.edited ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.edited} paragraph{s.edited === 1 ? "" : "s"} rewritten by you beyond {s.edited === 1 ? "its" : "their"} source</span></div> : null}
-        {s.ownView ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.ownView} marked as your own view</span></div> : null}
+        {s.context ? <div className="ck-item"><span className={`st-dot ${s.contextAttention ? "is-warn" : "is-ok"}`} /><span>{s.context} paragraph{s.context === 1 ? "" : "s"} of your own context{s.contextAttention ? ` · ${s.contextAttention} present${s.contextAttention === 1 ? "s" : ""} it as the paper's finding` : " · said as yours, not the paper's"}</span>{s.contextAttention && firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
+        {s.ownView > s.context ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.ownView - s.context} marked as your own view</span></div> : null}
         {s.uncited ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.uncited} paragraph{s.uncited === 1 ? "" : "s"} written by hand, citing nothing</span></div> : null}
         <div className="ck-item"><span className="st-dot is-ok" /><span>Written about you, never as you</span></div>
       </div>
+
+      {s.toVerify ? (
+        <>
+          <div className="sc-divider" />
+          <span className="sc-kicker">To verify</span>
+          <p className="st-muted">The agent brought these in from outside the paper, in your own context. Tick each once you have checked it, or cut it from the paragraph. Nothing it invented reaches a reader without your eyes on it; the story cannot be published while any is unticked.</p>
+          <div className="ck-verify">
+            {verifyItems(blocks).map((v) => (
+              <label key={`${v.blockId}-${v.itemIndex}`} className={v.verified ? "ck-verify__row is-done" : "ck-verify__row"}>
+                <input type="checkbox" checked={v.verified} disabled={!onVerify} onChange={(e) => onVerify?.(v.blockId, v.itemIndex, e.target.checked)} />
+                <span>{v.text}<span className="ck-verify__kind">{v.kind}</span></span>
+                <button type="button" className="st-link ck-verify__where" onClick={() => onGoTo?.(v.blockIndex)}>¶ {v.blockIndex + 1}</button>
+              </label>
+            ))}
+          </div>
+          <div className="ck-item" style={{ marginTop: 8 }}><span className={`st-dot ${s.unverified ? "is-warn" : "is-ok"}`} /><span>{s.unverified ? `${s.unverified} of ${s.toVerify} still to verify` : `All ${s.toVerify} verified by you`}</span></div>
+        </>
+      ) : null}
 
       <div className="sc-divider" />
       <span className="sc-kicker">From the rules</span>

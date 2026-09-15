@@ -340,6 +340,7 @@ const STEP_LABELS = {
   draft_blocks: "Drafting sections…",
   judge_fidelity: "Checking the draft against the paper…",
   judge_reach: "Checking what the draft draws from the paper…",
+  judge_context: "Checking your own context for what it claims of the paper…",
   assemble: "Assembling the draft…",
   verify: "Checking reading level…",
   create_story: "Opening the draft in your workspace…",

@@ -51,6 +51,7 @@ function serializeBlock(b) {
     draftedText: b.draftedText || "",
     fidelity: b.fidelity || null,
     ownView: Boolean(b.ownView),
+    ...(b.ownView && b.context ? { context: b.context } : {}),
     ...(b.extension ? { extension: true, reach: b.reach || null } : {}),
     changed: Boolean(b.changed),
   };

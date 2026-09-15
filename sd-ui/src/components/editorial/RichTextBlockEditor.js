@@ -86,6 +86,20 @@ function normalizeBlock(block, id) {
     text.draftedText = typeof block.draftedText === "string" ? block.draftedText : "";
     text.fidelity = block.fidelity || null;
   }
+  /* The rest of a block's class travels too: whether it goes beyond the
+     paper and what the reach judge said, whether it still traces, whether it
+     is the scholar's own, and the context record behind an own-context
+     paragraph. These were dropped here, so the next save put a paragraph
+     beyond the paper back as the paper's and an own-view one back as nothing. */
+  if (block?.extension) {
+    text.extension = true;
+    text.reach = block.reach || null;
+  }
+  if (typeof block?.traceable === "boolean") text.traceable = block.traceable;
+  if (block?.ownView) {
+    text.ownView = true;
+    if (block.context) text.context = block.context;
+  }
   return text;
 }
 
@@ -96,7 +110,7 @@ function ProvenanceChip({ block, sourceLabel }) {
   return (
     <div className="block-chip-row">
       <span
-        className={chip.traceable ? (chip.partial ? "block-chip is-partial" : "block-chip") : "block-chip is-lost"}
+        className={chip.context ? "block-chip is-context" : chip.traceable ? (chip.partial ? "block-chip is-partial" : "block-chip") : "block-chip is-lost"}
         title={chip.title}
       >
         {chip.label}

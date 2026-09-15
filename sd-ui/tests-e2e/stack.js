@@ -57,6 +57,9 @@ async function start() {
       DRAFTING_POLL_MS: "150",
       DRAFT_DAILY_CAP: "10",
       DRAFTING_IMAGES: "true",
+      /* The fake's context paragraph names one thing to verify, so the
+         publish gate on the author's own context is exercised. */
+      FAKE_MODEL_SPECIFIC: "1",
       RECORD_FAKE: JSON.stringify({ "10.1000/src-e2e-1": { "updated-by": [{ type: "retraction", DOI: "10.1000/notice-1", label: "Retraction", updated: { "date-time": "2026-09-01T00:00:00Z" } }] } }),
       RECORD_SWEEP_TOKEN: "sweep-test-token",
       CORS_ORIGIN: `http://localhost:${process.env.E2E_UI_PORT || 3103},http://127.0.0.1:${process.env.E2E_UI_PORT || 3103}`,
@@ -70,8 +73,12 @@ async function start() {
     detached: false,
   });
   let log = "";
-  child.stdout.on("data", (d) => { log += d; });
-  child.stderr.on("data", (d) => { log += d; });
+  /* The API's own output, kept for a startup failure's message — and, with
+     E2E_API_LOG set to a path, written there too, because a 500 the browser
+     only sees as a 404 page is explained nowhere else. */
+  const tee = process.env.E2E_API_LOG ? fs.createWriteStream(process.env.E2E_API_LOG, { flags: "a" }) : null;
+  child.stdout.on("data", (d) => { log += d; if (tee) tee.write(d); });
+  child.stderr.on("data", (d) => { log += d; if (tee) tee.write(d); });
   const apiUrl = `http://localhost:${API_PORT}`;
   await waitForHealth(apiUrl, child, () => log);
 

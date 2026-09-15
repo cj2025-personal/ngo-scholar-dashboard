@@ -44,29 +44,48 @@ function answerOutline(prompt) {
   const passages = passagesIn(prompt, "=== PAPER, IN NUMBERED PASSAGES ===");
   const titleMatch = prompt.match(/^Paper title: (.+)$/m);
   const title = (titleMatch ? titleMatch[1].replace(/\s*\(\d{4}\)\s*$/, "") : "A paper").slice(0, 100);
-  const briefed = /^The scholar's brief for this article:/m.test(prompt);
+  const briefLine = prompt.match(/^The scholar's brief for this article: "(.*)"$/m);
+  const briefed = Boolean(briefLine);
+  /* "today", "society", "industry", "practice" or "world" in the brief plans
+     the author's own context as the last section instead of an implication,
+     so the context path — its judge, its list to verify, the publish gate —
+     is exercised end to end. */
+  const contextual = briefed && /\b(?:today|society|industry|practice|world)\b/i.test(briefLine[1]);
   const n = Math.max(2, Math.min(4, passages.length));
   const beats = [];
   for (let i = 0; i < n; i += 1) {
     const p = passages[i % Math.max(passages.length, 1)];
-    const extension = briefed && i === n - 1;
+    const last = briefed && i === n - 1;
+    const extension = last && !contextual;
+    const context = last && contextual;
     beats.push({
-      heading: extension ? "What this means beyond the paper" : `Section ${i + 1}: ${sentences(p?.text || "")[0]?.split(/\s+/).slice(0, 4).join(" ") || "Findings"}`,
-      goal: extension ? `What follows from passage ${p?.id || "p1"} for the reader.` : `Report what passage ${p?.id || "p1"} says.`,
-      kind: extension ? "extension" : "paper",
+      heading: context ? "Where this matters today" : extension ? "What this means beyond the paper" : `Section ${i + 1}: ${sentences(p?.text || "")[0]?.split(/\s+/).slice(0, 4).join(" ") || "Findings"}`,
+      goal: context ? "The author's own context: where the same problem turns up in practice." : extension ? `What follows from passage ${p?.id || "p1"} for the reader.` : `Report what passage ${p?.id || "p1"} says.`,
+      kind: context ? "context" : extension ? "extension" : "paper",
       passage_ids: [p?.id || "p1"],
     });
   }
-  return JSON.stringify({ title: `What the paper found: ${title}`, deck: `A report on ${title}, drawn from its own text.`, beats, brief_coverage: briefed ? { met: "full", note: "" } : null });
+  const last = beats[beats.length - 1];
+  const briefMap = briefed ? [{ ask: contextual ? "where this turns up today" : "what this means for the reader", answered_by: last.kind, section: last.heading }] : null;
+  return JSON.stringify({ title: `What the paper found: ${title}`, deck: `A report on ${title}, drawn from its own text.`, beats, brief_map: briefMap, brief_coverage: briefed ? { met: "full", note: "" } : null });
 }
 
 /** The one implication the fake ever draws: generic, so it follows from any passage. */
 const IMPLICATION = "This means the same problem would face anyone who meets what the paper describes.";
 
 function answerSection(prompt) {
-  const cited = passagesIn(prompt, "=== PASSAGES THIS SECTION MAY USE ===");
+  const cited = passagesIn(prompt, prompt.includes("=== PASSAGES THIS SECTION RELATES TO ===") ? "=== PASSAGES THIS SECTION RELATES TO ===" : "=== PASSAGES THIS SECTION MAY USE ===");
   const first = cited[0] || { id: "p1", text: "The paper reports its findings." };
   const s1 = sentences(first.text);
+  if (/^Section kind: context$/m.test(prompt)) {
+    /* The author's own context: general, so nothing to verify and the
+       publish gate stays open for the suites that do not test it.
+       FAKE_MODEL_MISATTRIBUTE=1 wears the paper's authority, which the fake
+       context judge marks; FAKE_MODEL_SPECIFIC=1 names a thing to verify. */
+    const misattributed = process.env.FAKE_MODEL_MISATTRIBUTE === "1" ? " The paper shows this method is used in every phone." : "";
+    const specific = process.env.FAKE_MODEL_SPECIFIC === "1" ? " The 2.4 GHz band is one such place." : "";
+    return JSON.stringify({ paragraphs: [{ text: `In practice the same problem turns up wherever a receiver must hear a weak signal beside a strong one, such as in a crowded radio band.${specific}${misattributed}`, passage_ids: [first.id] }], quote: null });
+  }
   if (/^Section kind: extension$/m.test(prompt)) {
     /* One paragraph of the paper, one that builds on it. FAKE_MODEL_OVERREACH=1
        adds a fact about the world, which the fake reach judge marks. */
@@ -155,6 +174,42 @@ function answerReach(prompt) {
         return anchor
           ? { text: sentence, verdict: "follows", anchor_ids: [anchor] }
           : { text: sentence, verdict: "overreach", reason: "outside_fact", anchor_ids: [] };
+      }),
+    })),
+  });
+}
+
+/**
+ * The context judge, answered by wording: a sentence that says the paper
+ * showed something is attributed to it; it is in the passages if it shares
+ * most of its words with one; "every phone" and any figure are specifics
+ * for the author to verify.
+ */
+function answerContext(prompt) {
+  const passages = passagesIn(prompt, "PASSAGES FROM THE PAPER:");
+  const body = prompt.slice(prompt.indexOf("PARAGRAPHS OF THE AUTHOR'S OWN CONTEXT:"));
+  const rows = [...body.matchAll(/^\((\d+)\) (.+)$/gm)].map((m) => ({ index: Number(m[1]), text: m[2] }));
+  const words = (t) => new Set(String(t).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3));
+  const anchorFor = (claim) => {
+    const cw = words(claim);
+    for (const p of passages) {
+      for (const sentence of sentences(p.text)) {
+        const sw = words(sentence);
+        const shared = [...cw].filter((w) => sw.has(w)).length;
+        if (cw.size && shared / cw.size >= 0.4) return p.id;
+      }
+    }
+    return null;
+  };
+  return JSON.stringify({
+    paragraphs: rows.map(({ index, text }) => ({
+      index,
+      claims: sentences(text).map((sentence) => {
+        const anchor = anchorFor(sentence);
+        const attributed = /\b(?:the|this) (?:paper|study|work) (?:shows|showed|found|finds|proves|proved|demonstrates)\b/i.test(sentence);
+        const specifics = [...sentence.matchAll(/\b(every phone)\b|\b(\d+(?:\.\d+)?(?: ?(?:GHz|MHz|dB))?)\b/gi)]
+          .map((m) => (m[1] ? { text: m[1], kind: "product" } : { text: m[2], kind: "number" }));
+        return { text: sentence, attributed, in_passages: Boolean(anchor), anchor_ids: anchor ? [anchor] : [], specifics, unsuitable: false };
       }),
     })),
   });
@@ -256,11 +311,12 @@ async function generateContent({ prompt, contents = null, tools = null }) {
   if (tools && Array.isArray(contents)) return answerAgent(contents);
   const p = String(prompt || (contents ? contents.map((c) => (c.parts || []).map((x) => x.text || "").join("\n")).join("\n") : ""));
   let text;
-  if (p.includes("PARAGRAPHS THAT BUILD ON THEM:")) text = answerReach(p);
+  if (p.includes("PARAGRAPHS OF THE AUTHOR'S OWN CONTEXT:")) text = answerContext(p);
+  else if (p.includes("PARAGRAPHS THAT BUILD ON THEM:")) text = answerReach(p);
   else if (p.includes("PARAGRAPHS TO CHECK:")) text = answerJudge(p);
   else if (p.includes("=== PARAGRAPH TO REWRITE FOR ANOTHER READER ===")) text = answerLevel(p);
   else if (p.includes("=== PAPER, IN NUMBERED PASSAGES ===")) text = answerOutline(p);
-  else if (p.includes("=== PASSAGES THIS SECTION MAY USE ===")) text = answerSection(p);
+  else if (p.includes("=== PASSAGES THIS SECTION MAY USE ===") || p.includes("=== PASSAGES THIS SECTION RELATES TO ===")) text = answerSection(p);
   else text = answerComposer(p);
   return { text, usage: usage(p, text), modelVersion: MODEL_VERSION, resourceName: "fake/model" };
 }

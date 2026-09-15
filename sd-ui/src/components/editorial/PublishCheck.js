@@ -39,6 +39,7 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
   const target = AUDIENCE_TARGETS[normaliseAudience(audience)];
   const firstAttention = blocks.findIndex(needsAttention);
   const firstLost = blocks.findIndex((b) => b.traceable === false);
+  const firstUnverified = blocks.findIndex((b) => b.ownView && b.context?.toVerify?.some((v) => !v.verified));
   const levelOk = !assessment || assessment.verdict !== "fail";
   const troubles = [
     s.partial ? `${s.partial} partly supported` : "",
@@ -74,6 +75,18 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
       title: `${worldClaims.hits.length} sentence${worldClaims.hits.length === 1 ? "" : "s"} beyond the paper read${worldClaims.hits.length === 1 ? "s" : ""} as a claim about the world`,
       detail: `${worldClaims.hits.map((h) => `"${h.sentence}" (block ${h.block})`).join("; ")}. An implication says what would follow; a claim says what is done. Only the first is yours to make from the paper alone.`,
       action: { label: "Go to it", onClick: () => onGoTo?.(worldClaims.hits[0].block - 1) },
+    }] : []),
+    ...(s.toVerify ? [{
+      /* The one gate the machine holds shut: a specific it brought in from
+         outside the paper stays unpublished until the author has ticked it. */
+      ok: s.unverified === 0,
+      title: s.unverified === 0
+        ? `Every specific in your own context is verified by you (${s.toVerify})`
+        : `${s.unverified} specific${s.unverified === 1 ? "" : "s"} in your own context ${s.unverified === 1 ? "is" : "are"} not yet verified`,
+      detail: s.unverified === 0
+        ? "You ticked each one in Checks. Readers see these paragraphs as yours, not the paper's."
+        : "The agent brought them in from outside the paper. Tick each in Checks once you have checked it, or cut it. Nothing it invented reaches a reader without your eyes on it.",
+      action: s.unverified ? { label: "Go to it", onClick: () => onGoTo?.(firstUnverified) } : null,
     }] : []),
     {
       ok: levelOk,

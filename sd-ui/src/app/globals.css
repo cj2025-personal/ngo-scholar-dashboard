@@ -2892,6 +2892,16 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 /* a paragraph that goes beyond the paper: builds on its passages, does not restate them */
 .block-chip.is-reach { color: #4a3b7a; background: #efeaf9; }
 .block-chip.is-reach::before { content: "↗"; }
+/* The author's own context: theirs, with a list to verify. */
+.block-chip.is-context { color: #14532d; background: #e6f4ea; }
+.block-chip.is-context::before { content: "✎"; }
+.ch-beat-kind.is-context { background: #e6f4ea; color: #14532d; }
+.ck-verify { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.ck-verify__row { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.45; color: var(--sd-heading); cursor: pointer; }
+.ck-verify__row input { margin: 3px 0 0; accent-color: #14532d; flex: 0 0 auto; }
+.ck-verify__row.is-done { color: var(--sd-muted); }
+.ck-verify__kind { margin-left: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--sd-faint); }
+.ck-verify__where { margin-left: auto; font-size: 11px; color: var(--sd-faint); white-space: nowrap; }
 .block-chip-note { font-size: 11px; color: #7a4b00; cursor: help; }
 .sc-write-provenance { margin: 14px 0 0; font-size: 12.5px; color: var(--sd-muted); }
 .sc-write-provenance a { color: var(--navy); text-decoration: none; }

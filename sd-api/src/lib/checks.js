@@ -185,24 +185,77 @@ function worldClaims({ blocks }) {
  */
 function extensionBudget({ blocks }) {
   let extension = 0;
+  let context = 0;
   let paper = 0;
   for (const b of blocks || []) {
-    if (b.type !== "paragraph" || b.ownView || !Array.isArray(b.sourceRefs) || !b.sourceRefs.length) continue;
+    if (b.type !== "paragraph") continue;
+    /* The author's own context counts as beyond the paper; a bare own-view
+       paragraph is the scholar's by hand and is counted neither way. */
+    if (b.ownView) { if (b.context) context += 1; continue; }
+    if (!Array.isArray(b.sourceRefs) || !b.sourceRefs.length) continue;
     if (b.extension) extension += 1;
     else paper += 1;
   }
-  if (!extension) return { version: CHECKS_VERSION, extension, paper, ok: null, sentence: null };
-  const ok = extension <= paper;
-  const goes = extension === 1 ? "goes" : "go";
+  const beyond = extension + context;
+  if (!beyond) return { version: CHECKS_VERSION, extension, context, paper, ok: null, sentence: null };
+  const ok = beyond <= paper;
+  const goes = beyond === 1 ? "goes" : "go";
+  /* The split is said only when there is one to say. */
+  const parts = context ? ` (${[extension ? `${extension} as implication` : "", `${context} as your own context`].filter(Boolean).join(", ")})` : "";
   return {
     version: CHECKS_VERSION,
     extension,
+    context,
     paper,
     ok,
     sentence: ok
-      ? `${extension} paragraph${extension === 1 ? "" : "s"} ${goes} beyond the paper, against ${paper} drawn from it.`
-      : `${extension} paragraph${extension === 1 ? "" : "s"} ${goes} beyond the paper and only ${paper} ${paper === 1 ? "is" : "are"} drawn from it. An article should rest mostly on what the paper says.`,
+      ? `${beyond} paragraph${beyond === 1 ? "" : "s"} ${goes} beyond the paper${parts}, against ${paper} drawn from it.`
+      : `${beyond} paragraph${beyond === 1 ? "" : "s"} ${goes} beyond the paper${parts} and only ${paper} ${paper === 1 ? "is" : "are"} drawn from it. An article should rest mostly on what the paper says.`,
   };
 }
 
-module.exports = { CHECKS_VERSION, NUMBER_WORDS, WORLD_CLAIM_CUES, numbersIn, numericConsistency, limitationPassages, limitationsCoverage, worldClaims, extensionBudget };
+/* Wordings by which the author's own context puts itself under the paper's authority. */
+const ATTRIBUTION_CUES = [
+  /\b(?:the|this|that|our)\s+(?:paper|study|work|research|article|analysis|results?|findings?|experiments?|trials?)\s+(?:shows?|showed|found|finds|proves?|proved|demonstrat\w*|establish\w*|confirm\w*|reports?|reported|measured)\b/i,
+  /\bas\s+(?:the|this)\s+(?:paper|study|work)\s+(?:shows|showed|found|demonstrates|reports)\b/i,
+];
+
+/**
+ * Sentences in the author's own context that read as the paper's finding.
+ * The context judge looks for the same thing claim by claim; this is the
+ * cheap net under it, by wording, and labelled a heuristic.
+ * @returns {{version: string, heuristic: true, checked: number, hits: {block: number, sentence: string}[], ok: boolean|null}}
+ */
+function attributionCues({ blocks }) {
+  const hits = [];
+  let checked = 0;
+  (blocks || []).forEach((b, i) => {
+    if (b.type !== "paragraph" || !b.ownView || !b.context) return;
+    checked += 1;
+    for (const sentence of plain(b.html).split(/(?<=[.!?])\s+/)) {
+      if (ATTRIBUTION_CUES.some((re) => re.test(sentence))) hits.push({ block: i + 1, sentence: sentence.trim().slice(0, 200) });
+    }
+  });
+  return { version: CHECKS_VERSION, heuristic: true, checked, hits, ok: checked ? hits.length === 0 : null };
+}
+
+/**
+ * Every specific the author's own context brought in from outside the paper,
+ * and whether the author has verified it. The story cannot be published while
+ * any is unverified; the workspace shows the list.
+ * @returns {{version: string, items: {block: number, text: string, kind: string, verified: boolean}[], total: number, unverified: number, ok: boolean|null}}
+ */
+function verifyList({ blocks }) {
+  const items = [];
+  (blocks || []).forEach((b, i) => {
+    if (b.type !== "paragraph" || !b.ownView || !b.context) return;
+    for (const v of Array.isArray(b.context.toVerify) ? b.context.toVerify : []) {
+      if (!v || !v.text) continue;
+      items.push({ block: i + 1, text: String(v.text), kind: v.kind || "other", verified: v.verified === true });
+    }
+  });
+  const unverified = items.filter((i) => !i.verified).length;
+  return { version: CHECKS_VERSION, items, total: items.length, unverified, ok: items.length ? unverified === 0 : null };
+}
+
+module.exports = { CHECKS_VERSION, NUMBER_WORDS, WORLD_CLAIM_CUES, ATTRIBUTION_CUES, numbersIn, numericConsistency, limitationPassages, limitationsCoverage, worldClaims, extensionBudget, attributionCues, verifyList };

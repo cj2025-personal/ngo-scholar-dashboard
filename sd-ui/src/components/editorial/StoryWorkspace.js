@@ -104,7 +104,7 @@ function collectInlineImagePayload(bodyBlocks) {
         html: block.html || "",
         ...(block.sourceRefs ? { sourceRefs: block.sourceRefs, draftedText: block.draftedText || "", fidelity: block.fidelity || null } : {}),
         ...(block.sourceRefs && block.extension ? { extension: true, reach: block.reach || null } : {}),
-        ...(block.ownView ? { ownView: true } : {}),
+        ...(block.ownView ? { ownView: true, ...(block.context ? { context: block.context } : {}) } : {}),
       });
       continue;
     }
@@ -257,7 +257,8 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     excerpt: form.excerpt,
     scheduledFor: form.scheduledFor,
     cover: form.coverImageId || (form.coverFile ? "pending" : null),
-    blocks: form.bodyBlocks.map((b) => [b.type, b.html || "", b.caption || "", b.alt || "", b.width || "", b.imageId || ""]),
+    /* A tick on a specific in the author's own context is a change to save. */
+    blocks: form.bodyBlocks.map((b) => [b.type, b.html || "", b.caption || "", b.alt || "", b.width || "", b.imageId || "", b.context ? (b.context.toVerify || []).filter((v) => v.verified).length : ""]),
   }), [form]);
   if (savedSignatureRef.current === null) savedSignatureRef.current = signature;
   const dirty = savedSignatureRef.current !== signature;
@@ -340,6 +341,18 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     setRailOpen(true);
     setRailTab("agent");
     setAgentPrefill(instruction);
+  }, []);
+
+  /* A tick on a specific the agent brought in from outside the paper: the
+     author has checked it. Their word, on their block; the save carries it
+     and the publish gate reads it. */
+  const verifySpecific = useCallback((blockId, itemIndex, verified) => {
+    setForm((current) => ({
+      ...current,
+      bodyBlocks: current.bodyBlocks.map((b) => (b.id === blockId && b.context
+        ? { ...b, context: { ...b.context, toVerify: (b.context.toVerify || []).map((v, k) => (k === itemIndex ? { ...v, verified } : v)) } }
+        : b)),
+    }));
   }, []);
 
   /* ── the agent's terms, the nudge, and the rail ───────────────────────── */
@@ -648,8 +661,8 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               ))}
             </div>
             <div className="ws-rail-body">
-              {railTab === "source" ? <SourceRail block={activeBlock} passages={passages} provenance={form.provenance} /> : null}
-              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => setRailTab("evidence")} /> : null}
+              {railTab === "source" ? <SourceRail block={activeBlock} passages={passages} provenance={form.provenance} onVerify={verifySpecific} /> : null}
+              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} onVerify={verifySpecific} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => setRailTab("evidence")} /> : null}
               {railTab === "evidence" ? <EvidenceRail storyId={form.id} version={form.version} status={form.status} slug={initialStory?.slug} onGoTo={(i) => goToBlock(i, "source")} /> : null}
               {railTab === "history" ? <HistoryRail storyId={form.id} version={form.version} dirty={dirty} onRestored={() => window.location.reload()} /> : null}
               {railTab === "agent" ? (consented ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} prefill={agentPrefill} onPrefillTaken={() => setAgentPrefill("")} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : (

@@ -173,7 +173,7 @@ function stateFromStory(story) {
     blocks: (story.bodyBlocks || []).map((b, i) =>
       b.type === "image"
         ? { key: `b${i + 1}`, type: "image", imageId: b.imageId || null, caption: b.caption || "", alt: b.alt || "", width: b.width || "body", url: b.url || null }
-        : { key: `b${i + 1}`, type: b.type, html: b.html || "", sourceRefs: Array.isArray(b.sourceRefs) ? b.sourceRefs.map((r) => ({ passageId: r.passageId })) : [], draftedText: b.draftedText || "", fidelity: b.fidelity || null, ownView: Boolean(b.ownView), extension: Boolean(b.extension), reach: b.reach || null },
+        : { key: `b${i + 1}`, type: b.type, html: b.html || "", sourceRefs: Array.isArray(b.sourceRefs) ? b.sourceRefs.map((r) => ({ passageId: r.passageId })) : [], draftedText: b.draftedText || "", fidelity: b.fidelity || null, ownView: Boolean(b.ownView), extension: Boolean(b.extension), reach: b.reach || null, context: b.context || null },
     ),
   };
 }

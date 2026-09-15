@@ -46,7 +46,25 @@ export function overlap(draftedText, currentText) {
 
 /** What the chip should say for a block right now. Null for a block never drafted. */
 export function chipFor(block, sourceLabel) {
-  if (!block || block.type === "image" || !Array.isArray(block.sourceRefs) || block.sourceRefs.length === 0) return null;
+  if (!block || block.type === "image") return null;
+  /* The author's own context: no passage behind it, by design; what it
+     carries is the list of specifics the author must verify. */
+  if (block.ownView && block.context) {
+    const toVerify = Array.isArray(block.context.toVerify) ? block.context.toVerify : [];
+    const unverified = toVerify.filter((v) => !v.verified).length;
+    return {
+      context: true,
+      traceable: true,
+      overlap: 1,
+      label: unverified ? `your own context · ${unverified} to verify` : toVerify.length ? "your own context · verified" : "your own context",
+      title: unverified
+        ? `Written as your own knowledge, not from the paper. ${unverified} specific${unverified === 1 ? "" : "s"} the agent brought in ${unverified === 1 ? "is" : "are"} not yet verified by you; the story cannot be published until ${unverified === 1 ? "it is" : "they are"}.`
+        : "Written as your own knowledge, not from the paper. Readers see it as yours.",
+      partial: false,
+      unsupportedClaims: [],
+    };
+  }
+  if (!Array.isArray(block.sourceRefs) || block.sourceRefs.length === 0) return null;
   const ids = block.sourceRefs.map((r) => r.passageId).join(", ");
   const live = overlap(block.draftedText || "", block.html || "");
   const traceable = Boolean(block.draftedText) && live >= TRACE_THRESHOLD;

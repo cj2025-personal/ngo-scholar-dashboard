@@ -221,7 +221,8 @@ async function judgeSection({ blocks, passages, generate }) {
   const failing = [];
 
   out.forEach((block, i) => {
-    if (block.type !== "paragraph" || block.extension) return;
+    /* Not this judge's: a paragraph beyond the paper, or the author's own. */
+    if (block.type !== "paragraph" || block.extension || block.ownView) return;
     const refs = (block.sourceRefs || []).map((r) => r.passageId).filter((id) => byId.has(id));
     if (refs.length === 0) {
       block.fidelity = {

@@ -141,7 +141,7 @@ function carry(b) {
     html: b.html || "",
     ...(refs ? { sourceRefs: refs, draftedText: b.draftedText || plain(b.html), fidelity: b.fidelity || null } : {}),
     ...(refs && b.extension ? { extension: true, reach: b.reach || null } : {}),
-    ...(b.ownView ? { ownView: true } : {}),
+    ...(b.ownView ? { ownView: true, ...(b.context ? { context: b.context } : {}) } : {}),
   };
 }
 

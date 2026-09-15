@@ -183,6 +183,58 @@ function presentBlockProvenance(p) {
   };
 }
 
+/**
+ * The author's own context, as stored: the context judge's verdict and
+ * claims, and the specifics the author must verify — with the author's ticks,
+ * which are theirs to set and the publish gate reads. Absent on a bare
+ * own-view paragraph the scholar wrote by hand.
+ */
+function normalizeBlockContext(c) {
+  if (!c || typeof c !== "object") return null;
+  const str = (v, n) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+  const ids = (list) => (Array.isArray(list) ? list : []).map((id) => str(id, 16)).filter(Boolean).slice(0, 12);
+  const toVerify = (Array.isArray(c.toVerify) ? c.toVerify : Array.isArray(c.to_verify) ? c.to_verify : [])
+    .map((v) => ({ text: str(v?.text, 120), kind: str(v?.kind, 24) || "other", verified: v?.verified === true }))
+    .filter((v) => v.text)
+    .slice(0, 12);
+  const claims = (Array.isArray(c.claims) ? c.claims : [])
+    .map((k) => ({
+      text: str(k?.text, 300),
+      attributed: k?.attributed === true,
+      in_passages: k?.inPassages === true || k?.in_passages === true,
+      anchor_ids: ids(k?.anchorIds || k?.anchor_ids),
+      reason: str(k?.reason, 32) || null,
+    }))
+    .filter((k) => k.text)
+    .slice(0, 12);
+  return {
+    anchor_ids: ids(c.anchorIds || c.anchor_ids),
+    verdict: ["clear", "partial", "misattributed"].includes(c.verdict) ? c.verdict : null,
+    claims,
+    misattributed_claims: (Array.isArray(c.misattributedClaims) ? c.misattributedClaims : Array.isArray(c.misattributed_claims) ? c.misattributed_claims : [])
+      .map((t) => str(t, 300)).filter(Boolean).slice(0, 12),
+    reasons: (Array.isArray(c.reasons) ? c.reasons : []).map((t) => str(t, 200)).filter(Boolean).slice(0, 6),
+    to_verify: toVerify,
+    checks: c.checks && typeof c.checks === "object" ? { anchored: Number(c.checks.anchored) || 0, judged: c.checks.judged === true, claims: Number(c.checks.claims) || 0 } : null,
+    verifier_version: str(c.verifierVersion || c.verifier_version, 40) || null,
+  };
+}
+
+/** The client's shape, from what is stored. */
+function presentBlockContext(c) {
+  if (!c || typeof c !== "object") return null;
+  return {
+    anchorIds: Array.isArray(c.anchor_ids) ? c.anchor_ids : [],
+    verdict: c.verdict || null,
+    claims: (Array.isArray(c.claims) ? c.claims : []).map((k) => ({ text: k.text, attributed: Boolean(k.attributed), inPassages: Boolean(k.in_passages), anchorIds: Array.isArray(k.anchor_ids) ? k.anchor_ids : [], reason: k.reason || null })),
+    misattributedClaims: Array.isArray(c.misattributed_claims) ? c.misattributed_claims : [],
+    reasons: Array.isArray(c.reasons) ? c.reasons : [],
+    toVerify: (Array.isArray(c.to_verify) ? c.to_verify : []).map((v) => ({ text: v.text, kind: v.kind || "other", verified: Boolean(v.verified) })),
+    checks: c.checks || null,
+    verifierVersion: c.verifier_version || null,
+  };
+}
+
 /** Story-level provenance, from the draft job that produced the text. */
 function storyProvenanceFromJob(job) {
   if (!job || !job.source) return null;
@@ -230,6 +282,8 @@ module.exports = {
   normalizeSourceRefs,
   normalizeBlockProvenance,
   presentBlockProvenance,
+  normalizeBlockContext,
+  presentBlockContext,
   storyProvenanceFromJob,
   provenanceLine,
   shortSourceLabel,

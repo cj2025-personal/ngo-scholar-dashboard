@@ -26,10 +26,50 @@ function sharedSentences(passageText, blockText) {
   });
 }
 
-export default function SourceRail({ block, passages, provenance }) {
+/** The author's own context: what it relates to, what it claimed of the paper, and what the author must verify. */
+function ContextRail({ block, passages, onVerify }) {
+  const c = block.context || {};
+  const related = (passages || []).filter((p) => (c.anchorIds || []).includes(p.id));
+  const toVerify = Array.isArray(c.toVerify) ? c.toVerify : [];
+  const unverified = toVerify.filter((v) => !v.verified).length;
+  return (
+    <div className="sr-wrap">
+      <div className="sr-head"><span className="sc-kicker">Your own context</span><span className="st-todo-detail">{related.length ? `relates to ${related.map((p) => p.id).join(", ")}` : "no passage"}</span></div>
+      <p className="st-muted">Written as your own knowledge of the world around the work, not from the paper. Readers see it marked as yours. It may say what the paper does not; it may not present that as the paper&rsquo;s finding.</p>
+      {c.verdict && c.verdict !== "clear" ? (
+        <p className="sc-write-msg is-error">
+          {c.verdict === "misattributed" ? "This paragraph presents your own context as the paper's finding" : "Part of this paragraph presents your own context as the paper's finding"}
+          {c.misattributedClaims?.length ? `: ${c.misattributedClaims.map((t) => `“${t}”`).join("; ")}` : ""}. Say it as what you know, or ask the agent to.
+        </p>
+      ) : null}
+      {toVerify.length ? (
+        <>
+          <span className="sc-kicker">To verify · {unverified ? `${unverified} of ${toVerify.length} left` : "all ticked"}</span>
+          <div className="ck-verify">
+            {toVerify.map((v, k) => (
+              <label key={k} className={v.verified ? "ck-verify__row is-done" : "ck-verify__row"}>
+                <input type="checkbox" checked={Boolean(v.verified)} disabled={!onVerify} onChange={(e) => onVerify?.(block.id, k, e.target.checked)} />
+                <span>{v.text}<span className="ck-verify__kind">{v.kind}</span></span>
+              </label>
+            ))}
+          </div>
+        </>
+      ) : <p className="st-muted">It names nothing a reader would need to check against the world.</p>}
+      {related.map((p) => (
+        <div key={p.id} className="sr-passage">
+          <b className="sr-id">{p.id}</b>
+          <p>{p.text}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function SourceRail({ block, passages, provenance, onVerify = null }) {
   if (!passages) return <p className="st-muted">Loading the paper&rsquo;s passages…</p>;
   if (passages.length === 0) return <p className="st-muted">This story has no source paper on record, so there is nothing to show behind its paragraphs.</p>;
   if (!block || block.type === "image") return <p className="st-muted">Select a paragraph to see the passages it came from.</p>;
+  if (block.ownView && block.context) return <ContextRail block={block} passages={passages} onVerify={onVerify} />;
   const refs = (block.sourceRefs || []).map((r) => r.passageId);
   if (refs.length === 0) {
     return <p className="st-muted">{block.ownView ? "This paragraph is your own view; it cites no passage by design." : "This paragraph cites no passage. If it makes a claim about the paper, ask the agent to rewrite it from the source."}</p>;

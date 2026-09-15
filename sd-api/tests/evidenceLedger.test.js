@@ -69,7 +69,7 @@ test("a paragraph that goes beyond the paper is ledgered apart: its implications
   assert.deepEqual(p.cited, ["p1"]);
   assert.deepEqual(p.claims[0], { text: "Which means any crowded band faces the same limit.", verdict: "follows", reason: null, passage_ids: ["p1"], evidence: "" });
   assert.equal(p.claims[1].reason, "outside_fact");
-  assert.deepEqual(m.totals, { paragraphs: 3, cited: 1, extension: 1, uncited: 1, own_view: 1, claims: 3, supported: 1, unsupported: 0, follows: 1, overreach: 1 });
+  assert.deepEqual(m.totals, { paragraphs: 3, cited: 1, extension: 1, uncited: 1, own_view: 1, context: 0, to_verify: 0, verified: 0, claims: 3, supported: 1, unsupported: 0, follows: 1, overreach: 1 });
   assert.equal(m.models.reach, "reach-judge-2026.1");
   assert.match(ledger.summarySentence(m), /3 claims checked against the paper, 1 supported; 1 implication follows from it, 1 goes too far\./);
   assert.ok(!/implication/.test(ledger.summarySentence(ledger.buildManifest({ story, revisions, passages }))), "an article with nothing beyond the paper says nothing about implications");
@@ -93,7 +93,7 @@ test("the manifest records every claim, the approval, the whole history, and has
   assert.equal(p.hash, ledger.sha256("The array improved the signal by eleven decibels."), "the hash is of the plain text, not the markup");
   assert.equal(m.paragraphs[2].own_view, true);
 
-  assert.deepEqual(m.totals, { paragraphs: 2, cited: 1, extension: 0, uncited: 1, own_view: 1, claims: 1, supported: 1, unsupported: 0, follows: 0, overreach: 0 });
+  assert.deepEqual(m.totals, { paragraphs: 2, cited: 1, extension: 0, uncited: 1, own_view: 1, context: 0, to_verify: 0, verified: 0, claims: 1, supported: 1, unsupported: 0, follows: 0, overreach: 0 });
   assert.equal(m.paragraphs[1].extension, false);
   assert.equal(m.passages[0].id, "p1");
   assert.ok(!("text" in m.passages[0]), "passage text never travels in the manifest");

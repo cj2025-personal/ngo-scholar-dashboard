@@ -49,7 +49,7 @@
  * reason the extraction pipeline stores its `profile_version`.
  */
 
-const PROMPT_VERSION = "2026-09-14.v2";
+const PROMPT_VERSION = "2026-09-15.v3";
 
 /**
  * Whose account the article is. See the header.

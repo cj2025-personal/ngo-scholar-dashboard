@@ -52,7 +52,7 @@ function LevelBlocks({ blocks }) {
             <Tag className={`lv-${b.type}`} dangerouslySetInnerHTML={{ __html: b.html || "" }} />
             {chip ? (
               <div className="block-chip-row"><span className={chip.className}>{chip.text}</span></div>
-            ) : b.ownView ? <div className="block-chip-row"><span className="block-chip is-lost">your view</span></div> : null}
+            ) : b.ownView ? <div className="block-chip-row"><span className={b.context ? "block-chip is-context" : "block-chip is-lost"}>{b.context ? "your own context" : "your view"}</span></div> : null}
           </div>
         );
       })}

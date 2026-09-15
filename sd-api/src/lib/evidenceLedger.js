@@ -113,7 +113,7 @@ function buildManifest({ story, revisions = [], passages = [], versions = {}, ke
      `cited` counts paragraphs drawn from the paper; `extension` counts
      those built on it. A reader who wants only what the paper says can
      tell the two apart, paragraph by paragraph. */
-  let totals = { paragraphs: 0, cited: 0, extension: 0, uncited: 0, own_view: 0, claims: 0, supported: 0, unsupported: 0, follows: 0, overreach: 0 };
+  let totals = { paragraphs: 0, cited: 0, extension: 0, uncited: 0, own_view: 0, context: 0, to_verify: 0, verified: 0, claims: 0, supported: 0, unsupported: 0, follows: 0, overreach: 0 };
 
   blocks.forEach((b, i) => {
     if (b.type === "image") return;
@@ -141,6 +141,13 @@ function buildManifest({ story, revisions = [], passages = [], versions = {}, ke
       else if (extension) totals.extension += 1;
       else totals.cited += 1;
       if (b.ownView) totals.own_view += 1;
+      /* The author's own context: what it brought in, and what the author has stood behind. */
+      if (b.ownView && b.context) {
+        totals.context += 1;
+        const tv = Array.isArray(b.context.toVerify) ? b.context.toVerify : [];
+        totals.to_verify += tv.length;
+        totals.verified += tv.filter((v) => v.verified).length;
+      }
       totals.claims += claims.length;
       if (extension) {
         totals.follows += claims.filter((c) => c.verdict === "follows").length;
@@ -161,6 +168,16 @@ function buildManifest({ story, revisions = [], passages = [], versions = {}, ke
       own_view: Boolean(b.ownView),
       extension,
       claims,
+      /* The author's own context carries no passage; it carries the specifics
+         a reader could check, and whether the author did. Only where it is. */
+      ...(b.ownView && b.context
+        ? {
+            context: {
+              verdict: b.context.verdict || null,
+              to_verify: (Array.isArray(b.context.toVerify) ? b.context.toVerify : []).map((v) => ({ text: v.text, kind: v.kind || "other", verified: Boolean(v.verified) })),
+            },
+          }
+        : {}),
     });
   });
 

@@ -97,7 +97,7 @@ export default function ReaderBody({ story }) {
                     {block.extension ? "↗ " : ""}{ids.join(", ")}
                   </button>
                 ) : (
-                  <span className="reader-srcmark is-author" title={block.ownView ? "The author's own view" : "Written by the author"}>author</span>
+                  <span className="reader-srcmark is-author" title={block.context ? "The author's own context — not drawn from the paper; its particulars verified by the author" : block.ownView ? "The author's own view" : "Written by the author"}>author</span>
                 )
               ) : null}
               {marked && open?.index === index ? (

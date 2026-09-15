@@ -48,11 +48,12 @@ const composer = require("./draftComposer");
 const plan = require("./draftPlan");
 const fidelity = require("./fidelity");
 const reach = require("./reach");
+const context = require("./context");
 const { assessDraftReadability, simplificationNote, VERDICT } = require("./draftReadability");
 const { USE } = require("./draftEligibility");
 const checks = require("./checks");
 
-const GRAPH_VERSION = "draft-graph-2026.3";
+const GRAPH_VERSION = "draft-graph-2026.4";
 
 /** One retry per section for voice; the graph refuses after that. */
 const SECTION_VOICE_RETRIES = 1;
@@ -118,9 +119,11 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
     const r = await generate({ prompt, systemInstruction: systemFor(s), responseSchema: plan.OUTLINE_SCHEMA, temperature: 0.3, maxOutputTokens: 2048 });
     const { dropped, ...outline } = plan.parseOutline(r.text, s.passages, { allowExtension: Boolean(s.brief) });
     const extensions = outline.beats.filter((b) => b.kind === plan.BEAT_KIND.EXTENSION).length;
-    await progress("plan_outline", `Outlined ${outline.beats.length} sections: ${outline.beats.map((b) => b.heading).join(" · ")}` + (extensions ? ` (${extensions} beyond the paper)` : ""), {
+    const contexts = outline.beats.filter((b) => b.kind === plan.BEAT_KIND.CONTEXT).length;
+    await progress("plan_outline", `Outlined ${outline.beats.length} sections: ${outline.beats.map((b) => b.heading).join(" · ")}` + (extensions ? ` (${extensions} beyond the paper)` : "") + (contexts ? ` (${contexts} of your own context)` : ""), {
       beats: outline.beats.length,
       extensions,
+      contexts,
       coverage: outline.coverage?.met || null,
     });
     /* The brief is answered out loud. A plan that quietly did something other
@@ -144,9 +147,11 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
     const total = s.outline.beats.length;
     for (const beat of s.outline.beats) {
       const extension = beat.kind === plan.BEAT_KIND.EXTENSION;
-      await progress("draft_blocks", `Drafting section ${beat.index} of ${total}: ${beat.heading}` + (extension ? " (beyond the paper)" : ""), { index: beat.index, total, kind: beat.kind || plan.BEAT_KIND.PAPER });
+      const contextBeat = beat.kind === plan.BEAT_KIND.CONTEXT;
+      await progress("draft_blocks", `Drafting section ${beat.index} of ${total}: ${beat.heading}` + (extension ? " (beyond the paper)" : contextBeat ? " (your own context)" : ""), { index: beat.index, total, kind: beat.kind || plan.BEAT_KIND.PAPER });
       let fidelityNote = null;
       let reachNote = null;
+      let contextNote = null;
       let accepted = null;
 
       for (let round = 0; round <= FIDELITY_RETRIES; round += 1) {
@@ -158,7 +163,7 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
         for (let attempt = 0; attempt <= SECTION_VOICE_RETRIES; attempt += 1) {
           const prompt = plan.buildSectionPrompt({
             scholar: s.scholar, beat, passages: s.passages, outline: s.outline, audience: s.audience, voice: s.voice,
-            strictVoice, strictSelf, readabilityNote: s.readabilityNote || null, fidelityNote, reachNote,
+            brief: s.brief || null, strictVoice, strictSelf, readabilityNote: s.readabilityNote || null, fidelityNote, reachNote, contextNote,
           });
           const r = await generate({ prompt, systemInstruction: systemFor(s), responseSchema: plan.SECTION_SCHEMA, temperature: strictVoice || strictSelf ? 0.2 : 0.4, maxOutputTokens: 2048 });
           calls.push({ step: "draft_blocks", beat: beat.index, usage: r.usage || null, model: r.modelVersion || null, strictVoice, strictSelf, round });
@@ -187,6 +192,7 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
         let blocks = judgedF.blocks;
         let failingF = judgedF.failing;
         let failingR = [];
+        let failingC = [];
         if (extension) {
           await progress("judge_reach", `Checking what section ${beat.index} of ${total} draws from the paper…`, { index: beat.index, total, round });
           const judgedR = await reach.judgeSection({ blocks, passages: s.passages, audience: s.audience, generate });
@@ -194,7 +200,16 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
           blocks = judgedR.blocks;
           failingR = judgedR.failing;
         }
-        const failing = [...new Set([...failingF, ...failingR])].sort((a, b) => a - b);
+        if (contextBeat) {
+          /* The author's own context: judged for what it claims of the paper,
+             and its specifics listed for the author to verify. */
+          await progress("judge_context", `Checking section ${beat.index} of ${total} for what it claims of the paper…`, { index: beat.index, total, round });
+          const judgedC = await context.judgeSection({ blocks, passages: s.passages, audience: s.audience, generate });
+          if (judgedC.call) calls.push({ ...judgedC.call, beat: beat.index, round });
+          blocks = judgedC.blocks;
+          failingC = judgedC.failing;
+        }
+        const failing = [...new Set([...failingF, ...failingR, ...failingC])].sort((a, b) => a - b);
 
         if (failing.length === 0) {
           accepted = { ...result, blocks };
@@ -203,24 +218,36 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
         if (round < FIDELITY_RETRIES) {
           fidelityNote = failingF.length ? fidelity.fidelityNote(blocks, failingF) : null;
           reachNote = failingR.length ? reach.reachNote(blocks, failingR) : null;
+          contextNote = failingC.length ? context.contextNote(blocks, failingC) : null;
           continue;
         }
 
         /* Out of retries. Drop what is unsupported or overreaching, keep what
            is partial with a warning, and refuse the run if nothing survives. */
-        const gone = (b, i) => failing.includes(i) && (b.extension ? b.reach?.verdict === reach.VERDICT.OVERREACH : b.fidelity?.verdict === fidelity.VERDICT.UNSUPPORTED);
+        const isContext = (b) => Boolean(b.ownView && b.context);
+        const gone = (b, i) => failing.includes(i) && (
+          isContext(b) ? b.context?.verdict === context.VERDICT.MISATTRIBUTED
+            : b.extension ? b.reach?.verdict === reach.VERDICT.OVERREACH
+              : b.fidelity?.verdict === fidelity.VERDICT.UNSUPPORTED
+        );
         const kept = blocks.filter((b, i) => !gone(b, i));
-        const droppedPaper = blocks.filter((b, i) => gone(b, i) && !b.extension).length;
+        const droppedPaper = blocks.filter((b, i) => gone(b, i) && !b.extension && !isContext(b)).length;
         const droppedReach = blocks.filter((b, i) => gone(b, i) && b.extension).length;
-        const partial = kept.filter((b) => !b.extension && b.fidelity?.verdict === fidelity.VERDICT.PARTIAL).length;
+        const droppedContext = blocks.filter((b, i) => gone(b, i) && isContext(b)).length;
+        const partial = kept.filter((b) => !b.extension && !isContext(b) && b.fidelity?.verdict === fidelity.VERDICT.PARTIAL).length;
         const partialReach = kept.filter((b) => b.extension && b.reach?.verdict === reach.VERDICT.PARTIAL).length;
+        const partialContext = kept.filter((b) => isContext(b) && b.context?.verdict === context.VERDICT.PARTIAL).length;
         if (!kept.some((b) => b.type === "paragraph")) {
           throw new Error(
-            extension && !droppedPaper
-              ? `Section ${beat.index} ("${beat.heading}") kept going beyond what the paper supports.`
-              : `Section ${beat.index} ("${beat.heading}") kept making claims the paper doesn't support.`,
+            contextBeat && !droppedPaper
+              ? `Section ${beat.index} ("${beat.heading}") kept presenting your own context as the paper's finding.`
+              : extension && !droppedPaper
+                ? `Section ${beat.index} ("${beat.heading}") kept going beyond what the paper supports.`
+                : `Section ${beat.index} ("${beat.heading}") kept making claims the paper doesn't support.`,
           );
         }
+        if (droppedContext) warnings.push(`${droppedContext} paragraph${droppedContext === 1 ? "" : "s"} in "${beat.heading}" ${droppedContext === 1 ? "was" : "were"} left out because ${droppedContext === 1 ? "it" : "they"} presented your own context as the paper's finding.`);
+        if (partialContext) warnings.push(`${partialContext} paragraph${partialContext === 1 ? "" : "s"} in "${beat.heading}" ${partialContext === 1 ? "presents" : "present"} part of your own context as the paper's finding; the sentences are marked on the block.`);
         if (droppedPaper) warnings.push(`${droppedPaper} paragraph${droppedPaper === 1 ? "" : "s"} in "${beat.heading}" ${droppedPaper === 1 ? "was" : "were"} left out because the fact-check found ${droppedPaper === 1 ? "it" : "them"} unsupported by the paper.`);
         if (droppedReach) warnings.push(`${droppedReach} paragraph${droppedReach === 1 ? "" : "s"} in "${beat.heading}" ${droppedReach === 1 ? "was" : "were"} left out because ${droppedReach === 1 ? "it" : "they"} went beyond what the paper supports.`);
         if (partial) warnings.push(`${partial} paragraph${partial === 1 ? "" : "s"} in "${beat.heading}" ${partial === 1 ? "is" : "are"} only partly supported by the paper; the unsupported claims are marked on the block.`);
@@ -281,6 +308,21 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
     const budget = checks.extensionBudget({ blocks: s.draft.bodyBlocks });
     if (budget.ok === false) warnings.push(budget.sentence);
 
+    /* The author's own context: a sentence that wears the paper's authority,
+       by wording; and the specifics the author must verify before the story
+       can be published. */
+    const attribution = checks.attributionCues({ blocks: s.draft.bodyBlocks });
+    if (attribution.ok === false) {
+      warnings.push(
+        `${attribution.hits.length === 1 ? "A sentence" : `${attribution.hits.length} sentences`} in your own context read${attribution.hits.length === 1 ? "s" : ""} as the paper's finding: ` +
+        `${attribution.hits.map((h) => `"${h.sentence}" (block ${h.block})`).join("; ")}. Say it as what you know, not as what the paper showed.`,
+      );
+    }
+    const verifyItems = checks.verifyList({ blocks: s.draft.bodyBlocks });
+    if (verifyItems.unverified) {
+      warnings.push(`${verifyItems.unverified} specific${verifyItems.unverified === 1 ? "" : "s"} in your own context ${verifyItems.unverified === 1 ? "is" : "are"} listed for you to verify in Checks before this can be published: ${verifyItems.items.filter((i) => !i.verified).slice(0, 6).map((i) => i.text).join(", ")}${verifyItems.unverified > 6 ? ", …" : ""}.`);
+    }
+
     /* Sections are drafted by separate calls, so nothing but this stops them
        disagreeing about the author's pronoun. They did, under a real name. */
     const pronouns = composer.pronounConsistency({ blocks: s.draft.bodyBlocks });
@@ -290,7 +332,7 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
         `Only the first ${s.prepared.words.toLocaleString()} of ${s.prepared.totalWords.toLocaleString()} words were used; the rest of the paper is not reflected here.`,
       );
     }
-    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations, worldClaims, budget, pronouns } };
+    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations, worldClaims, budget, pronouns, attribution, verify: verifyItems } };
   }
 
   return { pick_source, plan_outline, draft_blocks, assemble, verify };
@@ -343,13 +385,14 @@ async function runOutlineOnly(input, deps) {
  */
 function normaliseApprovedOutline(proposed, approved, passages) {
   const known = new Set(passages.map((p) => p.id));
-  const proposedExtension = new Set((proposed.beats || []).filter((b) => b.kind === plan.BEAT_KIND.EXTENSION).map((b) => b.heading));
+  /* The kinds beyond the paper the proposal offered, by heading. */
+  const proposedKind = new Map((proposed.beats || []).filter((b) => b.kind && b.kind !== plan.BEAT_KIND.PAPER).map((b) => [b.heading, b.kind]));
   const beats = (Array.isArray(approved?.beats) ? approved.beats : proposed.beats)
     .map((b, i) => ({
       index: i + 1,
       heading: String(b.heading || "").replace(/\s+/g, " ").trim().slice(0, 140) || `Section ${i + 1}`,
       goal: String(b.goal || "").replace(/\s+/g, " ").trim().slice(0, 300),
-      kind: b.kind === plan.BEAT_KIND.EXTENSION && (proposedExtension.has(b.heading) || proposedExtension.has(String(b.proposedHeading || ""))) ? plan.BEAT_KIND.EXTENSION : plan.BEAT_KIND.PAPER,
+      kind: b.kind && b.kind !== plan.BEAT_KIND.PAPER && (proposedKind.get(b.heading) === b.kind || proposedKind.get(String(b.proposedHeading || "")) === b.kind) ? b.kind : plan.BEAT_KIND.PAPER,
       passageIds: (Array.isArray(b.passageIds) ? b.passageIds : []).map(String).filter((id) => known.has(id)),
     }))
     .filter((b) => b.passageIds.length > 0);
@@ -359,6 +402,7 @@ function normaliseApprovedOutline(proposed, approved, passages) {
     deck: String(approved?.deck || proposed.deck || "").trim().slice(0, 280),
     beats,
     coverage: proposed.coverage || null,
+    briefMap: proposed.briefMap || null,
   };
 }
 
