@@ -1,24 +1,24 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 import { HiChevronDown, HiOutlineAcademicCap, HiOutlineDocumentText, HiOutlinePencilSquare, HiOutlinePlusSmall, HiOutlineUsers } from "react-icons/hi2";
 
 import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 
 /**
- * New story, as a conversation.
+ * The agent, in the rail of a story that has no paper behind it yet.
  *
- * One thread. The scholar picks a paper and a reader in the composer, then
- * says what the article should be. The agent reads the paper and answers
- * with an outline; the scholar replies with changes or approves it; the
- * agent drafts and the workspace opens. Every step is a message, so the
- * scholar can scroll up and see what was asked and what was proposed.
+ * A conversation. The scholar picks a paper and a reader, says what the
+ * article should be, and the agent answers with an outline. What they
+ * approve is drafted and handed to the workspace, which lands it in the page
+ * beside this rail — the page they may already have started typing in. The
+ * page saves it under their name, linked to the paper's passages, and from
+ * then on the rail is the agent that edits by instruction.
  *
- * The job behind the thread is the same durable draft job as before: pause
- * at the outline, replan from a follow-up, draft, create the story.
+ * The job behind the thread is the durable draft job: pause at the outline,
+ * replan from a follow-up, draft. It does not create the story; the page does,
+ * so a story is one thing in one place whoever wrote its first paragraph.
  */
 
 const PLACEHOLDER_START = "Describe the article you want: what to focus on, what to leave out, who it is for…";
@@ -84,8 +84,16 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard }) {
   );
 }
 
-export default function StoryChat({ me, initialSource = null, resumeJobId = null }) {
-  const router = useRouter();
+/**
+ * @param {object} p
+ * @param {{name?: string}|null} p.me
+ * @param {string|null} p.initialSource   `origin:id` of a paper to preselect
+ * @param {string|null} p.resumeJobId     a paused job to pick up
+ * @param {boolean} p.hasText             whether the page beside the rail already has writing in it
+ * @param {(job: object, source: object, opts: {levels: string[]}) => void} p.onDraftReady   the draft is done; the page takes it
+ * @param {(storyId: string) => void} p.onStoryReady   a job from before that made its own story; the page goes to it
+ */
+export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, hasText = false, onDraftReady, onStoryReady }) {
   const [inventory, setInventory] = useState(null);
   const [paper, setPaper] = useState(initialSource);
   const [audience, setAudience] = useState(DEFAULT_AUDIENCE);
@@ -101,6 +109,9 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
   const threadRef = useRef(null);
   const inputRef = useRef(null);
   const bandsRef = useRef(null);
+  /* The bands chosen when the job was started; the page writes them once the
+     story exists, so they ride along with the finished draft. */
+  const wantedLevelsRef = useRef([]);
 
   useEffect(() => {
     function onPointerDown(e) {
@@ -112,7 +123,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
   }, []);
 
   const draftable = inventory?.draftable || [];
-  const selectedPaper = useMemo(() => draftable.find((p) => paperKey(p) === paper) || null, [draftable, paper]);
+  const selectedPaper = draftable.find((p) => paperKey(p) === paper) || null;
   const outlineWaiting = job?.status === "awaiting_outline";
   const locked = Boolean(job);
   const extraBands = levelBands.filter((v) => v !== audience);
@@ -139,7 +150,8 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       push({ role: "agent", text: inv.nudge || "Nothing is ready to draft from yet. Add a paper you hold the rights to and come back." });
       return;
     }
-    push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? Pick the paper and the reader's age below, then tell me what the article should be: what to focus on, what to leave out, the angle you want — or what your work means for readers today. I will read the paper and propose an outline before a word is drafted; anything that goes beyond the paper is marked as such and checked to follow from it.` });
+    push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? Pick the paper and the reader below, then tell me what the article should be: what to focus on, what to leave out, the angle you want — or what your work means for readers today. I will read the paper and propose an outline before a word is drafted. What you approve lands in the page beside us${hasText ? ", after what you have written" : ""}, as a draft under your name for you to read and change.` });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.name, push, resumeJobId]);
 
   useEffect(() => {
@@ -153,10 +165,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
     if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
   }, [messages, busy]);
 
-  /* The field is one line until there is more than one line to show. Reset to
-     `auto` first or scrollHeight only ever reports the height it already has,
-     and the box would grow but never shrink back. The ceiling is the CSS
-     max-height; past it the textarea scrolls on its own. */
+  /* One line until there is more to show; `auto` first or it never shrinks. */
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -166,6 +175,23 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
 
   function showOutline(j, { replans = 0 } = {}) {
     setMessages((cur) => [...cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m)), { id: `outline-${j.id}-${replans}`, role: "outline", outline: j.outline, replans, jobId: j.id }]);
+  }
+
+  /* The finished draft goes to the page. A job started before the rail
+     existed made its own story; the page goes there instead. */
+  function settle(settled, source) {
+    clearProgress();
+    if (settled.storyId) {
+      push({ role: "agent", text: "Your draft is ready. Opening it, where you can read it against the paper and keep editing by instruction." });
+      onStoryReady?.(settled.storyId);
+      return true;
+    }
+    if (settled.status === "awaiting_review" && settled.draft) {
+      push({ role: "agent", text: "The draft is in the page beside us, under your name. Every paragraph shows the passage it came from. Read it, change what you like, and tell me what to do next." });
+      onDraftReady?.(settled, source || settled.source || {}, { levels: wantedLevelsRef.current });
+      return true;
+    }
+    return false;
   }
 
   function watch(j, after = 0) {
@@ -178,8 +204,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
         setJob(settled);
         setBusy(false);
         if (settled.status === "awaiting_outline") { showOutline(settled, { replans: settled.replans || 0 }); return; }
-        clearProgress();
-        if (settled.storyId) { push({ role: "agent", text: "Your draft is ready. Opening the workspace, where you can read it against the paper and keep editing by instruction." }); router.push(`/editorial/${settled.storyId}`); return; }
+        if (settle(settled, selectedPaper)) return;
         push({ role: "error", text: settled.failure?.sentence || "That draft did not complete." });
       },
       onError: (message) => { stopRef.current = null; setBusy(false); clearProgress(); push({ role: "error", text: message }); },
@@ -197,8 +222,8 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       setAudience(j.audience || DEFAULT_AUDIENCE);
       setVoice(j.voice || DEFAULT_VOICE);
       if (j.brief) push({ role: "user", text: j.brief });
-      if (j.storyId) { router.replace(`/editorial/${j.storyId}`); return; }
       if (j.status === "awaiting_outline") { showOutline(j, { replans: j.replans || 0 }); return; }
+      if (settle(j, j.source)) return;
       if (j.terminal) { push({ role: "error", text: j.failure?.sentence || "That draft did not complete." }); return; }
       setBusy(true);
       setProgress("Picking up where it left off…");
@@ -228,14 +253,15 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       return;
     }
     setProgress("Reading the paper…");
-    const wanted = levelBands.filter((a) => a !== audience);
-    const r = await createDraftJob({ origin: selectedPaper.origin, sourceId: selectedPaper.id, audience, voice, brief: ask, approveOutline: true, createStory: true, levels: wanted.length ? wanted : false });
+    wantedLevelsRef.current = levelBands.filter((a) => a !== audience);
+    /* No story from the job: the page beside us is the story. */
+    const r = await createDraftJob({ origin: selectedPaper.origin, sourceId: selectedPaper.id, audience, voice, brief: ask, approveOutline: true, createStory: false, levels: false });
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     const j = r.data.job;
     setJob(j);
-    if (j.storyId) { router.push(`/editorial/${j.storyId}`); return; }
     if (j.status === "awaiting_outline") { setBusy(false); showOutline(j, { replans: j.replans || 0 }); return; }
     if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That draft did not complete." }); return; }
+    if (settle(j, selectedPaper)) { setBusy(false); return; }
     watch(j);
   }
 
@@ -262,15 +288,17 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
     push({ role: "agent", text: "Discarded. Pick a paper and describe another article whenever you like." });
   }
 
+  function startAnother() {
+    if (stopRef.current) stopRef.current();
+    setJob(null);
+    setBusy(false);
+    setMessages((cur) => cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m)));
+  }
+
   const latestOutlineId = [...messages].reverse().find((m) => m.role === "outline" && !m.superseded && !m.approved)?.id;
 
   return (
-    <div className="ch-wrap">
-      <div className="ch-head">
-        <span className="sc-kicker">New story</span>
-        <Link href="/editorial/new?blank=1" className="st-link">Start blank instead</Link>
-      </div>
-
+    <div className="ch-wrap is-rail">
       <div className="ch-thread" ref={threadRef}>
         {messages.map((m) => {
           if (m.role === "outline") {
@@ -305,10 +333,10 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
             />
           </div>
 
-          {/* The controls are pills under the field, the way an agent's input
-              carries its tools: what to read, who for, whose voice. Each pill
-              is a native select styled over, so the keyboard, the screen
-              reader and the browser suite all see an ordinary control. */}
+          {/* The controls are pills under the field: what to read, who for,
+              whose voice. Each is a native select styled over, so the
+              keyboard, the screen reader and the browser suite all see an
+              ordinary control. */}
           <div className="ch-tools">
             <span className="ch-pill" title={selectedPaper?.title || "The paper the article draws on"}>
               <HiOutlineDocumentText size={15} className="ch-pill__ic" aria-hidden />
@@ -335,8 +363,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
               <HiChevronDown size={13} className="ch-pill__chev" aria-hidden />
             </span>
 
-            {/* The other reading ages, behind one pill. Three checkboxes in
-                the row was the thing that made the input look like a form. */}
+            {/* The other reading ages, behind one pill. */}
             <details ref={bandsRef} className={locked ? "ch-more is-locked" : extraBands.length ? "ch-more is-set" : "ch-more"}>
               <summary className="ch-pill is-summary" aria-disabled={locked || undefined} onClick={(e) => { if (locked) e.preventDefault(); }}>
                 {extraBands.length ? <HiOutlineUsers size={15} className="ch-pill__ic" aria-hidden /> : <HiOutlinePlusSmall size={17} className="ch-pill__ic" aria-hidden />}
@@ -359,7 +386,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
               </fieldset>
             </details>
 
-            {locked ? <span className="ch-locked">Set for this draft · <button type="button" className="st-link" onClick={() => { if (stopRef.current) stopRef.current(); setJob(null); setBusy(false); setMessages((cur) => cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m))); }}>Start another</button></span> : null}
+            {locked ? <span className="ch-locked">Set for this draft · <button type="button" className="st-link" onClick={startAnother}>Start another</button></span> : null}
 
             <button type="submit" className="ag-send" disabled={busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><FaPaperPlane size={13} aria-hidden /></button>
           </div>

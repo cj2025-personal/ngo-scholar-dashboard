@@ -89,7 +89,7 @@ export default function StudioHome({ me, sources, jobs, stories }) {
     if (job.status === "awaiting_outline") {
       todos.push({ tone: "warn", kind: "Outline", lead: "An outline is waiting for your approval", detail: `“${shortTitle(job.outline?.title || job.source?.title)}” · ${job.outline?.beats?.length || 0} sections proposed · ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Review outline", jobId: job.id });
     } else if (job.status === "awaiting_review" && !job.storyId) {
-      todos.push({ tone: "warn", kind: "Draft", lead: "A draft is waiting for you", detail: `From “${shortTitle(job.source?.title)}” · ${timeAgo(job.finishedAt)}`, href: "/editorial/new", cta: "Open", jobId: job.id });
+      todos.push({ tone: "warn", kind: "Draft", lead: "A draft is waiting for you", detail: `From “${shortTitle(job.source?.title)}” · ${timeAgo(job.finishedAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Open", jobId: job.id });
     } else if (job.status === "running" || job.status === "queued") {
       todos.push({ tone: "info", kind: "In progress", lead: "A draft is being written", detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Watch", jobId: job.status === "queued" ? job.id : null });
     }

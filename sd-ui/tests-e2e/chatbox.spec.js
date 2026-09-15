@@ -10,6 +10,7 @@
 
 const { test, expect } = require("@playwright/test");
 
+const { openAgent } = require("./agent");
 const { readState } = require("./stack");
 
 const SIZES = [
@@ -27,6 +28,7 @@ for (const size of SIZES) {
   test(`the composer fits the window on a ${size.name}`, async ({ page }) => {
     await page.setViewportSize({ width: size.width, height: size.height });
     await page.goto("/editorial/new");
+    await openAgent(page);
     await expect(page.getByLabel("Reader age")).toBeVisible();
 
     const composer = page.locator(".ch-composer");

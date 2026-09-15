@@ -5,6 +5,7 @@ const { ownedByScholarFilter } = require("../lib/identity");
 const { toImageProxyPath } = require("../config/s3");
 const { ApiError } = require("../lib/api-error");
 const { serializeMongoValue } = require("../lib/serialize");
+const { getAiTerms } = require("./aiTerms.service");
 
 /**
  * Resolve a scholar headshot into something the frontend can render.
@@ -87,6 +88,9 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
   }
 
   const scholarStories = await findScholarStories({ scholarId, profileId });
+  /* Keyed the way the scholar record is found: the profile id, or the
+     scholar id for an account that carries only that. */
+  const aiTerms = await getAiTerms({ profileId: profileId || scholarId });
   const podcasts = Array.isArray(scholar?.links_and_media?.podcasts)
     ? scholar.links_and_media.podcasts
     : [];
@@ -118,6 +122,8 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
       location: scholar?.about?.location || null,
       currentPosition: scholar?.about?.current_position || null,
       loginEmail: user?.login_email || null,
+      /* Whether the agent may write with this scholar yet. */
+      aiTerms,
       tags: [
         scholar?.about?.current_position,
         scholar?.about?.institution,

@@ -190,6 +190,20 @@ export async function deleteStory(storyId) {
 
 /* ── the story agent ─────────────────────────────────────────────────────── */
 
+/**
+ * Agree to the agent's terms, as the profile reported them. The version sent
+ * is the one the sheet showed; the server refuses a stale one, so a sheet
+ * drawn before the terms changed cannot agree to terms never read.
+ * Returns `{ aiTerms }` as the profile will now report them.
+ */
+export async function acceptAiTerms(version) {
+  return request("/api/profile/ai-terms/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version }),
+  });
+}
+
 /** Tell the agent what to change. Returns `{ turn }` with a proposal to accept or reject. */
 export async function askStoryAgent(storyId, instruction) {
   return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/agent`, {

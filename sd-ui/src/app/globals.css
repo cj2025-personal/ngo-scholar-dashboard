@@ -3214,6 +3214,85 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .ws-center .sc-write-title { font-size: 34px; }
 .ws-center .sc-write-subtitle { font-size: 18px; margin-bottom: 36px; }
 
+/* ══ The agent beside a new story ══════════════════════════════════════════
+   A story with no paper behind it yet: the plain editor, and the agent in a
+   pane on the right — fixed, so it is always fully in view whatever the
+   scroll, and the thing you type into is never below the fold. The editor
+   keeps its width by leaving the pane's width free on the right. On a
+   narrow screen the pane is a sheet from the bottom, and the nudge that
+   opens it sits in the corner.
+   ═══════════════════════════════════════════════════════════════════════ */
+.sc-writer.has-rail { max-width: none; margin: 0; }
+.sc-editorial:has(> .sc-writer.has-rail) { max-width: none; padding: 20px 0 0; }
+.sc-writer.has-rail .sc-write-bar, .sc-writer.has-rail > .sc-write-msg { margin-left: 24px; margin-right: calc(var(--ag-rail-w) + 24px); }
+.sc-writer { --ag-rail-w: 400px; }
+.ws-grid.is-two { display: block; min-height: 0; padding-right: var(--ag-rail-w); }
+.sc-writer.has-rail .ws-right {
+  position: fixed; top: var(--ag-rail-top, var(--sc-nav-height)); right: 0; bottom: 0; width: var(--ag-rail-w);
+  height: auto; max-height: none; z-index: 30;
+  /* The review grid gives .ws-right `align-self: start`, and Chrome applies
+     align-self to fixed boxes too: with top and bottom both set, `start`
+     sizes the pane to its content and pins it to the top instead of
+     stretching it between the insets — so a long thread grew past the
+     viewport rather than scrolling. `auto` stretches. */
+  align-self: auto;
+}
+.ag-rail-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 10px; border-bottom: 1px solid var(--sd-line-soft); }
+.ag-rail-close {
+  width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 999px;
+  background: none; color: var(--sd-faint); cursor: pointer; transition: background 140ms ease, color 140ms ease;
+}
+.ag-rail-close:hover { border-color: var(--sd-line); background: var(--ark-surface-2); color: var(--sd-heading); }
+/* The thread scrolls on its own; the rail body must not clip the menu that
+   opens above the dock. */
+.ws-right.is-agent .ws-rail-body { overflow: visible; }
+
+/* The conversation, fitted to the pane. */
+.ws-right .ch-wrap { flex: 1; height: auto; min-height: 0; max-width: none; padding: 0; }
+.ws-right .ch-thread { padding: 16px 16px 8px; gap: 20px; }
+.ws-right .ch-bubble { font-size: 14px; line-height: 1.6; }
+.ws-right .ch-msg.is-user { max-width: 90%; }
+.ws-right .ch-msg.is-outline .ch-bubble { padding: 14px; }
+.ws-right .ch-outline-title { font-size: 17px; }
+.ws-right .ch-composer { position: static; padding: 10px 12px 12px; background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--sd-surface) 22px); }
+.ws-right .ch-dock { border-radius: 18px; padding: 8px 10px; }
+.ws-right .ch-pill__sel { max-width: 150px; }
+.ws-right .ch-menu { left: auto; right: 0; }
+.ws-right .ag-hint { padding: 0 6px; }
+
+/* The way in, when the pane is closed. */
+.ag-nudge {
+  position: fixed; right: 24px; bottom: 24px; z-index: 40;
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px 0 16px;
+  border: 0; border-radius: 999px; background: var(--navy); color: #fff;
+  font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 12px 28px -10px rgba(30, 58, 138, 0.55);
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+.ag-nudge:hover { transform: translateY(-1px); background: var(--sd-heading); box-shadow: 0 16px 32px -10px rgba(30, 58, 138, 0.6); }
+
+/* The terms, in the product's own dialog. */
+.ac-modal { width: min(560px, 100%); }
+.ac-title { margin: 8px 0 14px; font-family: var(--sd-display); font-size: 22px; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; color: var(--sd-heading); }
+.ac-terms { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.55; color: var(--ink); }
+.ac-terms b { color: var(--sd-heading); }
+.ac-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+.ac-version { margin-left: auto; font-size: 12px; color: var(--sd-faint); }
+
+/* The Agent tab of the review rail, before the terms. */
+.ag-gate { padding: 24px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+
+@media (max-width: 1100px) {
+  .ws-grid.is-two { padding-right: 0; }
+  .sc-writer.has-rail .sc-write-bar, .sc-writer.has-rail > .sc-write-msg { margin-right: 24px; }
+  .sc-writer.has-rail .ws-right {
+    position: fixed; top: auto; left: 0; right: 0; bottom: 0; width: auto; height: min(78dvh, 640px);
+    z-index: 45; border: 1px solid var(--sd-line); border-bottom: 0; border-radius: 18px 18px 0 0;
+    box-shadow: 0 -18px 40px -20px rgba(23, 37, 84, 0.45);
+  }
+  .ag-nudge { right: 16px; bottom: 16px; }
+}
+
 /* ══ Agent console (Codex-style thread with a docked composer) ═══════════ */
 .ws-right.is-agent { height: calc(100vh - 118px); }
 .ws-right.is-agent .ws-rail-body { padding: 0; }

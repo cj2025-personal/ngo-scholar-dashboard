@@ -8,6 +8,8 @@ import {
   FaArrowUpRightFromSquare,
   FaGear,
   FaPlus,
+  FaWandMagicSparkles,
+  FaXmark,
 } from "react-icons/fa6";
 
 import RichTextBlockEditor, {
@@ -15,7 +17,8 @@ import RichTextBlockEditor, {
   getPlainTextFromBlocks,
 } from "@/components/editorial/RichTextBlockEditor";
 import StoryPreview from "@/components/editorial/StoryPreview";
-import DraftSourcesPanel from "@/components/editorial/DraftSourcesPanel";
+import AgentConsent from "@/components/editorial/AgentConsent";
+import NewStoryAgent from "@/components/editorial/NewStoryAgent";
 import AgentPanel from "@/components/editorial/AgentPanel";
 import SourceRail from "@/components/editorial/SourceRail";
 import ChecksRail, { summariseBlocks } from "@/components/editorial/ChecksRail";
@@ -25,7 +28,7 @@ import HistoryRail from "@/components/editorial/HistoryRail";
 import EvidenceRail from "@/components/editorial/EvidenceRail";
 import ReadingLevels from "@/components/editorial/ReadingLevels";
 import RecordBanner from "@/components/editorial/RecordBanner";
-import { createDraftJob, getStoryPassages, watchDraftJob } from "@/lib/drafting";
+import { acceptAiTerms, generateStoryLevels, getStoryPassages } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { assessForAudience } from "@/lib/readability";
 
@@ -147,20 +150,30 @@ function sectionsOf(blocks) {
 /**
  * The story workspace.
  *
- * One component, two shapes. A story written by hand gets the plain editor.
- * A story drafted from a paper gets the review workspace: the outline on the
- * left, the editor in the middle, and on the right the passage behind the
- * block you are on, the checks on the whole draft, and the agent. The save
- * path is the same for both; the machine never saves.
+ * One component, two shapes. A story with no paper behind it yet gets the
+ * plain editor, with the agent in a rail beside it: a conversation that ends
+ * with a draft landing in the page. A story drafted from a paper gets the
+ * review workspace: the outline on the left, the editor in the middle, and on
+ * the right the passage behind the block you are on, the checks on the whole
+ * draft, and the agent that edits by instruction. The save path is the same
+ * for both; the machine never saves.
+ *
+ * The agent works under terms the scholar agrees to once. Until then the
+ * rail is closed and a nudge in the corner asks; after, the rail is open.
+ *
+ * @param {object|null} initialStory
+ * @param {{name?: string, initials?: string}|null} me
+ * @param {{version: string, current: boolean}|null} aiTerms   as the profile reports them
+ * @param {string|null} initialSource   a paper to start from, `origin:id`
+ * @param {string|null} resumeJobId     a paused draft job to pick up
  */
-export default function StoryWorkspace({ initialStory = null }) {
+export default function StoryWorkspace({ initialStory = null, me = null, aiTerms = null, initialSource = null, resumeJobId = null }) {
   const router = useRouter();
   const [form, setForm] = useState(() => (initialStory ? storyToForm(initialStory) : createEmptyForm()));
   const [activeBlockId, setActiveBlockId] = useState(() => (initialStory?.id ? `story-${initialStory.id}-0` : "draft-0"));
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [draftingKey, setDraftingKey] = useState(null);
   const [draftProgress, setDraftProgress] = useState("");
   const [pendingDraftJob, setPendingDraftJob] = useState(null);
   const stopWatchingRef = useRef(null);
@@ -173,12 +186,53 @@ export default function StoryWorkspace({ initialStory = null }) {
   const [viewLevel, setViewLevel] = useState(null);
   const [agentPrefill, setAgentPrefill] = useState("");
   const [savedAt, setSavedAt] = useState(null);
+  /* The agent's terms: agreed to as they stand, or not yet. The rail opens on
+     its own once they are; before that, the nudge asks — at once, when the
+     page was opened with a paper or a job in hand. */
+  const [terms, setTerms] = useState(aiTerms);
+  const consented = Boolean(terms?.current);
+  const [railOpen, setRailOpen] = useState(() => Boolean(aiTerms?.current));
+  const [consentOpen, setConsentOpen] = useState(() => Boolean(!aiTerms?.current && (initialSource || resumeJobId)));
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState("");
+  /* A draft the rail just landed, waiting for the save that makes it a
+     story; and the other reading ages to write once it is one. */
+  const landingRef = useRef(false);
+  const pendingLevelsRef = useRef(null);
   /* A signature of everything a save would send. Compared against the last
      saved one to know whether there is unsaved work, which gates autosave,
      the navigation guard, and whether the agent may act. */
   const savedSignatureRef = useRef(null);
 
   const reviewMode = Boolean(form.provenance && form.id);
+  /* Provenance is resolved when a story is read. A write's response may
+     carry none; adopting that as "no paper behind this" would drop the
+     workspace out of review mode mid-edit. What was known stays known. */
+  const provenanceRef = useRef(form.provenance);
+  provenanceRef.current = form.provenance;
+  const withKnownProvenance = (story) => (story && !story.provenance && provenanceRef.current ? { ...story, provenance: provenanceRef.current } : story);
+
+  /* The rail is a fixed pane and the top bar is not: it scrolls away. The
+     pane's top follows the bar's lower edge out of view, so there is never a
+     gap above the pane once the bar has gone, and never a pane under it
+     while it is there. */
+  useEffect(() => {
+    if (reviewMode || !railOpen) return undefined;
+    const root = document.documentElement;
+    const bars = [".nb-utility", ".nb-nav"].map((sel) => document.querySelector(sel)).filter(Boolean);
+    const place = () => {
+      const bottom = Math.max(0, ...bars.map((el) => el.getBoundingClientRect().bottom));
+      root.style.setProperty("--ag-rail-top", `${Math.round(bottom)}px`);
+    };
+    place();
+    window.addEventListener("scroll", place, { passive: true });
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place);
+      window.removeEventListener("resize", place);
+      root.style.removeProperty("--ag-rail-top");
+    };
+  }, [reviewMode, railOpen]);
 
   useEffect(() => () => { if (stopWatchingRef.current) stopWatchingRef.current(); }, []);
 
@@ -271,7 +325,7 @@ export default function StoryWorkspace({ initialStory = null }) {
      written or approved, the record checked. Adopt it whole. */
   const handleStoryChanged = useCallback((story, message = "The change is in. Read it once more before you publish.") => {
     releasePreviewUrl();
-    const next = storyToForm(story);
+    const next = storyToForm(withKnownProvenance(story));
     savedSignatureRef.current = null;
     setForm(next);
     setActiveBlockId((current) => (next.bodyBlocks.some((b) => b.id === current) ? current : next.bodyBlocks[0]?.id || null));
@@ -283,11 +337,31 @@ export default function StoryWorkspace({ initialStory = null }) {
   /* The record banner hands the agent an instruction and opens the rail. */
   const askAgent = useCallback((instruction) => {
     setViewLevel(null);
+    setRailOpen(true);
     setRailTab("agent");
     setAgentPrefill(instruction);
   }, []);
 
-  /* ── the legacy panel: a draft placed into a blank editor ─────────────── */
+  /* ── the agent's terms, the nudge, and the rail ───────────────────────── */
+  const openAgent = useCallback(() => {
+    if (!consented) { setConsentError(""); setConsentOpen(true); return; }
+    setRailOpen(true);
+    setRailTab("agent");
+  }, [consented]);
+
+  async function agreeToTerms() {
+    setConsentBusy(true);
+    setConsentError("");
+    const r = await acceptAiTerms(terms?.version);
+    setConsentBusy(false);
+    if (!r.ok) { setConsentError(r.error); return; }
+    setTerms(r.data.aiTerms);
+    setConsentOpen(false);
+    setRailOpen(true);
+    setRailTab("agent");
+  }
+
+  /* ── a draft placed into the page ─────────────────────────────────────── */
   function placeDraft(job, source) {
     const draft = job.draft || {};
     const stamped = (draft.bodyBlocks || []).map((block) =>
@@ -312,29 +386,22 @@ export default function StoryWorkspace({ initialStory = null }) {
     setFeedback(`Drafted ${Number(draft.words || 0).toLocaleString()} words from “${job.source?.title || source.title}”. This is a machine first draft under your name — read every line before you publish.${notes}`);
   }
 
-  async function handleDraft(source, audienceChoice) {
-    setError("");
-    setFeedback("");
-    setDraftProgress("Starting…");
-    setDraftingKey(`${source.origin}:${source.id}`);
-    const created = await createDraftJob({ origin: source.origin, sourceId: source.id, audience: audienceChoice, createStory: false });
-    if (!created.ok) { setError(created.error); setDraftingKey(null); setDraftProgress(""); return; }
-    const job = created.data.job;
-    if (job.status === "awaiting_review") { setDraftingKey(null); setDraftProgress(""); placeDraft(job, source); return; }
-    if (job.terminal) { setError(job.failure?.sentence || "That draft did not complete."); setDraftingKey(null); setDraftProgress(""); return; }
-    if (stopWatchingRef.current) stopWatchingRef.current();
-    stopWatchingRef.current = watchDraftJob(job.id, {
-      onProgress: ({ message }) => setDraftProgress(message),
-      onSettled: (settled) => {
-        stopWatchingRef.current = null;
-        setDraftingKey(null);
-        setDraftProgress("");
-        if (settled.status === "awaiting_review") placeDraft(settled, source);
-        else setError(settled.failure?.sentence || "That draft did not complete.");
-      },
-      onError: (message) => { stopWatchingRef.current = null; setDraftingKey(null); setDraftProgress(""); setError(message); },
-    });
+  /* The rail's draft lands in the page, and the page becomes the story:
+     the save creates it, links the job for provenance, and opens the review
+     workspace at the story's own URL. The other reading ages the scholar
+     asked for are written from the story once it exists. */
+  function landDraft(job, source, { levels = [] } = {}) {
+    placeDraft(job, source);
+    pendingLevelsRef.current = levels.length ? levels : null;
+    setDraftProgress("Saving the draft under your name…");
+    landingRef.current = true;
   }
+  useEffect(() => {
+    if (!landingRef.current || !pendingDraftJob || isSaving) return;
+    landingRef.current = false;
+    submitStory("draft");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingDraftJob, isSaving]);
 
   /* ── cover image ──────────────────────────────────────────────────────── */
   function handleCoverFileChange(event) {
@@ -412,12 +479,23 @@ export default function StoryWorkspace({ initialStory = null }) {
         return true;
       }
       releasePreviewUrl();
-      const nextForm = storyToForm(savedStory);
+      const nextForm = storyToForm(withKnownProvenance(savedStory));
       savedSignatureRef.current = null;
       setForm(nextForm);
       setActiveBlockId((current) => (nextForm.bodyBlocks.some((b) => b.id === current) ? current : nextForm.bodyBlocks[0]?.id || null));
       setFeedback(nextStatus === "published" ? "Story published." : nextStatus === "scheduled" ? "Story scheduled." : "Draft saved.");
       if (pendingDraftJob) setPendingDraftJob(null);
+      if (!form.id && pendingLevelsRef.current?.length) {
+        /* Asked for with the draft; written from the story now that there
+           is one. A failure here is a note, never a lost draft — the
+           workspace can write them again. */
+        setDraftProgress("Writing it for the other reading ages you chose…");
+        const wanted = pendingLevelsRef.current;
+        pendingLevelsRef.current = null;
+        const made = await generateStoryLevels(savedStory.id, { audiences: wanted, baseVersion: savedStory.version });
+        if (!made.ok) setError(`The draft is saved. The other reading ages could not be written: ${made.error}`);
+      }
+      setDraftProgress("");
       if (!form.id) router.replace(`/editorial/${savedStory.id}`);
       else router.refresh();
       return true;
@@ -454,7 +532,6 @@ export default function StoryWorkspace({ initialStory = null }) {
       {!reviewMode ? (
         <>
           {form.provenance?.line ? <p className="sc-write-provenance">{form.provenance.line}</p> : null}
-          <DraftSourcesPanel onDraft={handleDraft} draftingKey={draftingKey} progress={draftProgress} />
         </>
       ) : null}
 
@@ -475,7 +552,7 @@ export default function StoryWorkspace({ initialStory = null }) {
   );
 
   return (
-    <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}`}>
+    <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}${!reviewMode && railOpen ? " has-rail" : ""}`}>
       <div className="sc-write-bar">
         <div className="sc-write-bar-left">
           <Link href="/editorial" className="sc-write-back"><FaArrowLeft size={12} aria-hidden /> Stories</Link>
@@ -511,6 +588,7 @@ export default function StoryWorkspace({ initialStory = null }) {
       ) : null}
       {error ? <p className="sc-write-msg is-error">{error}</p> : null}
       {feedback ? <p className="sc-write-msg is-ok">{feedback}</p> : null}
+      {draftProgress ? <p className="sc-write-msg is-ok" role="status">{draftProgress}</p> : null}
       {proposalPending ? <p className="sc-write-msg is-ok">The agent has proposed a change. Accept or reject it in the Agent tab before saving.</p> : null}
       {reviewMode && form.record?.alerts?.length ? (
         <RecordBanner storyId={form.id} record={form.record} status={form.status} onAskAgent={askAgent} onUnpublish={() => submitStory("draft")} onAcknowledged={(story) => handleStoryChanged(story, "Noted. The alert stays on the story until the record changes.")} />
@@ -522,7 +600,20 @@ export default function StoryWorkspace({ initialStory = null }) {
           <StoryPreview title={form.title} subtitle={form.subtitle} excerpt={form.excerpt} coverImageUrl={effectiveCoverImageUrl} coverImageFilename={form.coverImageFilename} bodyBlocks={form.bodyBlocks.map((block) => (block.type === "image" ? { ...block, url: block.previewUrl || block.imageUrl } : block))} />
         </div>
       ) : !reviewMode ? (
-        editorColumn
+        railOpen ? (
+          <div className="ws-grid is-two">
+            <div className="ws-center">{editorColumn}</div>
+            <aside className="ws-right is-agent" aria-label="Agent">
+              <div className="ag-rail-head">
+                <span className="sc-kicker">Agent</span>
+                <button type="button" className="ag-rail-close" aria-label="Close the agent" onClick={() => setRailOpen(false)}><FaXmark size={13} aria-hidden /></button>
+              </div>
+              <div className="ws-rail-body">
+                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} />
+              </div>
+            </aside>
+          </div>
+        ) : editorColumn
       ) : (
         <div className="ws-grid">
           <aside className="ws-left">
@@ -553,7 +644,7 @@ export default function StoryWorkspace({ initialStory = null }) {
           <aside className={railTab === "agent" ? "ws-right is-agent" : "ws-right"}>
             <div className="ws-tabs" role="tablist">
               {[["source", "Source"], ["checks", "Checks"], ["evidence", "Evidence"], ["agent", "Agent"], ["history", "History"]].map(([id, label]) => (
-                <button key={id} type="button" role="tab" aria-selected={railTab === id} className={railTab === id ? "ws-tab on" : "ws-tab"} onClick={() => setRailTab(id)}>{label}</button>
+                <button key={id} type="button" role="tab" aria-selected={railTab === id} className={railTab === id ? "ws-tab on" : "ws-tab"} onClick={() => (id === "agent" ? openAgent() : setRailTab(id))}>{label}</button>
               ))}
             </div>
             <div className="ws-rail-body">
@@ -561,7 +652,13 @@ export default function StoryWorkspace({ initialStory = null }) {
               {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => setRailTab("evidence")} /> : null}
               {railTab === "evidence" ? <EvidenceRail storyId={form.id} version={form.version} status={form.status} slug={initialStory?.slug} onGoTo={(i) => goToBlock(i, "source")} /> : null}
               {railTab === "history" ? <HistoryRail storyId={form.id} version={form.version} dirty={dirty} onRestored={() => window.location.reload()} /> : null}
-              {railTab === "agent" ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} prefill={agentPrefill} onPrefillTaken={() => setAgentPrefill("")} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : null}
+              {railTab === "agent" ? (consented ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} prefill={agentPrefill} onPrefillTaken={() => setAgentPrefill("")} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : (
+                <div className="ag-gate">
+                  <p className="ag-empty-title">The agent edits by instruction.</p>
+                  <p className="st-muted">It works from the paper behind this story and shows every change before it lands. Read its terms once to use it.</p>
+                  <button type="button" className="sc-write-secondary st-btn" onClick={openAgent}>Read the terms</button>
+                </div>
+              )) : null}
             </div>
           </aside>
         </div>
@@ -584,6 +681,17 @@ export default function StoryWorkspace({ initialStory = null }) {
           onPublish={async () => { const ok = await submitStory("published"); if (ok) setShowPublishCheck(false); }}
           onSchedule={form.scheduledFor ? async () => { const ok = await submitStory("scheduled"); if (ok) setShowPublishCheck(false); } : null}
         />
+      ) : null}
+
+      {/* The way in when the rail is closed. */}
+      {!reviewMode && !railOpen && mode !== "preview" ? (
+        <button type="button" className="ag-nudge" onClick={openAgent} title={consented ? "Open the agent" : "The agent drafts from your papers — read its terms once"}>
+          <FaWandMagicSparkles size={14} aria-hidden /> Agent
+        </button>
+      ) : null}
+
+      {consentOpen ? (
+        <AgentConsent version={terms?.version} busy={consentBusy} error={consentError} onAgree={agreeToTerms} onClose={() => setConsentOpen(false)} />
       ) : null}
     </div>
   );

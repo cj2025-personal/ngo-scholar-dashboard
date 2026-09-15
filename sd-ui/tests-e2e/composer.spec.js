@@ -12,6 +12,7 @@
 
 const { test, expect } = require("@playwright/test");
 
+const { openAgent } = require("./agent");
 const { readState } = require("./stack");
 
 let state;
@@ -47,6 +48,8 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* New story is a conversation. The paper is preselected from Papers. */
   await expect(page).toHaveURL(/\/editorial\/new\?source=/);
+  /* The agent works under terms agreed to once; the first time, they come up at once. */
+  await openAgent(page);
   await expect(page.getByLabel("Paper")).toHaveValue(/src-e2e-1$/);
   await expect(page.locator(".ch-msg.is-agent").first()).toContainText("What shall we write");
   await page.getByLabel("Reader age").selectOption("ages_15_18");
@@ -275,7 +278,10 @@ test("from a paper to a published story, with the agent editing by instruction",
 test("a blank story still opens the plain editor", async ({ page }) => {
   await page.goto("/editorial/new?blank=1");
   await expect(page.getByPlaceholder("Title", { exact: true })).toBeVisible();
-  await expect(page.locator(".ws-grid")).toHaveCount(0);
+  /* The plain editor, not the review workspace: no outline rail, no review
+     status. The agent may sit beside it; that is a different thing. */
+  await expect(page.locator(".ws-left")).toHaveCount(0);
+  await expect(page.locator(".sc-writer.is-review")).toHaveCount(0);
 });
 
 test("without a session the studio is not reachable", async ({ browser }) => {

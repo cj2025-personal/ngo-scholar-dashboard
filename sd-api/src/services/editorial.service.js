@@ -1580,10 +1580,14 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
     storyInserted = true;
     await appendRevision(db, {
       storyId, profileId, story, version: 1,
-      /* A person saved this, even when the words came from a draft job. The
-         job is recorded alongside, so where it came from is not lost. */
-      source: storyVersion.SOURCE.SCHOLAR,
-      actor: story.created_by, note: "First version", turnId: null, jobId: body.draftJobId || null, at: now,
+      /* When the words came from a draft job, the machine wrote this version
+         and the scholar's save only placed it in the page: the history says
+         so, as it does for a draft the job made into a story itself. The
+         scholar's first change is version 2, under their own name. */
+      source: provenance ? storyVersion.SOURCE.DRAFTER : storyVersion.SOURCE.SCHOLAR,
+      actor: provenance ? `drafter:${provenance.graph_version || provenance.graphVersion || "draft-graph"}` : story.created_by,
+      note: provenance ? "The draft as the machine wrote it, placed in your page" : "First version",
+      turnId: null, jobId: body.draftJobId || null, at: now,
     });
     await linkDraftJob({ draftJobId: body.draftJobId, profileId, storyId });
   } catch (error) {

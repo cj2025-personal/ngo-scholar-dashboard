@@ -22,6 +22,10 @@ const COLLECTIONS = {
      made it. What makes "put back the version before the agent touched it"
      possible, and what turns a lost write into a refusal the scholar sees. */
   storyRevisions: "scholar_editorial_revisions",
+  /* One row per scholar: the version of the agent's terms they agreed to,
+     when, and every agreement before it. Private to this service, like the
+     draft runs; the scholar record itself is not ours to write. */
+  agentTerms: "scholar_agent_terms",
 };
 
 let clientPromise;
@@ -134,6 +138,13 @@ async function ensureIndexes() {
       const suggestions = db.collection(COLLECTIONS.suggestions);
       const draftRuns = db.collection(COLLECTIONS.draftRuns);
       const draftJobs = db.collection(COLLECTIONS.draftJobs);
+      const agentTerms = db.collection(COLLECTIONS.agentTerms);
+
+      /* One row per scholar; the upsert relies on it. */
+      await agentTerms.createIndex(
+        { profile_id: 1 },
+        { unique: true, name: "idx_scholar_agent_terms_profile_unique" },
+      );
 
       // Enforce credential uniqueness idempotently, tolerating indexes that
       // already exist under Mongo's default names.

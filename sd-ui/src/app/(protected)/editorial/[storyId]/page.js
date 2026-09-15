@@ -26,7 +26,7 @@ export default async function EditorialStoryPage({ params }) {
     <div className="sc-shell">
       <Topbar activeHref="/editorial" me={me} />
       <div className="sc-editorial">
-        <StoryWorkspace initialStory={storyResult.story} />
+        <StoryWorkspace initialStory={storyResult.story} me={me} aiTerms={profile.aiTerms || null} />
       </div>
     </div>
   );

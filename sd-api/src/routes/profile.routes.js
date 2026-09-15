@@ -6,6 +6,7 @@ const {
   communityScopeFromAuth,
 } = require("../middleware/auth.middleware");
 const { getScholarProfileData } = require("../services/profile.service");
+const { acceptAiTerms } = require("../services/aiTerms.service");
 const {
   createSuggestion,
   listSuggestionsForScholar,
@@ -81,6 +82,23 @@ router.post(
       user: req.auth.user,
     });
     res.status(200).json(result);
+  }),
+);
+
+/**
+ * The agent's terms, agreed to. The body carries the version the sheet
+ * showed; the service refuses a stale one. Scoped to the session, keyed the
+ * way the profile read is.
+ */
+router.post(
+  "/ai-terms/accept",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const aiTerms = await acceptAiTerms({
+      profileId: req.auth.user.profile_id || req.auth.user.scholar_id,
+      version: req.body?.version,
+    });
+    res.status(200).json({ aiTerms });
   }),
 );
 

@@ -9,6 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { test, expect } = require("@playwright/test");
 
+const { openAgent } = require("./agent");
 const { readState } = require("./stack");
 
 const OUT = process.env.SCREENS_OUT || path.join(__dirname, "screens");
@@ -39,6 +40,7 @@ test("capture the current screens", async ({ page, context, browser }) => {
   await page.waitForLoadState("networkidle");
   await shot("05-papers");
   await page.locator(".pp-table tbody tr", { hasText: "Adaptive nulling" }).getByRole("link", { name: "Start a story" }).click();
+  await openAgent(page);
   await expect(page.locator(".ch-msg.is-agent").first()).toBeVisible();
   await shot("06-new-story-chat");
   await page.getByPlaceholder(/Describe the article you want/).fill("Focus on what the field trials showed, and be honest about the limits.");
@@ -71,7 +73,9 @@ test("capture the current screens", async ({ page, context, browser }) => {
   const reader = await browser.newPage();
   await reader.setViewportSize({ width: 1440, height: 900 });
   await reader.goto(href);
-  await reader.waitForLoadState("networkidle");
+  /* A first compile of the reader route under load can outlast the idle
+     wait; the click below waits for the page itself. */
+  await reader.waitForLoadState("networkidle").catch(() => {});
   await reader.getByRole("button", { name: "Show sources" }).click();
   await reader.locator(".reader-srcmark").first().click();
   await reader.screenshot({ path: path.join(OUT, "13-public-story-sources.png"), fullPage: true });
@@ -81,6 +85,7 @@ test("capture the current screens", async ({ page, context, browser }) => {
 
   await page.setViewportSize({ width: 400, height: 860 });
   await page.goto("/editorial/new");
+  await openAgent(page);
   await shot("15-new-story-mobile");
 
   /* The story list with something in it. The capture near the top of this run
