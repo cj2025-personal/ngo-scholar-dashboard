@@ -40,6 +40,28 @@ async function getClient() {
   return clientPromise;
 }
 
+/**
+ * Close the connection pool, for shutdown.
+ *
+ * Resolves whether or not a connection was ever opened, and clears the cached
+ * promise so a process that keeps running after this (a test suite between
+ * cases) reconnects rather than handing out a closed client. Never throws: a
+ * pool that cannot be closed cleanly must not stop the process from exiting,
+ * which is the whole point of calling it.
+ */
+async function closeMongo() {
+  const pending = clientPromise;
+  clientPromise = undefined;
+  indexesPromise = undefined;
+  if (!pending) return;
+  try {
+    const client = await pending;
+    await client.close();
+  } catch (error) {
+    console.error("[mongo] close failed:", error.message);
+  }
+}
+
 
 /**
  * A database handle that refuses to write collections this service does not own.
@@ -265,6 +287,7 @@ module.exports = {
   COLLECTIONS,
   getRawDb,
   connectToMongo,
+  closeMongo,
   getCollections,
   getDb,
 };
