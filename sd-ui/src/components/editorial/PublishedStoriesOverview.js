@@ -3,71 +3,41 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
-  FaArrowUpRightFromSquare,
-  FaPen,
-} from "react-icons/fa6";
+  HiOutlineArrowTopRightOnSquare,
+  HiOutlineBookOpen,
+  HiOutlineExclamationTriangle,
+  HiOutlinePencilSquare,
+} from "react-icons/hi2";
 
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
 
+/**
+ * Stories: everything the scholar has written, in one list.
+ *
+ * ── What it says now that it did not ───────────────────────────────────────
+ * It was a title, a date and an excerpt — the list any blog would show. But
+ * the things that decide what a scholar does next are not in a title. Whether
+ * the paper underneath has moved on the record. Whether reading ages are
+ * sitting unapproved and therefore reaching nobody. Which paper it was drawn
+ * from at all. Those now sit on the row, so the list answers "what needs me"
+ * without opening anything.
+ *
+ * ── Quiet until asked ──────────────────────────────────────────────────────
+ * Edit, View live and Delete used to sit under every row at equal weight,
+ * three permanent links per story, one of them destructive. They now appear
+ * on hover or focus. Nothing is hidden from a keyboard — `focus-within`
+ * reveals them and they keep their place in the tab order — but a list of
+ * twelve stories is no longer a list of thirty-six links.
+ *
+ * ── One "New story" ────────────────────────────────────────────────────────
+ * The bar above carries it on every page. A second one at the top of this
+ * page was the same button twice on one screen. It survives only in the empty
+ * state, where there is nothing else to press.
+ */
+
 const IMG_BASE = process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
 
-function formatDate(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
-}
-
 const KIND_LABEL = { published: "Published", draft: "Draft", scheduled: "Scheduled" };
-
-function rowDate(story, kind) {
-  if (kind === "published") return story.publishedAt || story.updatedAt;
-  if (kind === "scheduled") return story.scheduledFor || story.updatedAt;
-  return story.updatedAt;
-}
-
-function StoryRow({ story, kind }) {
-  const cover = story.coverImage?.url ? `${IMG_BASE}${story.coverImage.url}` : null;
-  const date = formatDate(rowDate(story, kind));
-  const minutes = story.wordCount > 0 ? story.readingTimeMinutes : null;
-
-  return (
-    <article className="sc-elist-row">
-      <div className="sc-elist-main">
-        <div className="sc-elist-meta">
-          <span className={`sc-elist-pill is-${kind}`}>{KIND_LABEL[kind]}</span>
-          {date ? <span>{date}</span> : null}
-          {minutes ? <span>&middot; {minutes} min read</span> : null}
-        </div>
-        <Link href={`/editorial/${story.id}`} className="sc-elist-title">
-          {story.title || "Untitled story"}
-        </Link>
-        {story.excerpt ? <p className="sc-elist-excerpt">{story.excerpt}</p> : null}
-        <div className="sc-elist-actions">
-          <Link href={`/editorial/${story.id}`}>
-            <FaPen size={12} aria-hidden /> Edit
-          </Link>
-          {story.slug ? (
-            <Link href={`/stories/${story.slug}`} target="_blank" rel="noreferrer">
-              <FaArrowUpRightFromSquare size={12} aria-hidden /> View live
-            </Link>
-          ) : null}
-          <DeleteStoryButton storyId={story.id} title={story.title} />
-        </div>
-      </div>
-      {cover ? (
-        <Link href={`/editorial/${story.id}`} className="sc-elist-thumb" aria-hidden tabIndex={-1}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={cover} alt="" />
-        </Link>
-      ) : null}
-    </article>
-  );
-}
 
 const TABS = [
   { key: "all", label: "All" },
@@ -75,6 +45,100 @@ const TABS = [
   { key: "drafts", label: "Drafts" },
   { key: "scheduled", label: "Scheduled" },
 ];
+
+function formatDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function rowDate(story, kind) {
+  if (kind === "published") return story.publishedAt || story.updatedAt;
+  if (kind === "scheduled") return story.scheduledFor || story.updatedAt;
+  return story.updatedAt;
+}
+
+/** The list carries levels as an array on some routes and a summary on others. */
+function levelCounts(story) {
+  if (Array.isArray(story.levels)) {
+    return {
+      live: story.levels.filter((l) => l.approved && !l.stale).length,
+      waiting: story.levels.filter((l) => !l.approved && !l.stale).length,
+    };
+  }
+  return { live: story.levels?.live || 0, waiting: story.levels?.waiting || 0 };
+}
+
+function StoryRow({ story, kind }) {
+  const cover = story.coverImage?.url ? `${IMG_BASE}${story.coverImage.url}` : null;
+  const date = formatDate(rowDate(story, kind));
+  const minutes = story.wordCount > 0 ? story.readingTimeMinutes : null;
+  const levels = levelCounts(story);
+  const recordMoved = Boolean(story.record?.alerts?.length) && !story.record?.acknowledgedAt;
+
+  return (
+    <article className="el-row">
+      <div className="el-row__main">
+        <div className="el-row__meta">
+          <span className={`sc-elist-pill is-${kind}`}>{KIND_LABEL[kind]}</span>
+          {date ? <span>{date}</span> : null}
+          {minutes ? <span>· {minutes} min read</span> : null}
+        </div>
+
+        <Link href={`/editorial/${story.id}`} className="el-row__title">
+          {story.title || "Untitled story"}
+        </Link>
+
+        {story.excerpt ? <p className="el-row__excerpt">{story.excerpt}</p> : null}
+
+        {/* What decides whether this one needs the scholar. */}
+        <div className="el-row__signals">
+          {recordMoved ? (
+            <span className="el-sig is-grave">
+              <HiOutlineExclamationTriangle size={13} aria-hidden />
+              The record moved under this
+            </span>
+          ) : null}
+          {levels.waiting ? (
+            <span className="el-sig is-warn">
+              <HiOutlineBookOpen size={13} aria-hidden />
+              {levels.waiting} reading age{levels.waiting === 1 ? "" : "s"} waiting
+            </span>
+          ) : levels.live ? (
+            <span className="el-sig">
+              <HiOutlineBookOpen size={13} aria-hidden />
+              {levels.live} reading age{levels.live === 1 ? "" : "s"} live
+            </span>
+          ) : null}
+          {story.provenance?.title ? (
+            <span className="el-sig is-quiet">Drawn from “{story.provenance.title}”</span>
+          ) : null}
+        </div>
+      </div>
+
+      {cover ? (
+        <Link href={`/editorial/${story.id}`} className="el-row__thumb" aria-hidden tabIndex={-1}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={cover} alt="" />
+        </Link>
+      ) : null}
+
+      {/* Revealed on hover or focus; never removed from the tab order. */}
+      <div className="el-row__actions">
+        <Link href={`/editorial/${story.id}`} className="el-act">
+          <HiOutlinePencilSquare size={14} aria-hidden /> Edit
+        </Link>
+        {story.slug ? (
+          <Link href={`/stories/${story.slug}`} target="_blank" rel="noreferrer" className="el-act">
+            <HiOutlineArrowTopRightOnSquare size={14} aria-hidden /> View live
+          </Link>
+        ) : null}
+        <DeleteStoryButton storyId={story.id} title={story.title} compact />
+      </div>
+    </article>
+  );
+}
 
 export default function PublishedStoriesOverview({
   publishedStories = [],
@@ -107,54 +171,54 @@ export default function PublishedStoriesOverview({
   }, [tab, publishedStories, scheduledStories, draftStories]);
 
   return (
-    <div className="sc-elist">
-      <header className="sc-elist-head">
-        <div>
-          <h1>Your editorials</h1>
-          <p>Long-form stories you&rsquo;re writing and have published.</p>
-        </div>
-        <Link href="/editorial/new" className="sc-elist-new">
-          <FaPen size={14} aria-hidden /> New story
-        </Link>
+    <div className="el-page">
+      <header className="el-head">
+        <h1>Stories</h1>
+        <p>Everything you have written, drafted and published.</p>
       </header>
 
-      <div className="sc-elist-tabs" role="tablist">
+      <div className="el-tabs" role="tablist" aria-label="Filter stories">
         {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
             role="tab"
             aria-selected={t.key === tab}
-            className={t.key === tab ? "on" : ""}
+            className={t.key === tab ? "el-tab on" : "el-tab"}
             onClick={() => setTab(t.key)}
           >
-            {t.label} <b>{counts[t.key]}</b>
+            {t.label}
+            <b>{counts[t.key]}</b>
           </button>
         ))}
       </div>
 
-      <div className="sc-elist-panel">
+      <div className="el-panel">
         {rows.length > 0 ? (
           rows.map(({ s, kind }) => <StoryRow key={s.id} story={s} kind={kind} />)
         ) : (
-          <div className="sc-elist-empty">
+          <div className="el-empty">
             <h3>
               {tab === "all"
                 ? "No stories yet"
                 : tab === "published"
-                  ? "No published stories"
+                  ? "Nothing published yet"
                   : tab === "drafts"
-                    ? "No drafts yet"
-                    : "No scheduled stories"}
+                    ? "No drafts"
+                    : "Nothing scheduled"}
             </h3>
             <p>
               {tab === "published"
                 ? "Publish a story and it will appear here."
-                : "Start a new editorial to share your research and ideas."}
+                : tab === "all"
+                  ? "A story starts from one of your papers. The agent proposes an outline before it writes a word."
+                  : "Nothing in this state right now."}
             </p>
-            <Link href="/editorial/new" className="sc-elist-new">
-              <FaPen size={14} aria-hidden /> Write a story
-            </Link>
+            {tab === "all" || tab === "drafts" ? (
+              <Link href="/editorial/new" className="el-empty__cta">
+                <HiOutlinePencilSquare size={15} aria-hidden /> Start a story
+              </Link>
+            ) : null}
           </div>
         )}
       </div>

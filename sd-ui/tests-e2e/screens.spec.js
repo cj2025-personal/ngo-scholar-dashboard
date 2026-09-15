@@ -82,4 +82,18 @@ test("capture the current screens", async ({ page, context, browser }) => {
   await page.setViewportSize({ width: 400, height: 860 });
   await page.goto("/editorial/new");
   await shot("15-new-story-mobile");
+
+  /* The story list with something in it. The capture near the top of this run
+     is taken before anything has been drafted, so it only ever shows the empty
+     state — which is the one state that needs the least design work. */
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/editorial");
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await shot("16-editorial-list-populated");
+
+  /* A row's actions are revealed on hover, so a still of the resting state
+     cannot show whether they are there at all. */
+  await page.locator(".el-row").first().hover();
+  await page.waitForTimeout(400);
+  await shot("17-editorial-row-hover");
 });

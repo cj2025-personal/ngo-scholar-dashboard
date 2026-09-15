@@ -2319,7 +2319,7 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
    Layers sc-* visuals over the existing editor layout so the
    composer/list match the rest of the scholar dashboard.
    ============================================================ */
-.sc-editorial { max-width: 1180px; margin: 0 auto; padding: 28px; color: var(--ink); }
+.sc-editorial { padding: 20px 24px 44px; color: var(--ink); }
 
 .sc-editorial .editor-page-layout { gap: 22px; }
 .sc-editorial .editor-main-column, .sc-editorial .editor-preview-column { gap: 20px; }
@@ -2588,34 +2588,113 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 /* ============================================================
    Editorial index — Medium/Substack "your stories" list
    ============================================================ */
-.sc-elist { max-width: 840px; margin: 0 auto; }
-.sc-elist-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
-.sc-elist-head h1 { font-family: var(--sd-sans); font-weight: 800; font-size: 30px; letter-spacing: -0.03em; color: var(--ink); line-height: 1.1; }
-.sc-elist-head p { margin-top: 6px; font-size: 14.5px; color: var(--sd-muted); }
-.sc-elist-new { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 11px; font-weight: 700; font-size: 14px; color: #fff; background: linear-gradient(180deg, var(--burgundy-2), var(--burgundy)); box-shadow: 0 10px 22px -8px rgba(178, 34, 52, 0.5); transition: transform 0.15s; white-space: nowrap; }
-.sc-elist-new:hover { transform: translateY(-1px); }
+/* ══ Stories ══════════════════════════════════════════════════════════════
+   One panel of rows rather than text loose on the page, on the same gutter
+   and the same card recipe as Studio. The row keeps its actions to itself
+   until it is pointed at.
+   ═══════════════════════════════════════════════════════════════════════ */
+.el-page { display: flex; flex-direction: column; gap: 16px; }
 
-.sc-elist-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--sd-line); margin-bottom: 4px; overflow-x: auto; }
-.sc-elist-tabs button { display: inline-flex; align-items: center; gap: 7px; padding: 11px 14px; background: transparent; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: var(--sd-sans); font-weight: 700; font-size: 14px; color: var(--sd-muted); cursor: pointer; white-space: nowrap; }
-.sc-elist-tabs button b { font-size: 11.5px; font-weight: 700; color: var(--sd-faint); background: var(--sd-surface-2); border-radius: 999px; padding: 1px 8px; }
-.sc-elist-tabs button:hover { color: var(--navy); }
-.sc-elist-tabs button.on { color: var(--navy); border-bottom-color: var(--navy); }
-.sc-elist-tabs button.on b { color: var(--navy); background: rgba(30, 58, 138, 0.09); }
+.el-head h1 { font-family: var(--sd-display); font-weight: 700; font-size: 30px; letter-spacing: -0.03em; line-height: 1.1; color: var(--ark-navy); }
+.el-head p { margin-top: 6px; font-size: 14.5px; color: var(--ark-text-muted); }
 
-.sc-elist-panel { display: flex; flex-direction: column; }
-.sc-elist-row { display: flex; gap: 22px; align-items: flex-start; padding: 22px 2px; border-bottom: 1px solid var(--sd-line-soft); }
-.sc-elist-row:last-child { border-bottom: 0; }
-.sc-elist-main { flex: 1; min-width: 0; }
-.sc-elist-meta { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--sd-faint); margin-bottom: 8px; flex-wrap: wrap; }
-.sc-elist-pill { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 999px; padding: 3px 9px; }
-.sc-elist-title { display: block; font-family: var(--sd-sans); font-weight: 700; font-size: 19px; line-height: 1.3; letter-spacing: -0.01em; color: var(--ink); }
-.sc-elist-title:hover { color: var(--navy); }
-.sc-elist-excerpt { margin-top: 6px; font-size: 14.5px; line-height: 1.55; color: var(--sd-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.sc-elist-actions { display: flex; gap: 18px; margin-top: 12px; }
-.sc-elist-actions a { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 700; color: var(--sd-muted); }
-.sc-elist-actions a:hover { color: var(--navy); }
-.sc-elist-thumb { flex: 0 0 112px; width: 112px; height: 84px; border-radius: 12px; overflow: hidden; background: var(--sd-surface-2); border: 1px solid var(--sd-line-soft); }
-.sc-elist-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* A segmented control, not underlines: the rest of the app says "here" with a
+   filled pill, and a tab row is the same statement. */
+.el-tabs { display: inline-flex; align-self: flex-start; gap: 2px; padding: 4px; border-radius: 12px; background: var(--ark-surface-2); border: 1px solid var(--ark-border-soft); max-width: 100%; overflow-x: auto; }
+.el-tab {
+  display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 0; border-radius: 9px;
+  background: transparent; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ark-text-muted);
+  cursor: pointer; white-space: nowrap; transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+.el-tab:hover { color: var(--ark-navy); }
+.el-tab b { font-size: 11px; font-weight: 700; color: var(--ark-text-faint); background: rgba(255, 255, 255, 0.85); border-radius: 999px; padding: 1px 7px; transition: color 160ms ease, background 160ms ease; }
+.el-tab.on { background: var(--ark-surface); color: var(--ark-navy); box-shadow: 0 1px 2px rgba(20, 33, 61, 0.06), 0 4px 10px -6px rgba(20, 33, 61, 0.2); }
+.el-tab.on b { color: var(--ark-navy); background: var(--ark-navy-soft); }
+
+.el-panel {
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+  background: var(--ark-surface); border: 1px solid var(--ark-border-soft);
+  border-radius: 18px; box-shadow: 0 7px 22px rgba(20, 33, 61, 0.05);
+}
+.el-panel::before {
+  /* Above the rows: each row is positioned, so a row's hover background
+     painted straight over this and the mark blinked out. */
+  content: ""; position: absolute; z-index: 1; top: 0; left: 0; width: 48px; height: 4px;
+  background: linear-gradient(90deg, var(--ark-navy) 0 50%, var(--ark-red) 50% 100%);
+}
+
+.el-row {
+  position: relative; display: flex; gap: 22px; align-items: flex-start; padding: 20px 24px;
+  border-bottom: 1px solid var(--ark-border-soft); transition: background 160ms ease;
+}
+.el-row:first-child { padding-top: 24px; }
+.el-row:last-child { border-bottom: 0; }
+.el-row:hover { background: var(--ark-surface-2); }
+.el-row__main { flex: 1; min-width: 0; }
+.el-row__meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font-size: 12.5px; color: var(--ark-text-faint); }
+/* The status chip. Its colours live with .sc-status further up — this is the
+   shape, which went missing when the old list block was replaced and left the
+   status rendering as loose small text. */
+.sc-elist-pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+.el-row__title {
+  display: block; margin-top: 7px; font-family: var(--sd-display); font-weight: 700; font-size: 19px;
+  line-height: 1.3; letter-spacing: -0.02em; color: var(--ark-text); transition: color 160ms ease;
+}
+.el-row:hover .el-row__title { color: var(--ark-navy); }
+.el-row__excerpt {
+  margin-top: 6px; font-size: 14px; line-height: 1.55; color: var(--ark-text-muted); max-width: 78ch;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* What decides whether this story needs the scholar. */
+.el-row__signals { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 10px; }
+.el-sig {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600; background: var(--ark-surface-2); color: var(--ark-text-muted);
+  border: 1px solid var(--ark-border-soft);
+}
+.el-row:hover .el-sig:not(.is-quiet) { background: var(--ark-surface); }
+.el-sig.is-grave { background: var(--ark-danger-soft); color: var(--ark-red); border-color: transparent; }
+.el-sig.is-warn { background: var(--ark-warning-soft); color: var(--ark-warning); border-color: transparent; }
+.el-sig.is-quiet { background: transparent; border-color: transparent; color: var(--ark-text-faint); font-weight: 500; padding-inline: 0; }
+
+.el-row__thumb { flex: 0 0 116px; width: 116px; height: 84px; border-radius: 12px; overflow: hidden; background: var(--ark-surface-2); border: 1px solid var(--ark-border-soft); }
+.el-row__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Quiet until the row is pointed at. Opacity rather than display, so the
+   links keep their place in the tab order and `focus-within` brings them
+   back for a keyboard. */
+.el-row__actions {
+  position: absolute; top: 16px; right: 24px; display: flex; align-items: center; gap: 4px;
+  padding: 4px; border-radius: 10px; background: var(--ark-surface);
+  border: 1px solid var(--ark-border-soft); box-shadow: 0 6px 18px -10px rgba(20, 33, 61, 0.35);
+  opacity: 0; transform: translateY(-2px); transition: opacity 160ms ease, transform 160ms ease;
+  pointer-events: none;
+}
+.el-row:hover .el-row__actions, .el-row:focus-within .el-row__actions { opacity: 1; transform: none; pointer-events: auto; }
+@media (hover: none) { .el-row__actions { position: static; opacity: 1; transform: none; pointer-events: auto; box-shadow: none; border: 0; padding: 0; margin-top: 12px; } }
+.el-act {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600; color: var(--ark-text-muted); transition: background 140ms ease, color 140ms ease;
+}
+.el-act:hover { background: var(--ark-surface-2); color: var(--ark-navy); }
+
+.el-empty { padding: 56px 24px 60px; text-align: center; }
+.el-empty h3 { font-family: var(--sd-display); font-size: 19px; font-weight: 700; color: var(--ark-text); }
+.el-empty p { margin: 8px auto 0; max-width: 46ch; font-size: 14px; line-height: 1.6; color: var(--ark-text-muted); }
+.el-empty__cta {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; height: 40px; padding: 0 18px;
+  border: 1px solid var(--ark-border); border-radius: 11px; background: var(--ark-surface);
+  font-size: 14px; font-weight: 650; color: var(--ark-navy);
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+.el-empty__cta:hover { border-color: var(--ark-navy); background: var(--ark-navy-soft); transform: translateY(-1px); }
+
+@media (max-width: 700px) {
+  .el-row { flex-direction: column; gap: 12px; padding: 18px 16px; }
+  .el-row__thumb { width: 100%; height: 150px; flex: 0 0 auto; }
+  .el-head h1 { font-size: 25px; }
+}
 
 .sc-elist-empty { text-align: center; padding: 64px 20px; }
 .sc-elist-empty h3 { font-family: var(--sd-sans); font-weight: 600; font-size: 21px; color: var(--ink); }

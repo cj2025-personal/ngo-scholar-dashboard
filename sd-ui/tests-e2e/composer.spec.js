@@ -257,12 +257,16 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* Delete it from the list: gone for the scholar, and the public link dies. */
   await page.goto("/editorial");
-  const row = page.locator(".sc-elist-row", { hasText: "What the paper found" }).first();
+  const row = page.locator(".el-row", { hasText: "What the paper found" }).first();
   await expect(row).toBeVisible();
+  /* A row keeps Edit, View live and Delete to itself until it is pointed at,
+     so a list of twelve stories is not a list of thirty-six links. */
+  await row.hover();
+  await expect(row.getByRole("button", { name: "Delete" })).toBeVisible();
   await row.getByRole("button", { name: "Delete" }).click();
   await expect(row.getByRole("alertdialog")).toContainText("cannot be undone");
   await row.locator(".del-yes").click();
-  await expect(page.locator(".sc-elist-row", { hasText: "What the paper found" })).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.locator(".el-row", { hasText: "What the paper found" })).toHaveCount(0, { timeout: 20_000 });
   const dead = await reader.goto(publicPath);
   expect(dead.status()).toBe(404);
   await anonymous.close();
