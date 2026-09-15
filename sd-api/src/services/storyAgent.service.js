@@ -27,6 +27,7 @@ const { serializeMongoValue } = require("../lib/serialize");
 const composer = require("../lib/draftComposer");
 const plan = require("../lib/draftPlan");
 const fidelity = require("../lib/fidelity");
+const reach = require("../lib/reach");
 const checksLib = require("../lib/checks");
 const { assessDraftReadability, VERDICT } = require("../lib/draftReadability");
 const agent = require("../lib/storyAgent");
@@ -50,6 +51,7 @@ function serializeBlock(b) {
     draftedText: b.draftedText || "",
     fidelity: b.fidelity || null,
     ownView: Boolean(b.ownView),
+    ...(b.extension ? { extension: true, reach: b.reach || null } : {}),
     changed: Boolean(b.changed),
   };
 }
@@ -90,18 +92,27 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const startedAt = new Date();
 
   const stateBefore = agent.stateFromStory(mapped);
+  /* The agent edits in whatever voice the article was drafted in, and needs
+     the scholar's name to know which name it must not write. */
+  const voice = composer.normaliseVoice(storyDoc.provenance?.voice || composer.VOICE.ABOUT);
+  const author = await editorial.resolveStoryAuthor(db, storyDoc.profile_id);
   const result = await agent.runStoryAgent({
-    state: stateBefore, passages, instruction, history, audience, generate,
+    state: stateBefore, passages, instruction, history, audience, voice, scholarName: author?.name || null, generate,
     imagesAllowed: imageGen.isConfigured(), isVerbatim,
   });
 
-  /* Fact-check what the agent wrote, and only that. */
+  /* Check what the agent wrote, and only that: paragraphs drawn from the
+     paper for fidelity, paragraphs that go beyond it for reach. Each judge
+     skips the other's kind. */
   const changed = result.state.blocks.map((b, i) => ({ b, i })).filter(({ b }) => b.changed && b.type === "paragraph" && !b.ownView && b.sourceRefs?.length);
   let judgeCall = null;
+  let reachCall = null;
   if (changed.length && passages.length) {
     const judged = await fidelity.judgeSection({ blocks: changed.map(({ b }) => b), passages, generate });
-    judged.blocks.forEach((jb, k) => { result.state.blocks[changed[k].i] = { ...result.state.blocks[changed[k].i], fidelity: jb.fidelity }; });
+    const reached = await reach.judgeSection({ blocks: judged.blocks, passages, audience, generate });
+    reached.blocks.forEach((jb, k) => { result.state.blocks[changed[k].i] = { ...result.state.blocks[changed[k].i], fidelity: jb.fidelity || null, reach: jb.reach || null }; });
     judgeCall = judged.call;
+    reachCall = reached.call;
   }
 
   /* Illustrations: generate, upload as inline images of this story, label.
@@ -156,12 +167,21 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const prose = result.state.blocks.filter((b) => b.type === "paragraph").map((b) => agent.plain(b.html)).join("\n\n");
   const readability = prose ? assessDraftReadability({ text: prose, audience }) : null;
 
-  const verdicts = changed.map(({ i }) => result.state.blocks[i].fidelity?.verdict || null);
+  const paperChanged = changed.filter(({ i }) => !result.state.blocks[i].extension);
+  const reachChanged = changed.filter(({ i }) => result.state.blocks[i].extension);
+  const verdicts = paperChanged.map(({ i }) => result.state.blocks[i].fidelity?.verdict || null);
+  const reachVerdicts = reachChanged.map(({ i }) => result.state.blocks[i].reach?.verdict || null);
   const checks = {
-    paragraphsChanged: changed.length,
+    paragraphsChanged: paperChanged.length,
     supported: verdicts.filter((v) => v === "supported").length,
     partial: verdicts.filter((v) => v === "partial").length,
     unsupported: verdicts.filter((v) => v === "unsupported").length,
+    /* Paragraphs that go beyond the paper, judged for reach rather than fidelity. */
+    extensionsChanged: reachChanged.length,
+    follows: reachVerdicts.filter((v) => v === "follows").length,
+    reachPartial: reachVerdicts.filter((v) => v === "partial").length,
+    overreach: reachVerdicts.filter((v) => v === "overreach").length,
+    worldClaims: checksLib.worldClaims({ blocks: reachChanged.map(({ i }) => result.state.blocks[i]) }),
     readability: readability ? { verdict: readability.verdict, fkGrade: readability.fkGrade, targetGrade: readability.targetGrade } : null,
     imagesGenerated: newImages.length,
     imagesFailed: imageFailures.length,
@@ -175,6 +195,11 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const warnings = [];
   if (checks.unsupported) warnings.push(`${checks.unsupported} changed paragraph${checks.unsupported === 1 ? " is" : "s are"} not supported by the paper.`);
   if (checks.partial) warnings.push(`${checks.partial} changed paragraph${checks.partial === 1 ? " is" : "s are"} only partly supported; the claims are marked.`);
+  if (checks.overreach) warnings.push(`${checks.overreach} changed paragraph${checks.overreach === 1 ? " goes" : "s go"} beyond what the paper supports.`);
+  if (checks.reachPartial) warnings.push(`${checks.reachPartial} changed paragraph${checks.reachPartial === 1 ? " draws" : "s draw"} an implication the paper only partly supports; the claims that go too far are marked.`);
+  if (checks.worldClaims && checks.worldClaims.ok === false) {
+    warnings.push(`${checks.worldClaims.hits.length === 1 ? "A sentence" : `${checks.worldClaims.hits.length} sentences`} in this change read${checks.worldClaims.hits.length === 1 ? "s" : ""} as a claim about the world rather than an implication: ${checks.worldClaims.hits.map((h) => `"${h.sentence}"`).join("; ")}.`);
+  }
   if (checks.numbers && !checks.numbers.ok) {
     warnings.push(
       `${checks.numbers.misses.length === 1 ? "A number" : `${checks.numbers.misses.length} numbers`} in this change ${checks.numbers.misses.length === 1 ? "is" : "are"} not in the passages cited: ` +
@@ -213,7 +238,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
     agent_version: result.agentVersion,
     judge_version: fidelity.FIDELITY_VERSION,
     model_requested: vertex.resolveResourceName(),
-    usage: [...result.usage, ...(judgeCall?.usage ? [judgeCall.usage] : [])].reduce(
+    usage: [...result.usage, ...(judgeCall?.usage ? [judgeCall.usage] : []), ...(reachCall?.usage ? [reachCall.usage] : [])].reduce(
       (acc, u) => ({ input: acc.input + (u.input || 0), output: acc.output + (u.output || 0) }),
       { input: 0, output: 0 },
     ),

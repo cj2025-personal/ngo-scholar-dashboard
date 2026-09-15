@@ -9,6 +9,14 @@
  * shares with them marked.
  */
 
+/* Why an implication went too far, in the reviewer's words. */
+const REACH_REASONS = {
+  outside_fact: "Brings in a fact the paper does not state.",
+  stated_as_finding: "States an implication as if the paper found it.",
+  does_not_follow: "Does not follow from the passages this paragraph builds on.",
+  unsuitable: "Not suitable for this reader.",
+};
+
 function sharedSentences(passageText, blockText) {
   const words = new Set(String(blockText || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3));
   return String(passageText || "").split(/(?<=[.!?])\s+/).map((sentence) => {
@@ -28,10 +36,12 @@ export default function SourceRail({ block, passages, provenance }) {
   }
   const cited = passages.filter((p) => refs.includes(p.id));
   const blockText = String(block.html || "").replace(/<[^>]+>/g, " ");
+  const reach = block.extension ? block.reach : null;
   return (
     <div className="sr-wrap">
-      <div className="sr-head"><span className="sc-kicker">Passages behind this paragraph</span><span className="st-todo-detail">{refs.join(", ")} of {passages.length}</span></div>
+      <div className="sr-head"><span className="sc-kicker">{block.extension ? "Passages this paragraph builds on" : "Passages behind this paragraph"}</span><span className="st-todo-detail">{refs.join(", ")} of {passages.length}</span></div>
       {provenance?.title ? <div className="st-todo-detail">{provenance.title}{provenance.year ? ` (${provenance.year})` : ""}</div> : null}
+      {block.extension ? <p className="st-muted">This paragraph goes beyond the paper: it says what follows from these passages for the reader. It may draw implications; it may not add a fact the paper does not state.</p> : null}
       {cited.map((p) => (
         <div key={p.id} className="sr-passage">
           <b className="sr-id">{p.id}</b>
@@ -40,6 +50,26 @@ export default function SourceRail({ block, passages, provenance }) {
           </p>
         </div>
       ))}
+      {reach?.claims?.length ? (
+        <>
+          <div className="sr-head" style={{ marginTop: 6 }}><span className="sc-kicker">Claim by claim</span><span className="st-todo-detail">{reach.claims.filter((c) => c.verdict === "follows").length} of {reach.claims.length} follow from the paper</span></div>
+          <ol className="sr-claims">
+            {reach.claims.map((c, i) => (
+              <li key={i} className={c.verdict === "follows" ? "sr-claim" : "sr-claim is-bad"}>
+                <span className={`st-dot ${c.verdict === "follows" ? "is-ok" : "is-bad"}`} aria-hidden />
+                <div>
+                  <div className="sr-claim-text">“{c.text}”</div>
+                  {c.verdict === "follows" ? (
+                    <div className="sr-claim-ev">Follows from {c.anchorIds?.join(", ")}.</div>
+                  ) : (
+                    <div className="sr-claim-ev is-bad">{REACH_REASONS[c.reason] || "Does not follow from the passages this paragraph builds on."} Say what follows from the paper, remove it, or mark the paragraph as your own view.</div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : reach ? <p className="st-muted">Checked as a whole: {reach.verdict === "follows" ? "follows from the paper" : reach.verdict === "partial" ? "partly follows from the paper" : "goes beyond what the paper supports"}.</p> : null}
       {block.fidelity?.claims?.length ? (
         <>
           <div className="sr-head" style={{ marginTop: 6 }}><span className="sc-kicker">Claim by claim</span><span className="st-todo-detail">{block.fidelity.claims.filter((c) => c.verdict === "supported").length} of {block.fidelity.claims.length} supported</span></div>

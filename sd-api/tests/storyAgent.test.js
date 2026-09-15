@@ -142,3 +142,28 @@ test("prose instead of a tool ends the loop as a summary, and the step cap holds
   assert.match(capped.summary, /maximum number of steps/);
   assert.ok(n <= 12);
 });
+
+test("a paragraph that goes beyond the paper must build on passages, is one kind only, and is rendered as building on them", () => {
+  const s = stateFromStory({ ...story, bodyBlocks: [...story.bodyBlocks, { type: "paragraph", html: "Which means the same holds anywhere.", sourceRefs: [{ passageId: "p3" }], extension: true, reach: { verdict: "follows", claims: [] } }] });
+  assert.equal(s.blocks[4].extension, true);
+  assert.equal(s.blocks[4].reach.verdict, "follows");
+  assert.equal(s.blocks[1].extension, false);
+  assert.match(renderState(s), /^\[5\] \(paragraph\) builds on p3: Which means/m);
+  const c = ctx();
+
+  const ok = applyTool(s, { name: "insert_block", args: { after: 2, kind: "paragraph", text: "Which means any board that talks would hold.", passage_ids: ["p3"], extension: true } }, c);
+  assert.match(ok.result, /^ok/);
+  assert.equal(ok.state.blocks[2].extension, true);
+  assert.equal(ok.state.blocks[2].reach, null, "judged later, by the reach judge");
+  assert.deepEqual(ok.state.blocks[2].sourceRefs, [{ passageId: "p3" }]);
+
+  assert.match(applyTool(s, { name: "insert_block", args: { after: 2, kind: "paragraph", text: "Which means.", passage_ids: [], extension: true } }, c).result, /must cite the passages it builds on/);
+  assert.match(applyTool(s, { name: "insert_block", args: { after: 2, kind: "paragraph", text: "Which means.", passage_ids: [], extension: true, own_view: true } }, c).result, /must cite the passages it builds on/, "own view does not excuse an implication from its anchors");
+
+  const both = applyTool(s, { name: "replace_block", args: { index: 2, text: "Which means the boards would hold.", passage_ids: ["p2"], extension: true, own_view: true } }, c);
+  assert.equal(both.state.blocks[1].extension, true);
+  assert.equal(both.state.blocks[1].ownView, false, "one kind, never two");
+  const heading = applyTool(s, { name: "insert_block", args: { after: 0, kind: "subheading", text: "Why it matters", passage_ids: [], extension: true } }, c);
+  assert.equal(heading.state.blocks[0].extension, false, "only a paragraph can go beyond the paper");
+  assert.ok(TOOL_DECLARATIONS.find((t) => t.name === "insert_block").parameters.properties.extension);
+});

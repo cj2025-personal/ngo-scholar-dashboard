@@ -14,7 +14,8 @@ const assert = require("node:assert/strict");
 const composer = require("../src/lib/draftComposer");
 const plan = require("../src/lib/draftPlan");
 const fidelity = require("../src/lib/fidelity");
-const { runDraftGraph, SECTION_VOICE_RETRIES, FIDELITY_RETRIES } = require("../src/lib/draftGraph");
+const reach = require("../src/lib/reach");
+const { runDraftGraph, normaliseApprovedOutline, SECTION_VOICE_RETRIES, FIDELITY_RETRIES } = require("../src/lib/draftGraph");
 const { USE } = require("../src/lib/draftEligibility");
 
 const PAPER = [
@@ -68,7 +69,10 @@ function fakeModel({ sectionText = PLAIN, quote = null, voiceOnFirstTry = false,
       };
     }
     const m = prompt.match(/Write section (\d+) of/);
-    const strict = /Third person only/.test(prompt);
+    /* The retry is recognised by what the graph says on a retry, not by the
+       voice rules, which differ between an article about a scholar and one
+       they publish as their own. */
+    const strict = /previous attempt used first-person/i.test(prompt);
     const retryRound = (prompt.match(/A fact-checker compared/g) || []).length; // 0 or 1 per prompt
     const cited = [...prompt.matchAll(/\[(p\d+)\]/g)].map((x) => x[1]);
     const text = voiceOnFirstTry && !strict ? `I found that ${sectionText}` : sectionText;
@@ -204,4 +208,253 @@ test("a source that is not draftable is refused before any model call", async ()
     /short quotes only/,
   );
   assert.equal(model.calls.length, 0);
+});
+
+/* ── whose account it is ─────────────────────────────────────────────────── */
+
+test("an article the scholar publishes as their own work never refers to them; a name that survives the retry is a warning, not a lost draft", async () => {
+  /* The drafter names the scholar until it is told not to. */
+  let toldNotTo = 0;
+  const named = {
+    generate: async (req) => {
+      const r0 = await fakeModel().generate(req);
+      if (req.responseSchema !== plan.SECTION_SCHEMA) return r0;
+      const cited = [...req.prompt.matchAll(/\[(p\d+)\]/g)].map((x) => x[1]);
+      if (/previous attempt referred to the author/i.test(req.prompt)) {
+        toldNotTo += 1;
+        return { text: JSON.stringify({ paragraphs: [{ text: `The array steers a null toward each source of noise. ${PLAIN}`, passage_ids: [cited[0]] }], quote: null }) };
+      }
+      return { text: JSON.stringify({ paragraphs: [{ text: `Test Scholar steers a null toward each source of noise. ${PLAIN}`, passage_ids: [cited[0]] }], quote: null }) };
+    },
+  };
+  const r = await runDraftGraph(input, named);
+  assert.equal(toldNotTo, 3, "each section was sent back once with the name quoted at it");
+  assert.ok(r.bodyBlocks.filter((b) => b.type === "paragraph").every((b) => !/Test Scholar/.test(b.html)));
+  assert.ok(!r.warnings.some((w) => /refers to you by name/.test(w)));
+
+  /* A drafter that will not stop naming them ships, with the sentence named. */
+  const stubborn = {
+    generate: async (req) => {
+      const r0 = await fakeModel().generate(req);
+      if (req.responseSchema !== plan.SECTION_SCHEMA) return r0;
+      const cited = [...req.prompt.matchAll(/\[(p\d+)\]/g)].map((x) => x[1]);
+      return { text: JSON.stringify({ paragraphs: [{ text: `Test Scholar steers a null toward each source of noise. ${PLAIN}`, passage_ids: [cited[0]] }], quote: null }) };
+    },
+  };
+  const shipped = await runDraftGraph(input, stubborn);
+  assert.equal(shipped.bodyBlocks.filter((b) => b.type === "paragraph").length, 3, "the draft is not lost over a name");
+  assert.equal(shipped.warnings.filter((w) => /refers to you by name/.test(w)).length, 3);
+  assert.ok(shipped.warnings.some((w) => /Test Scholar steers a null/.test(w)), "the sentence is quoted so it can be found");
+});
+
+test("an article written about a scholar keeps the old rules, and is checked for one pronoun throughout", async () => {
+  const about = { ...input, voice: "about" };
+  const model = fakeModel();
+  const r = await runDraftGraph(about, { generate: model.generate });
+  assert.ok(model.calls.some((p) => /about a paper by Test Scholar/.test(p)), "the section prompt names the scholar");
+  assert.equal(r.checks.pronouns.ok, null, "the fake lifts the paper's own sentences, which use no pronoun");
+
+  /* Sections are separate calls; without this check they disagreed in production. */
+  const split = {
+    generate: async (req) => {
+      const r0 = await fakeModel().generate(req);
+      if (req.responseSchema !== plan.SECTION_SCHEMA) return r0;
+      const n = req.prompt.match(/Write section (\d+) of/)[1];
+      const pronoun = n === "3" ? "She" : "He";
+      const cited = [...req.prompt.matchAll(/\[(p\d+)\]/g)].map((x) => x[1]);
+      return { text: JSON.stringify({ paragraphs: [{ text: `${pronoun} steered a null toward each source of noise. ${PLAIN}`, passage_ids: [cited[0]] }], quote: null }) };
+    },
+  };
+  const mixed = await runDraftGraph(about, split);
+  assert.equal(mixed.checks.pronouns.ok, false);
+  assert.deepEqual(mixed.checks.pronouns.used, ["he", "she"]);
+  assert.ok(mixed.warnings.some((w) => /One of them is wrong about a real person/.test(w)), mixed.warnings.join(" | "));
+});
+
+/* ── beyond the paper ────────────────────────────────────────────────────── */
+
+const IMPLIED = "Which means any receiver that must hear one signal beside a stronger one faces the same limit.";
+
+/**
+ * A fake for a briefed run: the outline has two paper sections and one that
+ * goes beyond the paper; the extension section drafts one paper paragraph
+ * and one implication; the reach judge answers by `reachJudge(text)`.
+ */
+function briefedModel({ reachJudge = () => "follows", implied = IMPLIED, coverage = { met: "full", note: "" }, beats = null } = {}) {
+  const calls = [];
+  const generate = async ({ prompt, responseSchema }) => {
+    calls.push(prompt);
+    if (responseSchema === plan.OUTLINE_SCHEMA) {
+      return {
+        text: JSON.stringify({
+          title: "Steering silence toward the noise",
+          deck: "A trial of adaptive arrays.",
+          beats: beats || [
+            { heading: "What the trial found", goal: "The array cut the noise.", kind: "paper", passage_ids: ["p2"] },
+            { heading: "Where it breaks", goal: "Too many interferers defeat it.", kind: "paper", passage_ids: ["p3", "p4"] },
+            { heading: "Why it matters", goal: "The same limit faces any crowded band.", kind: "extension", passage_ids: ["p1", "p3"] },
+          ],
+          brief_coverage: coverage,
+        }),
+        usage: { input: 10, output: 5 },
+      };
+    }
+    if (responseSchema === fidelity.JUDGE_SCHEMA) {
+      const paragraphs = [...prompt.matchAll(/^\((\d+)\) (.*)$/gm)].map((m) => ({ index: Number(m[1]), text: m[2] }));
+      return { text: JSON.stringify({ paragraphs: paragraphs.map((p) => ({ index: p.index, verdict: "supported", unsupported_claims: [], reasons: [] })) }), usage: { input: 5, output: 5 } };
+    }
+    if (responseSchema === reach.JUDGE_SCHEMA) {
+      const anchor = (prompt.match(/^\[(p\d+)\]/m) || [])[1] || "p1";
+      const paragraphs = [...prompt.matchAll(/^\((\d+)\) (.*)$/gm)].map((m) => ({ index: Number(m[1]), text: m[2] }));
+      return {
+        text: JSON.stringify({ paragraphs: paragraphs.map((p) => {
+          const v = reachJudge(p.text);
+          const follows = { text: p.text, verdict: "follows", reason: "", anchor_ids: [anchor] };
+          const over = { text: "used in every phone", verdict: "overreach", reason: "outside_fact", anchor_ids: [] };
+          return { index: p.index, claims: v === "follows" ? [follows] : v === "partial" ? [follows, over] : [over] };
+        }) }),
+        usage: { input: 5, output: 5 },
+      };
+    }
+    const m = prompt.match(/Write section (\d+) of/);
+    const cited = [...prompt.matchAll(/\[(p\d+)\]/g)].map((x) => x[1]);
+    const redrafted = /A reviewer compared/.test(prompt) ? " redrafted" : "";
+    if (/^Section kind: extension$/m.test(prompt)) {
+      return {
+        text: JSON.stringify({ paragraphs: [
+          { text: `${PLAIN} (section ${m[1]})`, passage_ids: [cited[0]], extension: false },
+          { text: `${implied} (section ${m[1]}${redrafted})`, passage_ids: [cited[0]], extension: true },
+        ], quote: null }),
+        usage: { input: 20, output: 30 },
+      };
+    }
+    return { text: JSON.stringify({ paragraphs: [{ text: `${PLAIN} (section ${m[1]})`, passage_ids: [cited[0]] }], quote: null }), usage: { input: 20, output: 30 } };
+  };
+  return { generate, calls };
+}
+const briefed = { ...input, brief: "explain why this matters for anyone using a phone in a crowded place" };
+
+test("with a brief, a section beyond the paper is planned, its implications are judged for reach, and the article says which paragraphs go beyond", async () => {
+  const progress = [];
+  const model = briefedModel();
+  const r = await runDraftGraph(briefed, { generate: model.generate, onProgress: (e) => progress.push(e) });
+
+  assert.deepEqual(r.outline.map((b) => b.kind), ["paper", "paper", "extension"]);
+  assert.deepEqual(r.coverage, { met: "full", note: "" });
+  assert.ok(progress.some((e) => e.step === "plan_outline" && e.detail?.extensions === 1 && e.detail?.coverage === "full"));
+  assert.ok(progress.some((e) => e.step === "judge_reach"));
+  assert.ok(progress.some((e) => e.step === "draft_blocks" && e.detail?.kind === "extension"));
+
+  const paragraphs = r.bodyBlocks.filter((b) => b.type === "paragraph");
+  const extension = paragraphs.filter((b) => b.extension);
+  assert.equal(paragraphs.length, 4);
+  assert.equal(extension.length, 1);
+  assert.equal(extension[0].reach.verdict, "follows");
+  assert.equal(extension[0].reach.claims[0].anchorIds[0], "p1");
+  assert.equal(extension[0].fidelity, undefined, "the fidelity judge left it alone");
+  assert.ok(paragraphs.filter((b) => !b.extension).every((b) => b.fidelity.verdict === "supported" && b.reach === undefined));
+  assert.equal(r.calls.filter((c) => c.step === "judge_reach").length, 1, "one reach call, for the one extension section");
+  assert.equal(r.calls.filter((c) => c.step === "judge_fidelity").length, 3);
+  assert.deepEqual([r.checks.budget.extension, r.checks.budget.paper, r.checks.budget.ok], [1, 3, true]);
+  assert.equal(r.checks.worldClaims.ok, true);
+  assert.ok(!r.warnings.some((w) => /beyond|brief/.test(w)), r.warnings.join(" | "));
+  assert.ok(model.calls.some((p) => /^Section kind: extension$/m.test(p) && /Say implications as implications/.test(p)));
+  assert.ok(model.calls.some((p) => /PARAGRAPHS THAT BUILD ON THEM:/.test(p) && !/THE READER:/.test(p)), "an adult reader is not named to the reach judge");
+});
+
+test("the reach judge names the reader when the band is young, and the drafter is told the reader is a child", async () => {
+  const model = briefedModel();
+  await runDraftGraph({ ...briefed, audience: "ages_8_11" }, { generate: model.generate });
+  assert.ok(model.calls.some((p) => /^THE READER: readers aged 8 to 11/m.test(p)));
+  assert.ok(model.calls.some((p) => /^Section kind: extension$/m.test(p) && /The reader is a child/.test(p)));
+});
+
+test("the reach judge sends a section back with the claims named; what still overreaches is dropped, what partly follows ships marked", async () => {
+  const once = briefedModel({ reachJudge: (text) => (/redrafted/.test(text) ? "follows" : "overreach") });
+  const r = await runDraftGraph(briefed, { generate: once.generate });
+  assert.equal(r.calls.filter((c) => c.step === "judge_reach").length, 2, "the extension section was judged twice");
+  assert.ok(once.calls.some((p) => /A reviewer compared the paragraphs that go beyond the paper/.test(p) && /"used in every phone" — brings in a fact/.test(p)));
+  assert.ok(r.bodyBlocks.some((b) => b.extension && b.reach.verdict === "follows"));
+  assert.ok(!r.warnings.some((w) => /beyond what the paper supports/.test(w)));
+
+  const never = briefedModel({ reachJudge: () => "overreach" });
+  const dropped = await runDraftGraph(briefed, { generate: never.generate });
+  assert.equal(dropped.calls.filter((c) => c.step === "judge_reach").length, FIDELITY_RETRIES + 1);
+  assert.equal(dropped.bodyBlocks.filter((b) => b.extension).length, 0, "the implication is gone");
+  assert.equal(dropped.bodyBlocks.filter((b) => b.type === "paragraph").length, 3, "the paper paragraph in that section stays");
+  assert.ok(dropped.warnings.some((w) => /1 paragraph in "Why it matters" was left out because it went beyond what the paper supports/.test(w)), dropped.warnings.join(" | "));
+
+  const partly = briefedModel({ reachJudge: () => "partial" });
+  const marked = await runDraftGraph(briefed, { generate: partly.generate });
+  const ext = marked.bodyBlocks.find((b) => b.extension);
+  assert.equal(ext.reach.verdict, "partial");
+  assert.deepEqual(ext.reach.overreachClaims, ["used in every phone"]);
+  assert.ok(marked.warnings.some((w) => /draws an implication the paper only partly supports/.test(w)));
+});
+
+test("a section that is only an implication and keeps overreaching refuses the run with its own sentence", async () => {
+  const model = briefedModel({ reachJudge: () => "overreach" });
+  const onlyImplied = {
+    generate: async (req) => {
+      const r0 = await model.generate(req);
+      if (req.responseSchema === plan.SECTION_SCHEMA && /^Section kind: extension$/m.test(req.prompt)) {
+        const d = JSON.parse(r0.text);
+        d.paragraphs = d.paragraphs.filter((p) => p.extension);
+        return { text: JSON.stringify(d) };
+      }
+      return r0;
+    },
+  };
+  await assert.rejects(runDraftGraph(briefed, onlyImplied), /kept going beyond what the paper supports/);
+});
+
+test("a sentence that reads as a claim about the world is a warning even when the judge let it through", async () => {
+  const model = briefedModel({ implied: "Which means the same limit faces any crowded band. This method is now used in every phone." });
+  const r = await runDraftGraph(briefed, { generate: model.generate });
+  assert.equal(r.checks.worldClaims.ok, false);
+  assert.ok(r.warnings.some((w) => /reads as a claim about the world/.test(w) && /used in every phone/.test(w)), r.warnings.join(" | "));
+});
+
+test("the brief is answered out loud: coverage short of full is a warning, and a budget of extension sections is kept", async () => {
+  const part = briefedModel({ coverage: { met: "part", note: "the paper says nothing about phones" } });
+  const r = await runDraftGraph(briefed, { generate: part.generate });
+  assert.deepEqual(r.coverage, { met: "part", note: "the paper says nothing about phones" });
+  assert.ok(r.warnings.some((w) => /Part of the brief was left out: the paper says nothing about phones/.test(w)), r.warnings.join(" | "));
+
+  const none = briefedModel({ coverage: { met: "none", note: "" }, beats: [
+    { heading: "A", goal: "a", kind: "paper", passage_ids: ["p1"] },
+    { heading: "B", goal: "b", kind: "paper", passage_ids: ["p2"] },
+  ] });
+  const r2 = await runDraftGraph(briefed, { generate: none.generate });
+  assert.ok(r2.warnings.some((w) => /The paper cannot carry what the brief asked for/.test(w)));
+
+  const greedy = briefedModel({ beats: [
+    { heading: "A", goal: "a", kind: "paper", passage_ids: ["p1"] },
+    { heading: "X", goal: "x", kind: "extension", passage_ids: ["p2"] },
+    { heading: "Y", goal: "y", kind: "extension", passage_ids: ["p3"] },
+    { heading: "Z", goal: "z", kind: "extension", passage_ids: ["p4"] },
+  ] });
+  const r3 = await runDraftGraph(briefed, { generate: greedy.generate });
+  assert.deepEqual(r3.outline.map((b) => b.kind), ["paper", "extension"], "no more sections beyond the paper than from it");
+  assert.ok(r3.warnings.some((w) => /2 proposed sections that went beyond the paper were left out/.test(w)), r3.warnings.join(" | "));
+
+  /* Without a brief there is nothing to go beyond: a beat marked extension is planned as the paper's. */
+  const unbriefed = briefedModel();
+  const r4 = await runDraftGraph(input, { generate: unbriefed.generate });
+  assert.ok(r4.outline.every((b) => b.kind === "paper"));
+  assert.equal(r4.coverage, null);
+  assert.ok(!r4.bodyBlocks.some((b) => b.extension));
+  assert.ok(unbriefed.calls.some((p) => /No brief was given/.test(p)));
+});
+
+test("an approved outline keeps a section's kind, and a section cannot be promoted to go beyond the paper by the client", () => {
+  const passages = plan.splitPassages(PAPER);
+  const proposed = { title: "T", deck: "D", coverage: { met: "full", note: "" }, beats: [
+    { index: 1, heading: "Found", goal: "", kind: "paper", passageIds: ["p1"] },
+    { index: 2, heading: "Why it matters", goal: "", kind: "extension", passageIds: ["p2"] },
+  ] };
+  const kept = normaliseApprovedOutline(proposed, { beats: [{ heading: "Why it matters", kind: "extension", passageIds: ["p2"] }, { heading: "Found", kind: "extension", passageIds: ["p1"] }] }, passages);
+  assert.deepEqual(kept.beats.map((b) => [b.heading, b.kind]), [["Why it matters", "extension"], ["Found", "paper"]]);
+  assert.deepEqual(kept.coverage, { met: "full", note: "" });
+  assert.ok(normaliseApprovedOutline(proposed, null, passages).beats.every((b, i) => b.kind === proposed.beats[i].kind));
 });

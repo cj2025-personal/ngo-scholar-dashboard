@@ -64,5 +64,31 @@ test("rows are validated and JSONL is parsed with comments and blank lines ignor
   const input = inputFor(rows[0]);
   assert.equal(input.source.use, "draftable");
   assert.equal(input.audience, "general");
+  assert.equal(input.brief, null);
   assert.ok(input.prepared.words >= 200);
+  assert.equal(inputFor({ ...rows[0], brief: "  why it matters " }).brief, "why it matters");
+  assert.ok(validateRow({ ...rows[0], brief: 42 }, 3).some((p) => /brief must be a string/.test(p)));
+});
+
+test("paragraphs beyond the paper are scored apart: entailment reads only the paper's, anchoring and reach read only theirs", () => {
+  const ext = (html, verdict, refs = ["p1"]) => ({ type: "paragraph", html, extension: true, reach: verdict ? { verdict, claims: [] } : null, sourceRefs: refs.map((passageId) => ({ passageId })) });
+  const s = scoreDraft({ ...good, bodyBlocks: [para("From the paper."), para("Also from it."), ext("Which means this.", "follows"), ext("Used in every phone.", "overreach")] });
+  assert.equal(s.paragraphs, 4);
+  assert.equal(s.paperParagraphs, 2);
+  assert.equal(s.extensionParagraphs, 2);
+  assert.equal(s.entailment, 1, "two overreaching implications are not an entailment failure");
+  assert.equal(s.provenance, 1, "an anchored implication counts as cited");
+  assert.equal(s.anchoring, 1);
+  assert.equal(s.reach, 0.5);
+  assert.equal(s.overreach, 1);
+  assert.equal(scoreDraft(good).anchoring, 1, "no extension paragraphs: nothing to fail");
+  assert.equal(scoreDraft(good).reach, 1);
+  assert.equal(scoreDraft({ ...good, bodyBlocks: [para("x"), ext("Unanchored.", "overreach", [])] }).anchoring, 0);
+
+  const bad = summarise([s, s]);
+  assert.equal(bad.pass, false);
+  assert.ok(bad.failures.some((f) => f.startsWith("reach: 0.5 against at least " + THRESHOLDS.reach)), bad.failures.join("; "));
+  assert.ok(!bad.failures.some((f) => f.startsWith("entailment")));
+  assert.equal(bad.means.extensionParagraphs, 4);
+  assert.equal(summarise([scoreDraft(good)]).checks.reach, true);
 });

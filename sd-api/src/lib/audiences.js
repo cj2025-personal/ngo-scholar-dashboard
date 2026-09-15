@@ -11,6 +11,10 @@
  *
  * Grades are Flesch-Kincaid grade levels. The younger the reader, the
  * tighter the tolerance: a draft is an introduction, not a set text.
+ *
+ * `young` marks the bands where a paragraph that goes beyond the paper is
+ * also judged for suitability: nothing frightening, nothing beyond the
+ * reader's world. The reach judge reads it; nothing else does.
  */
 const AUDIENCES = {
   ages_8_11: {
@@ -19,6 +23,7 @@ const AUDIENCES = {
     readers: "readers aged 8 to 11",
     grade: 4,
     maxAbove: 1.5,
+    young: true,
     brief:
       "children aged 8 to 11. Very short sentences, one idea in each, everyday words. " +
       "Explain every term with an example from daily life. Never talk down.",
@@ -29,6 +34,7 @@ const AUDIENCES = {
     readers: "readers aged 12 to 14",
     grade: 7,
     maxAbove: 2.0,
+    young: true,
     brief:
       "students aged 12 to 14. Short sentences and concrete examples. Define every " +
       "technical term in the sentence that introduces it.",

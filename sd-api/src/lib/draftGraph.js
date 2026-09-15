@@ -21,14 +21,19 @@
  * therefore stateless per run and ends where the scholar begins.
  *
  * ── The loops ───────────────────────────────────────────────────────────────
- * Inside `draft_blocks`, every section is judged for fidelity before it is
- * accepted: a second prompt with a fact-checker's job compares the section's
- * paragraphs with the passages they cite. A section with an unsupported
- * paragraph is redrafted with the claims named, up to FIDELITY_RETRIES times;
- * after that unsupported paragraphs are dropped, partial ones ship with a
- * warning, and a section left with no prose fails the run with a sentence.
- * The judge never sees the drafter's instructions and the drafter never sees
- * the judge's — no machine approves its own output.
+ * Inside `draft_blocks`, every section is judged before it is accepted. A
+ * paragraph drawn from the paper goes to the fidelity judge: a second prompt
+ * with a fact-checker's job compares it with the passages it cites. A
+ * paragraph that goes beyond the paper — an extension, planned only when
+ * the scholar's brief asks for what the paper does not say — goes to the
+ * reach judge instead, which asks whether each claim follows from the
+ * passages it builds on, is said as an implication, and brings in nothing
+ * from outside. A section with a failing paragraph is redrafted with the
+ * claims named, up to FIDELITY_RETRIES times; after that unsupported and
+ * overreaching paragraphs are dropped, partial ones ship with a warning,
+ * and a section left with no prose fails the run with a sentence. Neither
+ * judge sees the drafter's instructions and the drafter never sees theirs —
+ * no machine approves its own output.
  *
  * `verify` measures readability. If the draft fails for its audience and no
  * simplification pass has run yet, `draft_blocks` runs again with a note
@@ -42,11 +47,12 @@ const { StateGraph, Annotation, START, END } = require("@langchain/langgraph");
 const composer = require("./draftComposer");
 const plan = require("./draftPlan");
 const fidelity = require("./fidelity");
+const reach = require("./reach");
 const { assessDraftReadability, simplificationNote, VERDICT } = require("./draftReadability");
 const { USE } = require("./draftEligibility");
 const checks = require("./checks");
 
-const GRAPH_VERSION = "draft-graph-2026.2";
+const GRAPH_VERSION = "draft-graph-2026.3";
 
 /** One retry per section for voice; the graph refuses after that. */
 const SECTION_VOICE_RETRIES = 1;
@@ -58,6 +64,7 @@ const State = Annotation.Root({
   source: Annotation(),
   scholar: Annotation(),
   audience: Annotation(),
+  voice: Annotation(),
   prepared: Annotation(),
   brief: Annotation(),
   /* produced */
@@ -80,8 +87,10 @@ const State = Annotation.Root({
  */
 function buildDraftNodes({ generate, onProgress = async () => {} }) {
   if (typeof generate !== "function") throw new TypeError("buildDraftGraph requires generate()");
-  const system = composer.buildSystemInstruction();
   const progress = (step, message, detail) => Promise.resolve(onProgress({ step, message, detail }));
+  /* The system instruction depends on whose account this is, so it is built
+     per run rather than once per process. */
+  const systemFor = (s) => composer.buildSystemInstruction({ voice: s.voice, scholarName: s.scholar?.name || null });
 
   async function pick_source(s) {
     if (!s.source || s.source.use !== USE.DRAFTABLE) {
@@ -104,14 +113,28 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
     }
     await progress("plan_outline", "Planning the article's sections…");
     const prompt = plan.buildOutlinePrompt({
-      scholar: s.scholar, source: s.source, passages: s.passages, truncated: s.prepared.truncated, audience: s.audience, brief: s.brief || null,
+      scholar: s.scholar, source: s.source, passages: s.passages, truncated: s.prepared.truncated, audience: s.audience, brief: s.brief || null, voice: s.voice,
     });
-    const r = await generate({ prompt, systemInstruction: system, responseSchema: plan.OUTLINE_SCHEMA, temperature: 0.3, maxOutputTokens: 2048 });
-    const outline = plan.parseOutline(r.text, s.passages);
-    await progress("plan_outline", `Outlined ${outline.beats.length} sections: ${outline.beats.map((b) => b.heading).join(" · ")}`, {
+    const r = await generate({ prompt, systemInstruction: systemFor(s), responseSchema: plan.OUTLINE_SCHEMA, temperature: 0.3, maxOutputTokens: 2048 });
+    const { dropped, ...outline } = plan.parseOutline(r.text, s.passages, { allowExtension: Boolean(s.brief) });
+    const extensions = outline.beats.filter((b) => b.kind === plan.BEAT_KIND.EXTENSION).length;
+    await progress("plan_outline", `Outlined ${outline.beats.length} sections: ${outline.beats.map((b) => b.heading).join(" · ")}` + (extensions ? ` (${extensions} beyond the paper)` : ""), {
       beats: outline.beats.length,
+      extensions,
+      coverage: outline.coverage?.met || null,
     });
-    return { outline, calls: [{ step: "plan_outline", usage: r.usage || null, model: r.modelVersion || null }] };
+    /* The brief is answered out loud. A plan that quietly did something other
+       than what was asked is the failure these two warnings guard. */
+    const warnings = [];
+    if (outline.coverage && outline.coverage.met !== plan.COVERAGE.FULL) {
+      warnings.push(
+        outline.coverage.met === plan.COVERAGE.NONE
+          ? `The paper cannot carry what the brief asked for${outline.coverage.note ? `: ${outline.coverage.note}` : "."} This plan reports the paper instead.`
+          : `Part of the brief was left out${outline.coverage.note ? `: ${outline.coverage.note}` : "."}`,
+      );
+    }
+    if (dropped) warnings.push(`${dropped} proposed section${dropped === 1 ? "" : "s"} that went beyond the paper ${dropped === 1 ? "was" : "were"} left out, so the article rests mostly on what the paper says.`);
+    return { outline, warnings, calls: [{ step: "plan_outline", usage: r.usage || null, model: r.modelVersion || null }] };
   }
 
   async function draft_blocks(s) {
@@ -120,53 +143,88 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
     const warnings = [];
     const total = s.outline.beats.length;
     for (const beat of s.outline.beats) {
-      await progress("draft_blocks", `Drafting section ${beat.index} of ${total}: ${beat.heading}`, { index: beat.index, total });
+      const extension = beat.kind === plan.BEAT_KIND.EXTENSION;
+      await progress("draft_blocks", `Drafting section ${beat.index} of ${total}: ${beat.heading}` + (extension ? " (beyond the paper)" : ""), { index: beat.index, total, kind: beat.kind || plan.BEAT_KIND.PAPER });
       let fidelityNote = null;
+      let reachNote = null;
       let accepted = null;
 
       for (let round = 0; round <= FIDELITY_RETRIES; round += 1) {
-        /* Draft, with one voice retry. */
+        /* Draft, with one retry for voice: first person in either voice, and
+           in the author's own voice also any reference to the author. */
         let strictVoice = false;
+        let strictSelf = false;
         let result = null;
         for (let attempt = 0; attempt <= SECTION_VOICE_RETRIES; attempt += 1) {
           const prompt = plan.buildSectionPrompt({
-            scholar: s.scholar, beat, passages: s.passages, outline: s.outline, audience: s.audience,
-            strictVoice, readabilityNote: s.readabilityNote || null, fidelityNote,
+            scholar: s.scholar, beat, passages: s.passages, outline: s.outline, audience: s.audience, voice: s.voice,
+            strictVoice, strictSelf, readabilityNote: s.readabilityNote || null, fidelityNote, reachNote,
           });
-          const r = await generate({ prompt, systemInstruction: system, responseSchema: plan.SECTION_SCHEMA, temperature: strictVoice ? 0.2 : 0.4, maxOutputTokens: 2048 });
-          calls.push({ step: "draft_blocks", beat: beat.index, usage: r.usage || null, model: r.modelVersion || null, strictVoice, round });
-          result = plan.parseSection(r.text, { beat, passages: s.passages });
-          if (result.violations.length === 0) break;
-          strictVoice = true;
+          const r = await generate({ prompt, systemInstruction: systemFor(s), responseSchema: plan.SECTION_SCHEMA, temperature: strictVoice || strictSelf ? 0.2 : 0.4, maxOutputTokens: 2048 });
+          calls.push({ step: "draft_blocks", beat: beat.index, usage: r.usage || null, model: r.modelVersion || null, strictVoice, strictSelf, round });
+          result = plan.parseSection(r.text, { beat, passages: s.passages, voice: s.voice, scholarName: s.scholar?.name || null });
+          if (result.violations.length === 0 && result.selfReferences.length === 0) break;
+          strictVoice = strictVoice || result.violations.length > 0;
+          strictSelf = strictSelf || result.selfReferences.length > 0;
         }
         if (result.violations.length > 0) {
           throw new Error(`Section ${beat.index} kept writing in the first person after a retry.`);
         }
+        /* A name that survives the retry is not worth losing the draft over:
+           it is one word for the scholar to cut, and the warning says where. */
+        if (result.selfReferences.length > 0) {
+          warnings.push(
+            `"${beat.heading}" still refers to you by name, which an article under your own byline should not: ` +
+            `${result.selfReferences.slice(0, 2).map((x) => `“${x.trim().slice(0, 100)}”`).join(" ")} Rewrite ${result.selfReferences.length === 1 ? "it" : "them"} with the work as the subject, or ask the agent to.`,
+          );
+        }
 
-        /* Judge. */
+        /* Judge: the paper's paragraphs for fidelity, the extension paragraphs
+           for reach. Each judge sees only its own kind. */
         await progress("judge_fidelity", `Checking section ${beat.index} of ${total} against the paper…`, { index: beat.index, total, round });
-        const judged = await fidelity.judgeSection({ blocks: result.blocks, passages: s.passages, generate });
-        if (judged.call) calls.push({ ...judged.call, beat: beat.index, round });
+        const judgedF = await fidelity.judgeSection({ blocks: result.blocks, passages: s.passages, generate });
+        if (judgedF.call) calls.push({ ...judgedF.call, beat: beat.index, round });
+        let blocks = judgedF.blocks;
+        let failingF = judgedF.failing;
+        let failingR = [];
+        if (extension) {
+          await progress("judge_reach", `Checking what section ${beat.index} of ${total} draws from the paper…`, { index: beat.index, total, round });
+          const judgedR = await reach.judgeSection({ blocks, passages: s.passages, audience: s.audience, generate });
+          if (judgedR.call) calls.push({ ...judgedR.call, beat: beat.index, round });
+          blocks = judgedR.blocks;
+          failingR = judgedR.failing;
+        }
+        const failing = [...new Set([...failingF, ...failingR])].sort((a, b) => a - b);
 
-        if (judged.failing.length === 0) {
-          accepted = { ...result, blocks: judged.blocks };
+        if (failing.length === 0) {
+          accepted = { ...result, blocks };
           break;
         }
         if (round < FIDELITY_RETRIES) {
-          fidelityNote = fidelity.fidelityNote(judged.blocks, judged.failing);
+          fidelityNote = failingF.length ? fidelity.fidelityNote(blocks, failingF) : null;
+          reachNote = failingR.length ? reach.reachNote(blocks, failingR) : null;
           continue;
         }
 
-        /* Out of retries. Drop what is unsupported, keep what is partial with a
-           warning, and refuse the run if nothing survives. */
-        const kept = judged.blocks.filter((b, i) => !(judged.failing.includes(i) && b.fidelity?.verdict === fidelity.VERDICT.UNSUPPORTED));
-        const dropped = judged.blocks.length - kept.length;
-        const partial = kept.filter((b) => b.fidelity?.verdict === fidelity.VERDICT.PARTIAL).length;
+        /* Out of retries. Drop what is unsupported or overreaching, keep what
+           is partial with a warning, and refuse the run if nothing survives. */
+        const gone = (b, i) => failing.includes(i) && (b.extension ? b.reach?.verdict === reach.VERDICT.OVERREACH : b.fidelity?.verdict === fidelity.VERDICT.UNSUPPORTED);
+        const kept = blocks.filter((b, i) => !gone(b, i));
+        const droppedPaper = blocks.filter((b, i) => gone(b, i) && !b.extension).length;
+        const droppedReach = blocks.filter((b, i) => gone(b, i) && b.extension).length;
+        const partial = kept.filter((b) => !b.extension && b.fidelity?.verdict === fidelity.VERDICT.PARTIAL).length;
+        const partialReach = kept.filter((b) => b.extension && b.reach?.verdict === reach.VERDICT.PARTIAL).length;
         if (!kept.some((b) => b.type === "paragraph")) {
-          throw new Error(`Section ${beat.index} ("${beat.heading}") kept making claims the paper doesn't support.`);
+          throw new Error(
+            extension && !droppedPaper
+              ? `Section ${beat.index} ("${beat.heading}") kept going beyond what the paper supports.`
+              : `Section ${beat.index} ("${beat.heading}") kept making claims the paper doesn't support.`,
+          );
         }
-        if (dropped) warnings.push(`${dropped} paragraph${dropped === 1 ? "" : "s"} in "${beat.heading}" ${dropped === 1 ? "was" : "were"} left out because the fact-check found ${dropped === 1 ? "it" : "them"} unsupported by the paper.`);
+        if (droppedPaper) warnings.push(`${droppedPaper} paragraph${droppedPaper === 1 ? "" : "s"} in "${beat.heading}" ${droppedPaper === 1 ? "was" : "were"} left out because the fact-check found ${droppedPaper === 1 ? "it" : "them"} unsupported by the paper.`);
+        if (droppedReach) warnings.push(`${droppedReach} paragraph${droppedReach === 1 ? "" : "s"} in "${beat.heading}" ${droppedReach === 1 ? "was" : "were"} left out because ${droppedReach === 1 ? "it" : "they"} went beyond what the paper supports.`);
         if (partial) warnings.push(`${partial} paragraph${partial === 1 ? "" : "s"} in "${beat.heading}" ${partial === 1 ? "is" : "are"} only partly supported by the paper; the unsupported claims are marked on the block.`);
+        if (partialReach) warnings.push(`${partialReach} paragraph${partialReach === 1 ? "" : "s"} in "${beat.heading}" ${partialReach === 1 ? "draws" : "draw"} an implication the paper only partly supports; the claims that go too far are marked on the block.`);
         accepted = { ...result, blocks: kept };
       }
 
@@ -210,12 +268,29 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
     }
     const limitations = checks.limitationsCoverage({ blocks: s.draft.bodyBlocks, passages: s.passages });
     if (limitations.ok === false) warnings.push(limitations.sentence);
+
+    /* Two more, only where the article goes beyond the paper: a sentence
+       that reads as a fact about the world, and the share of such prose. */
+    const worldClaims = checks.worldClaims({ blocks: s.draft.bodyBlocks });
+    if (worldClaims.ok === false) {
+      warnings.push(
+        `${worldClaims.hits.length === 1 ? "A sentence" : `${worldClaims.hits.length} sentences`} in the parts that go beyond the paper read${worldClaims.hits.length === 1 ? "s" : ""} as a claim about the world rather than an implication: ` +
+        `${worldClaims.hits.map((h) => `"${h.sentence}" (block ${h.block})`).join("; ")}. Say what follows, not what is done.`,
+      );
+    }
+    const budget = checks.extensionBudget({ blocks: s.draft.bodyBlocks });
+    if (budget.ok === false) warnings.push(budget.sentence);
+
+    /* Sections are drafted by separate calls, so nothing but this stops them
+       disagreeing about the author's pronoun. They did, under a real name. */
+    const pronouns = composer.pronounConsistency({ blocks: s.draft.bodyBlocks });
+    if (pronouns.ok === false) warnings.push(pronouns.sentence);
     if (s.prepared.truncated) {
       warnings.push(
         `Only the first ${s.prepared.words.toLocaleString()} of ${s.prepared.totalWords.toLocaleString()} words were used; the rest of the paper is not reflected here.`,
       );
     }
-    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations } };
+    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations, worldClaims, budget, pronouns } };
   }
 
   return { pick_source, plan_outline, draft_blocks, assemble, verify };
@@ -248,10 +323,12 @@ function buildDraftGraph(deps) {
  */
 async function runOutlineOnly(input, deps) {
   const nodes = buildDraftNodes(deps);
-  const picked = await nodes.pick_source(input);
-  const planned = await nodes.plan_outline({ ...input, ...picked });
+  const withVoice = { ...input, voice: composer.normaliseVoice(input.voice) };
+  const picked = await nodes.pick_source(withVoice);
+  const planned = await nodes.plan_outline({ ...withVoice, ...picked });
   return {
     outline: planned.outline,
+    warnings: planned.warnings || [],
     passages: picked.passages.map((p) => ({ id: p.id, words: p.words, text: p.text })),
     calls: planned.calls || [],
     graphVersion: GRAPH_VERSION,
@@ -260,15 +337,19 @@ async function runOutlineOnly(input, deps) {
 
 /**
  * Approve an outline: keep the beats the scholar kept, in their order, with
- * their headings, and only passages that exist. Cut beats are gone.
+ * their headings and kinds, and only passages that exist. Cut beats are gone.
+ * A kind is trusted from the client only as far as the proposal allowed it:
+ * a section can be cut, not promoted to go beyond the paper.
  */
 function normaliseApprovedOutline(proposed, approved, passages) {
   const known = new Set(passages.map((p) => p.id));
+  const proposedExtension = new Set((proposed.beats || []).filter((b) => b.kind === plan.BEAT_KIND.EXTENSION).map((b) => b.heading));
   const beats = (Array.isArray(approved?.beats) ? approved.beats : proposed.beats)
     .map((b, i) => ({
       index: i + 1,
       heading: String(b.heading || "").replace(/\s+/g, " ").trim().slice(0, 140) || `Section ${i + 1}`,
       goal: String(b.goal || "").replace(/\s+/g, " ").trim().slice(0, 300),
+      kind: b.kind === plan.BEAT_KIND.EXTENSION && (proposedExtension.has(b.heading) || proposedExtension.has(String(b.proposedHeading || ""))) ? plan.BEAT_KIND.EXTENSION : plan.BEAT_KIND.PAPER,
       passageIds: (Array.isArray(b.passageIds) ? b.passageIds : []).map(String).filter((id) => known.has(id)),
     }))
     .filter((b) => b.passageIds.length > 0);
@@ -277,6 +358,7 @@ function normaliseApprovedOutline(proposed, approved, passages) {
     title: String(approved?.title || proposed.title || "").trim().slice(0, 140),
     deck: String(approved?.deck || proposed.deck || "").trim().slice(0, 280),
     beats,
+    coverage: proposed.coverage || null,
   };
 }
 
@@ -288,7 +370,7 @@ function normaliseApprovedOutline(proposed, approved, passages) {
  */
 async function runDraftGraph(input, deps) {
   const graph = buildDraftGraph(deps);
-  const final = await graph.invoke(input, { recursionLimit: 12 });
+  const final = await graph.invoke({ ...input, voice: composer.normaliseVoice(input.voice) }, { recursionLimit: 12 });
   const warnings = dedupe(final.warnings || []);
   return {
     title: final.outline.title,
@@ -296,7 +378,8 @@ async function runDraftGraph(input, deps) {
     excerpt: final.outline.deck,
     bodyBlocks: final.draft.bodyBlocks,
     words: final.draft.words,
-    outline: final.outline.beats.map((b) => ({ index: b.index, heading: b.heading, passageIds: b.passageIds })),
+    outline: final.outline.beats.map((b) => ({ index: b.index, heading: b.heading, kind: b.kind || plan.BEAT_KIND.PAPER, passageIds: b.passageIds })),
+    coverage: final.outline.coverage || null,
     passages: final.passages.map((p) => ({ id: p.id, words: p.words })),
     readability: final.readability
       ? { verdict: final.readability.verdict, fkGrade: final.readability.fkGrade, targetGrade: final.readability.targetGrade, drift: final.readability.drift, tolerance: final.readability.tolerance, reliable: final.readability.reliable }

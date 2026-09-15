@@ -82,12 +82,13 @@ const main = async () => {
       error = e;
     }
     const ms = Date.now() - t0;
-    const score = result ? scoreDraft(result) : { entailment: 0, bandFit: 0, voiceViolations: 0, provenance: 0, words: 0, calls: 0, paragraphs: 0, tokens: { input: 0, output: 0 } };
+    const score = result ? scoreDraft(result) : { entailment: 0, bandFit: 0, voiceViolations: 0, provenance: 0, anchoring: 0, reach: 0, extensionParagraphs: 0, words: 0, calls: 0, paragraphs: 0, tokens: { input: 0, output: 0 } };
     results.push({ id: row.id, audience: row.audience || composer.DEFAULT_AUDIENCE, ms, error: error ? error.message : null, score, title: result?.title || null, warnings: result?.warnings || [] });
     console.log(
       `${row.id.padEnd(30)} ${error ? "ERROR " + error.message.slice(0, 60) : ""}` +
         (result
           ? `entail ${score.entailment}  band ${score.bandFit} (FK ${score.fkGrade})  voice ${score.voiceViolations}  prov ${score.provenance}  ` +
+            (score.extensionParagraphs ? `beyond ${score.extensionParagraphs}: anchor ${score.anchoring} reach ${score.reach}  ` : "") +
             `${score.words}w  ${score.calls} calls  ${score.tokens.input}/${score.tokens.output} tok  ${(ms / 1000).toFixed(1)}s`
           : ""),
     );
@@ -96,8 +97,8 @@ const main = async () => {
 
   const summary = summarise(results.map((r) => r.score));
   console.log("\n" + "=".repeat(78));
-  console.log(`means  entailment ${summary.means.entailment}  bandFit ${summary.means.bandFit}  voice ${summary.means.voiceViolations}  provenance ${summary.means.provenance}  words ${summary.means.words}  calls ${summary.means.calls}`);
-  console.log(`floors entailment ≥ ${THRESHOLDS.entailment}  bandFit ≥ ${THRESHOLDS.bandFit}  voice ≤ ${THRESHOLDS.voiceViolations}  provenance ≥ ${THRESHOLDS.provenance}`);
+  console.log(`means  entailment ${summary.means.entailment}  bandFit ${summary.means.bandFit}  voice ${summary.means.voiceViolations}  provenance ${summary.means.provenance}  anchoring ${summary.means.anchoring}  reach ${summary.means.reach}  words ${summary.means.words}  calls ${summary.means.calls}`);
+  console.log(`floors entailment ≥ ${THRESHOLDS.entailment}  bandFit ≥ ${THRESHOLDS.bandFit}  voice ≤ ${THRESHOLDS.voiceViolations}  provenance ≥ ${THRESHOLDS.provenance}  anchoring ≥ ${THRESHOLDS.anchoring}  reach ≥ ${THRESHOLDS.reach}`);
   const errored = results.filter((r) => r.error).length;
   if (errored) console.log(`errors ${errored} of ${results.length} row(s) did not produce a draft`);
   console.log(summary.pass && !errored ? "\nPASS" : `\nFAIL: ${[...summary.failures, ...(errored ? [`${errored} row(s) errored`] : [])].join("; ")}`);
@@ -144,7 +145,7 @@ async function recordLangsmith({ rows, results, summary }) {
   for (const r of results) {
     const ex = existing.get(r.id) || (await findExample(client, dataset.id, r.id));
     if (!ex) continue;
-    for (const [key, value] of Object.entries({ entailment: r.score.entailment, bandFit: r.score.bandFit, voiceViolations: r.score.voiceViolations, provenance: r.score.provenance })) {
+    for (const [key, value] of Object.entries({ entailment: r.score.entailment, bandFit: r.score.bandFit, voiceViolations: r.score.voiceViolations, provenance: r.score.provenance, anchoring: r.score.anchoring, reach: r.score.reach })) {
       await client.createFeedback(null, key, { score: value, sourceInfo: { project: projectName, graph: GRAPH_VERSION, prompt: composer.PROMPT_VERSION }, comment: r.error || undefined, feedbackSourceType: "model" }).catch(() => {});
     }
   }

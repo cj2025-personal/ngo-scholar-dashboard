@@ -6,7 +6,7 @@ import { FaCheck, FaEye, FaTriangleExclamation } from "react-icons/fa6";
 import { getStoryEvidence } from "@/lib/drafting";
 
 import { AUDIENCE_TARGETS, normaliseAudience } from "@/lib/readability";
-import { summariseBlocks } from "@/components/editorial/ChecksRail";
+import { needsAttention, summariseBlocks } from "@/components/editorial/ChecksRail";
 
 /**
  * Before it goes out under the scholar's name.
@@ -29,23 +29,52 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
   }, [storyId]);
   const numbers = fresh?.checks?.numbers || draftChecks?.numbers || null;
   const limitations = fresh?.checks?.limitations || draftChecks?.limitations || null;
+  const worldClaims = fresh?.checks?.worldClaims || draftChecks?.worldClaims || null;
+  const budget = fresh?.checks?.budget || draftChecks?.budget || null;
+  const pronouns = fresh?.checks?.pronouns || draftChecks?.pronouns || null;
   const grave = (record?.alerts || []).some((a) => a.kind === "retracted" || a.kind === "withdrawn");
   const levelsLive = (levels || []).filter((l) => l.approved && !l.stale).length;
   const levelsWaiting = (levels || []).filter((l) => !l.approved && !l.stale).length;
   const levelsStale = (levels || []).filter((l) => l.stale).length;
   const target = AUDIENCE_TARGETS[normaliseAudience(audience)];
-  const firstAttention = blocks.findIndex((b) => b.fidelity && b.fidelity.verdict !== "supported" && Array.isArray(b.sourceRefs) && b.sourceRefs.length);
+  const firstAttention = blocks.findIndex(needsAttention);
   const firstLost = blocks.findIndex((b) => b.traceable === false);
   const levelOk = !assessment || assessment.verdict !== "fail";
+  const troubles = [
+    s.partial ? `${s.partial} partly supported` : "",
+    s.unsupported ? `${s.unsupported} not supported` : "",
+    s.reachPartial ? `${s.reachPartial} partly following from the paper` : "",
+    s.overreach ? `${s.overreach} going beyond what it supports` : "",
+  ].filter(Boolean).join(", ");
   const items = [
     {
       ok: s.attention === 0,
-      title: s.attention === 0 ? "Every drafted paragraph is supported, or is yours" : `${s.attention} paragraph${s.attention === 1 ? "" : "s"} still ${s.attention === 1 ? "needs" : "need"} a look`,
+      title: s.attention === 0 ? (s.extension ? "Every drafted paragraph is supported, follows from the paper, or is yours" : "Every drafted paragraph is supported, or is yours") : `${s.attention} paragraph${s.attention === 1 ? "" : "s"} still ${s.attention === 1 ? "needs" : "need"} a look`,
       detail: s.attention === 0
-        ? `${s.supported} supported by their passages${s.edited ? `, ${s.edited} rewritten by you` : ""}${s.ownView ? `, ${s.ownView} marked as your view` : ""}.`
-        : `${s.partial ? `${s.partial} partly supported` : ""}${s.partial && s.unsupported ? ", " : ""}${s.unsupported ? `${s.unsupported} not supported` : ""}. Rewrite them, remove them, or mark them as your own view.`,
+        ? `${s.supported} supported by their passages${s.extension ? `, ${s.follows} beyond the paper and following from it` : ""}${s.edited ? `, ${s.edited} rewritten by you` : ""}${s.ownView ? `, ${s.ownView} marked as your view` : ""}.`
+        : `${troubles}. Rewrite them, remove them, or mark them as your own view.`,
       action: s.attention ? { label: "Go to it", onClick: () => onGoTo?.(firstAttention) } : null,
     },
+    ...(pronouns && pronouns.ok === false ? [{
+      ok: false,
+      warn: true,
+      title: "This article calls you by two different pronouns",
+      detail: pronouns.sentence,
+      action: pronouns.blocks?.length ? { label: "Go to it", onClick: () => onGoTo?.(pronouns.blocks[0] - 1) } : null,
+    }] : []),
+    ...(budget && budget.ok === false ? [{
+      ok: false,
+      warn: true,
+      title: "More of this article goes beyond the paper than comes from it",
+      detail: `${budget.sentence} Readers came for what the paper found; keep that the larger part.`,
+    }] : []),
+    ...(worldClaims && worldClaims.ok === false ? [{
+      ok: false,
+      warn: true,
+      title: `${worldClaims.hits.length} sentence${worldClaims.hits.length === 1 ? "" : "s"} beyond the paper read${worldClaims.hits.length === 1 ? "s" : ""} as a claim about the world`,
+      detail: `${worldClaims.hits.map((h) => `"${h.sentence}" (block ${h.block})`).join("; ")}. An implication says what would follow; a claim says what is done. Only the first is yours to make from the paper alone.`,
+      action: { label: "Go to it", onClick: () => onGoTo?.(worldClaims.hits[0].block - 1) },
+    }] : []),
     {
       ok: levelOk,
       title: levelOk ? "Reading level on target" : "Reading level above target",

@@ -167,6 +167,8 @@ function normalizeRawBodyBlocks(blocks, fallbackContent = "") {
         sourceRefs: block?.sourceRefs,
         draftedText: block?.draftedText,
         fidelity: block?.fidelity,
+        extension: block?.extension,
+        reach: block?.reach,
         currentHtml: html,
       });
 
@@ -807,6 +809,9 @@ async function resolveStoryProvenance(db, provenance) {
     origin: provenance.origin,
     sourceId: provenance.source_id,
     audience: provenance.audience || null,
+    /* Whose account it is. The levels service and the agent read it to keep
+       editing in the voice the draft was written in. */
+    voice: provenance.voice || null,
     draftedAt: provenance.drafted_at || null,
     promptVersion: provenance.prompt_version || null,
   };
@@ -933,6 +938,8 @@ function mapStoryDocument(story, author = null, provenance = null) {
         generatedAt: l.generated_at || null,
         readability: l.readability || null,
         fidelity: l.fidelity || null,
+        /* Paragraphs that go beyond the paper, judged for reach; null on a level written before there were any. */
+        reach: l.reach || null,
         stale: st.stale,
         staleReason: st.reason,
         warnings: Array.isArray(l.warnings) ? l.warnings : [],
@@ -1956,7 +1963,7 @@ async function applyStoryRevision({ storyId, scholarId, profileId, user, fields 
             /* A block the agent wrote has no drafted text yet; its own text is
                the baseline the chip will measure the scholar's edits against. */
             draftedText: b.draftedText || (Array.isArray(b.sourceRefs) && b.sourceRefs.length ? stripInlineHtml(b.html) : ""),
-            fidelity: b.fidelity, ownView: b.ownView,
+            fidelity: b.fidelity, ownView: b.ownView, extension: b.extension, reach: b.reach,
           },
     ),
   );
@@ -2016,6 +2023,8 @@ async function createStoryFromDraft({ job, draft }) {
     (draft.bodyBlocks || []).map((b) => ({
       type: b.type, html: b.html,
       sourceRefs: b.sourceRefs, fidelity: b.fidelity,
+      /* A paragraph that goes beyond the paper keeps its kind and the reach judge's verdict. */
+      extension: b.extension, reach: b.reach,
       draftedText: stripInlineHtml(b.html),
     })),
   );

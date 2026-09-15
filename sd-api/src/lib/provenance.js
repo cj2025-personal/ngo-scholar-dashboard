@@ -95,6 +95,31 @@ function normalizeSourceRefs(refs) {
 }
 
 const FIDELITY_VERDICTS = new Set(["supported", "partial", "unsupported"]);
+const REACH_VERDICTS = new Set(["follows", "partial", "overreach"]);
+const REACH_REASONS = new Set(["outside_fact", "stated_as_finding", "does_not_follow", "unsuitable"]);
+
+/**
+ * The reach judge's verdict on a paragraph that goes beyond the paper, kept
+ * the way the fidelity verdict is: bounded, claims included, so the ledger
+ * and the reader's view can show which implication rests on which passage.
+ */
+function normalizeReach(r) {
+  if (!r || typeof r !== "object" || !REACH_VERDICTS.has(r.verdict)) return null;
+  const claims = (Array.isArray(r.claims) ? r.claims : [])
+    .map((c) => ({
+      text: String(c?.text || "").slice(0, 300),
+      verdict: c?.verdict === "follows" ? "follows" : "overreach",
+      reason: c?.verdict === "follows" ? null : REACH_REASONS.has(c?.reason) ? c.reason : "does_not_follow",
+      anchorIds: (Array.isArray(c?.anchorIds) ? c.anchorIds : []).map(String).filter((id) => REF_ID.test(id)).slice(0, 6),
+    }))
+    .filter((c) => c.text)
+    .slice(0, 12);
+  return {
+    verdict: r.verdict,
+    overreachClaims: (Array.isArray(r.overreachClaims) ? r.overreachClaims : []).map((s) => String(s).slice(0, 300)).filter(Boolean).slice(0, 6),
+    ...(claims.length ? { claims } : {}),
+  };
+}
 
 function normalizeFidelity(f) {
   if (!f || typeof f !== "object" || !FIDELITY_VERDICTS.has(f.verdict)) return null;
@@ -123,16 +148,20 @@ function normalizeFidelity(f) {
  * measured here, on the server, against the text being saved — the client's
  * live chip is a preview of the same function.
  */
-function normalizeBlockProvenance({ sourceRefs, draftedText, fidelity, currentHtml }) {
+function normalizeBlockProvenance({ sourceRefs, draftedText, fidelity, currentHtml, extension = false, reach = null }) {
   const refs = normalizeSourceRefs(sourceRefs);
   if (refs.length === 0) return null;
   const drafted = normaliseText(draftedText).slice(0, 4000);
   const current = normaliseText(currentHtml);
   const trace = drafted ? traceability({ draftedText: drafted, currentText: current }) : { traceable: false, overlap: 0, reason: "no drafted text recorded" };
+  /* A paragraph that goes beyond the paper carries the reach judge's verdict
+     in place of the fidelity judge's; it never carries both. */
+  const isExtension = Boolean(extension);
   return {
     source_refs: refs,
     drafted_text: drafted || null,
-    fidelity: normalizeFidelity(fidelity),
+    fidelity: isExtension ? null : normalizeFidelity(fidelity),
+    ...(isExtension ? { extension: true, reach: normalizeReach(reach) } : {}),
     traceable: trace.traceable,
     overlap: trace.overlap,
     trace_reason: trace.reason,
@@ -147,6 +176,7 @@ function presentBlockProvenance(p) {
     sourceRefs: p.source_refs.map((r) => ({ passageId: r.passageId })),
     draftedText: p.drafted_text || "",
     fidelity: p.fidelity || null,
+    ...(p.extension ? { extension: true, reach: p.reach || null } : {}),
     traceable: Boolean(p.traceable),
     overlap: typeof p.overlap === "number" ? p.overlap : null,
     traceReason: p.trace_reason || null,
@@ -164,6 +194,9 @@ function storyProvenanceFromJob(job) {
     source_year: job.source.year ?? null,
     /* Who the draft was written for; the story agent keeps editing for them. */
     audience: job.audience || null,
+    /* Whose account it is. Levels and the agent keep whatever the draft used;
+       a story drafted before voices existed has none, and reads as "about". */
+    voice: job.voice || null,
     prompt_version: job.prompt_version || null,
     graph_version: job.graph_version || null,
     drafted_at: job.finished_at || job.created_at || null,

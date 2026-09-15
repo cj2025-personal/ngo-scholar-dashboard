@@ -43,6 +43,8 @@ export default function EvidenceRail({ storyId, version, status, slug, onGoTo })
   const t = m.totals || {};
   const numbers = data.checks?.numbers;
   const limitations = data.checks?.limitations;
+  const worldClaims = data.checks?.worldClaims;
+  const budget = data.checks?.budget;
   const isPublic = status === "published" || status === "scheduled";
 
   return (
@@ -57,6 +59,7 @@ export default function EvidenceRail({ storyId, version, status, slug, onGoTo })
         <div><b>{t.claims || 0}</b><span>claims checked</span></div>
         <div><b className={t.unsupported ? "is-warn" : ""}>{t.supported || 0}</b><span>supported</span></div>
         <div><b>{t.cited || 0}</b><span>paragraphs from the paper</span></div>
+        {t.extension ? <div><b className={t.overreach ? "is-warn" : ""}>{t.follows || 0}</b><span>implications following from it{t.overreach ? `, ${t.overreach} too far` : ""}</span></div> : null}
       </div>
 
       <div className="ck-list">
@@ -71,6 +74,19 @@ export default function EvidenceRail({ storyId, version, status, slug, onGoTo })
           <span className={`st-dot ${limitations?.ok === true ? "is-ok" : limitations?.ok === false ? "is-warn" : "is-faint"}`} />
           <span>{limitations?.sentence || "The paper states no limitations we could find."}</span>
         </div>
+        {budget && budget.ok !== null ? (
+          <div className="ck-item">
+            <span className={`st-dot ${budget.ok ? "is-ok" : "is-warn"}`} />
+            <span>{budget.sentence}</span>
+          </div>
+        ) : null}
+        {worldClaims && worldClaims.ok !== null ? (
+          <div className="ck-item">
+            <span className={`st-dot ${worldClaims.ok ? "is-ok" : "is-warn"}`} />
+            <span>{worldClaims.ok ? "Nothing beyond the paper reads as a claim about the world" : `${worldClaims.hits.length} sentence${worldClaims.hits.length === 1 ? "" : "s"} beyond the paper read${worldClaims.hits.length === 1 ? "s" : ""} as a claim about the world: ${worldClaims.hits.map((h) => `block ${h.block}`).join(", ")}`}</span>
+            {!worldClaims.ok ? <button type="button" className="st-link" onClick={() => onGoTo?.(worldClaims.hits[0].block - 1)}>Go to it</button> : null}
+          </div>
+        ) : null}
         <div className="ck-item">
           <span className={`st-dot ${data.passagesCheck?.mismatched?.length ? "is-bad" : "is-ok"}`} />
           <span>{data.passagesCheck?.mismatched?.length ? `${data.passagesCheck.mismatched.length} passage${data.passagesCheck.mismatched.length === 1 ? "" : "s"} no longer match what the claims were checked against` : `The ${data.passagesCheck?.matched || 0} passages behind this article are the ones the claims were checked against`}</span>

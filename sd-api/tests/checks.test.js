@@ -62,3 +62,33 @@ test("passages that state a limitation are found by wording, and an article that
   assert.equal(none.ok, null, "a paper that states no limitation is not a failure");
   assert.equal(none.sentence, null);
 });
+
+test("a sentence that reads as a claim about the world is found in paragraphs that go beyond the paper, and nowhere else", () => {
+  const ext = (html) => ({ type: "paragraph", html, sourceRefs: [{ passageId: "p1" }], extension: true });
+  const r = checks.worldClaims({ blocks: [
+    { type: "paragraph", html: "This method is now used in every phone.", sourceRefs: [{ passageId: "p1" }] },
+    ext("Which means any receiver in a crowded band faces the same limit. The same idea <b>is widely used</b> in base stations today."),
+    ext("Work like this has led to quieter radios. It is the basis of modern arrays."),
+    ext("A reader who has strained to hear one voice in a loud room would recognise the problem."),
+  ] });
+  assert.equal(r.heuristic, true);
+  assert.equal(r.checked, 3, "only paragraphs that go beyond the paper are checked");
+  assert.deepEqual(r.hits.map((h) => h.block), [2, 3, 3]);
+  assert.match(r.hits[0].sentence, /^The same idea is widely used/);
+  assert.equal(r.ok, false);
+  assert.equal(checks.worldClaims({ blocks: [ext("Which means the same problem would face anyone nearby.")] }).ok, true);
+  assert.equal(checks.worldClaims({ blocks: [{ type: "paragraph", html: "It is used everywhere.", sourceRefs: [{ passageId: "p1" }] }] }).ok, null, "nothing beyond the paper, nothing to check");
+});
+
+test("paragraphs beyond the paper may not outnumber those drawn from it", () => {
+  const paper = { type: "paragraph", html: "a", sourceRefs: [{ passageId: "p1" }] };
+  const ext = { ...paper, extension: true };
+  const own = { type: "paragraph", html: "mine", ownView: true };
+  assert.equal(checks.extensionBudget({ blocks: [paper, paper] }).ok, null);
+  const ok = checks.extensionBudget({ blocks: [paper, paper, ext, own, { type: "subheading", html: "h" }] });
+  assert.deepEqual([ok.extension, ok.paper, ok.ok], [1, 2, true]);
+  assert.match(ok.sentence, /1 paragraph goes beyond the paper, against 2 drawn from it/);
+  const over = checks.extensionBudget({ blocks: [paper, ext, ext] });
+  assert.equal(over.ok, false);
+  assert.match(over.sentence, /2 paragraphs go beyond the paper and only 1 is drawn from it/);
+});

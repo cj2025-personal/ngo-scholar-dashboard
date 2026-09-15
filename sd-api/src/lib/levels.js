@@ -13,11 +13,15 @@
  * per student.
  *
  * ── What is rewritten and what is not ───────────────────────────────────────
- * Only a paragraph that is still drawn from the paper. A paragraph the
- * scholar rewrote away from its source is theirs, in their words, and is
- * carried rather than re-imagined at another level; the same for a paragraph
- * marked as their own view. A level never adds a claim: the rewrite is judged
- * against the passages exactly as the original was, claim by claim.
+ * Only a paragraph that is still drawn from the paper — or built on it. A
+ * paragraph the scholar rewrote away from its source is theirs, in their
+ * words, and is carried rather than re-imagined at another level; the same
+ * for a paragraph marked as their own view. A level never adds a claim: the
+ * rewrite is judged against the passages exactly as the original was, claim
+ * by claim. A paragraph that goes beyond the paper is rewritten too — a
+ * child's version must not carry an adult's "why this matters" untouched —
+ * with every implication kept and none added, and the reach judge checks it
+ * as it checked the original.
  *
  * ── Staleness ───────────────────────────────────────────────────────────────
  * A level records a hash of every block it was made from. When the article
@@ -31,7 +35,7 @@ const crypto = require("crypto");
 const composer = require("./draftComposer");
 const { AUDIENCES, normaliseAudience } = require("./audiences");
 
-const LEVELS_VERSION = "reading-levels-2026.1";
+const LEVELS_VERSION = "reading-levels-2026.2";
 const LEVEL_MARKER = "=== PARAGRAPH TO REWRITE FOR ANOTHER READER ===";
 const PASSAGES_MARKER = "=== PASSAGES THIS PARAGRAPH RESTS ON ===";
 const MAX_LEVEL_CHARS = 2500;
@@ -52,7 +56,7 @@ function targetsFor(storyAudience, requested = null) {
   return all.filter((a) => wanted.has(a));
 }
 
-/** Which blocks a level rewrites; the rest are carried. */
+/** Which blocks a level rewrites, and which of those go beyond the paper; the rest are carried. */
 function levelPlan(blocks) {
   return (blocks || []).map((b, i) => ({
     index: i,
@@ -61,6 +65,7 @@ function levelPlan(blocks) {
       !b.ownView &&
       Array.isArray(b.sourceRefs) && b.sourceRefs.length > 0 &&
       b.traceable !== false,
+    extension: Boolean(b.extension),
   }));
 }
 
@@ -74,25 +79,43 @@ function levelPlan(blocks) {
  * @param {string} p.sourceAudience   the band the article was written for
  * @param {boolean} [p.strictVoice]
  */
-function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sourceAudience, strictVoice = false }) {
+function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sourceAudience, strictVoice = false, voice = composer.DEFAULT_VOICE }) {
   const to = AUDIENCES[normaliseAudience(audience)];
   const from = AUDIENCES[normaliseAudience(sourceAudience)];
   const name = scholar.name || "the scholar";
+  const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
   const ids = (block.sourceRefs || []).map((r) => r.passageId);
   const cited = (passages || []).filter((p) => ids.includes(p.id));
   const lines = [
-    `Rewrite one paragraph of an article about a paper by ${name}. The article was written for ${from.brief}`,
+    authorVoice
+      ? `Rewrite one paragraph of an article. It is the author's own account of their own paper, and was written for ${from.brief}`
+      : `Rewrite one paragraph of an article about a paper by ${name}. The article was written for ${from.brief}`,
     `Rewrite this paragraph for ${to.brief}`,
     "",
     `Article title: ${title || "Untitled"}`,
     "",
     "Rules:",
-    "- Keep every fact the paragraph states and add none. Say nothing the passages below do not say.",
+    ...(block.extension
+      ? [
+          "- This paragraph goes beyond the paper: it says what follows from the passages below for the reader. Keep every",
+          "  implication it draws and draw no new one. Say nothing about the world the paragraph does not already say, and",
+          "  say implications as implications, never as findings.",
+          ...(to.young ? ["- The reader is a child: nothing frightening, and nothing that assumes a world beyond theirs."] : []),
+        ]
+      : ["- Keep every fact the paragraph states and add none. Say nothing the passages below do not say."]),
     "- Same meaning, different reader: shorter sentences and plainer words for a younger reader. Do not talk down.",
-    `- Write about ${name}, never as ${name}. Third person only.`,
+    authorVoice
+      ? `- Never refer to the author: no "${name}", no "the author", no "he" or "she". The work is the subject. No "I" or "we" either.`
+      : `- Write about ${name}, never as ${name}. Third person only.`,
     "- One paragraph, 40 to 160 words. Return only the JSON described by the schema.",
   ];
-  if (strictVoice) lines.push(`- Your previous attempt used first-person language. Third person only, about ${name}.`);
+  if (strictVoice) {
+    lines.push(
+      authorVoice
+        ? `- Your previous attempt used first-person language. This account is impersonal: no "I" or "we", and no reference to ${name}.`
+        : `- Your previous attempt used first-person language. Third person only, about ${name}.`,
+    );
+  }
   lines.push("", PASSAGES_MARKER, ...cited.map((p) => `[${p.id}] ${p.text}`), "", LEVEL_MARKER, plain(block.html));
   return lines.join("\n");
 }
@@ -117,16 +140,18 @@ function carry(b) {
     type: b.type,
     html: b.html || "",
     ...(refs ? { sourceRefs: refs, draftedText: b.draftedText || plain(b.html), fidelity: b.fidelity || null } : {}),
+    ...(refs && b.extension ? { extension: true, reach: b.reach || null } : {}),
     ...(b.ownView ? { ownView: true } : {}),
   };
 }
 
 /**
  * A level's blocks, aligned with the article's: rewritten paragraphs in
- * place, everything else carried.
+ * place, everything else carried. A rewritten paragraph keeps its kind: one
+ * that went beyond the paper still does, and carries the reach verdict.
  * @param {object} p
  * @param {object[]} p.blocks   the mapped article blocks
- * @param {Map<number, {text: string, fidelity?: object}>} p.rewrites  by block index
+ * @param {Map<number, {text: string, fidelity?: object, reach?: object}>} p.rewrites  by block index
  */
 function assembleLevel({ blocks, rewrites }) {
   return (blocks || []).map((b, i) => {
@@ -137,7 +162,8 @@ function assembleLevel({ blocks, rewrites }) {
       html: escapeHtml(r.text),
       sourceRefs: (b.sourceRefs || []).map((x) => ({ passageId: x.passageId })),
       draftedText: r.text,
-      fidelity: r.fidelity || null,
+      fidelity: b.extension ? null : r.fidelity || null,
+      ...(b.extension ? { extension: true, reach: r.reach || null } : {}),
     };
   });
 }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 
-import { DEFAULT_AUDIENCE, DRAFT_AUDIENCES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
+import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 
 /**
  * New story, as a conversation.
@@ -30,21 +30,32 @@ function paperKey(p) {
 function OutlineMessage({ msg, latest, busy, onApprove, onDiscard }) {
   const [beats, setBeats] = useState(() => (msg.outline.beats || []).map((b) => ({ ...b, kept: true })));
   const kept = beats.filter((b) => b.kept);
+  const beyond = beats.filter((b) => b.kind === "extension").length;
+  const coverage = msg.outline.coverage || null;
   return (
     <div className="ch-msg is-agent is-outline">
       <span className="ag-avatar" aria-hidden>A</span>
       <div className="ch-bubble">
         <p className="ch-text">
           {msg.replans ? "Here is the outline again, replanned from what you said." : "I read the paper. Here is how the article would go."}{" "}
-          {beats.length} section{beats.length === 1 ? "" : "s"}, each built only from the passages listed beside it.
+          {beyond
+            ? `${beats.length - beyond} section${beats.length - beyond === 1 ? "" : "s"} built only from the passages listed beside ${beats.length - beyond === 1 ? "it" : "them"}, and ${beyond} that say${beyond === 1 ? "s" : ""} what follows from the paper for the reader — implications only, checked claim by claim, with nothing from outside the paper.`
+            : `${beats.length} section${beats.length === 1 ? "" : "s"}, each built only from the passages listed beside it.`}
         </p>
+        {coverage && coverage.met !== "full" ? (
+          <p className="ch-coverage">
+            {coverage.met === "none" ? "The paper cannot carry what you asked for" : "Part of what you asked for is left out"}
+            {coverage.note ? `: ${coverage.note}` : "."}{" "}
+            {coverage.met === "none" ? "This plan reports the paper instead." : "Reply below if you want a different plan."}
+          </p>
+        ) : null}
         <div className="ch-outline-title">{msg.outline.title}</div>
         {msg.outline.deck ? <div className="st-todo-detail">{msg.outline.deck}</div> : null}
         <ol className="ch-beats">
           {beats.map((b, i) => (
             <li key={`${b.heading}-${i}`} className={b.kept ? "ch-beat" : "ch-beat is-cut"}>
               <div className="ch-beat-body">
-                <div className="ch-beat-heading">{b.heading}</div>
+                <div className="ch-beat-heading">{b.heading}{b.kind === "extension" ? <span className="ch-beat-kind" title="Says what follows from the paper for the reader. Every claim is checked to follow from the passages it builds on; nothing from outside the paper.">Beyond the paper</span> : null}</div>
                 <div className="st-todo-detail">{b.goal}</div>
                 <div className="ch-beat-refs">{(b.passageIds || []).map((id) => <span key={id} className="block-chip" style={{ cursor: "default" }}>{id}</span>)}</div>
               </div>
@@ -77,7 +88,10 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
   const [inventory, setInventory] = useState(null);
   const [paper, setPaper] = useState(initialSource);
   const [audience, setAudience] = useState(DEFAULT_AUDIENCE);
-  const [everyAge, setEveryAge] = useState(false);
+  /* The other reading ages to write once the article exists: any subset,
+     each written and judged on its own. The reader's own band is never one. */
+  const [levelBands, setLevelBands] = useState([]);
+  const [voice, setVoice] = useState(DEFAULT_VOICE);
   const [messages, setMessages] = useState([]);
   const [job, setJob] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -113,7 +127,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       push({ role: "agent", text: inv.nudge || "Nothing is ready to draft from yet. Add a paper you hold the rights to and come back." });
       return;
     }
-    push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? Pick the paper and the reader's age below, then tell me what the article should be: what to focus on, what to leave out, the angle you want. I will read the paper and propose an outline before a word is drafted.` });
+    push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? Pick the paper and the reader's age below, then tell me what the article should be: what to focus on, what to leave out, the angle you want — or what your work means for readers today. I will read the paper and propose an outline before a word is drafted; anything that goes beyond the paper is marked as such and checked to follow from it.` });
   }, [me?.name, push, resumeJobId]);
 
   useEffect(() => {
@@ -158,6 +172,7 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       setJob(j);
       setPaper(j.source ? `${j.source.origin}:${j.source.id}` : null);
       setAudience(j.audience || DEFAULT_AUDIENCE);
+      setVoice(j.voice || DEFAULT_VOICE);
       if (j.brief) push({ role: "user", text: j.brief });
       if (j.storyId) { router.replace(`/editorial/${j.storyId}`); return; }
       if (j.status === "awaiting_outline") { showOutline(j, { replans: j.replans || 0 }); return; }
@@ -190,7 +205,8 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
       return;
     }
     setProgress("Reading the paper…");
-    const r = await createDraftJob({ origin: selectedPaper.origin, sourceId: selectedPaper.id, audience, brief: ask, approveOutline: true, createStory: true, levels: everyAge });
+    const wanted = levelBands.filter((a) => a !== audience);
+    const r = await createDraftJob({ origin: selectedPaper.origin, sourceId: selectedPaper.id, audience, voice, brief: ask, approveOutline: true, createStory: true, levels: wanted.length ? wanted : false });
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     const j = r.data.job;
     setJob(j);
@@ -269,10 +285,26 @@ export default function StoryChat({ me, initialSource = null, resumeJobId = null
               {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label} · reads at grade {a.grade}</option>)}
             </select>
           </label>
-          <label className="ch-opt ch-check" title="After the article, write it for every other reading age too. More model calls; you approve each level before readers see it.">
-            <input type="checkbox" checked={everyAge} disabled={locked} onChange={(e) => setEveryAge(e.target.checked)} />
-            <span>Also write it for every age</span>
+          <label className="ch-opt" title={DRAFT_VOICES.find((v) => v.value === voice)?.hint}>
+            <span>Written as</span>
+            <select aria-label="Written as" value={voice} disabled={locked} onChange={(e) => setVoice(e.target.value)}>
+              {DRAFT_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+            </select>
           </label>
+          <fieldset className="ch-opt ch-bands" disabled={locked}>
+            <legend>Also write it for</legend>
+            <div className="ch-bands-row" title="After the article, write it for these reading ages too, each on its own. More model calls; you approve each level before readers see it.">
+              {DRAFT_AUDIENCES.filter((a) => a.value !== audience).map((a) => (
+                <label key={a.value} className="ch-check">
+                  <input type="checkbox" checked={levelBands.includes(a.value)} onChange={(e) => setLevelBands((cur) => (e.target.checked ? [...cur, a.value] : cur.filter((v) => v !== a.value)))} />
+                  <span>{a.label}</span>
+                </label>
+              ))}
+              <button type="button" className="st-link" onClick={() => setLevelBands((cur) => (cur.filter((v) => v !== audience).length === DRAFT_AUDIENCES.length - 1 ? [] : DRAFT_AUDIENCES.map((a) => a.value).filter((v) => v !== audience)))}>
+                {levelBands.filter((v) => v !== audience).length === DRAFT_AUDIENCES.length - 1 ? "None" : "Every age"}
+              </button>
+            </div>
+          </fieldset>
           {locked ? <span className="st-todo-detail ch-locked">Paper and reader are set for this draft. <button type="button" className="st-link" onClick={() => { if (stopRef.current) stopRef.current(); setJob(null); setBusy(false); setMessages((cur) => cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m))); }}>Start another</button></span> : null}
         </div>
         <div className="ag-box">

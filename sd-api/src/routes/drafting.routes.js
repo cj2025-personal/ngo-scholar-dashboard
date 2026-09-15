@@ -8,6 +8,8 @@ const { rateLimit } = require("../middleware/rate-limit.middleware");
 const { listDraftSources, draftFromSource } = require("../services/drafting.service");
 const { createDraftJob, approveOutline, replanOutline, getDraftJob, listDraftJobs, listJobEvents, resumeJob } = require("../services/draftJob.service");
 const { STATUS, TERMINAL } = require("../lib/draftJob");
+const { isAudience } = require("../lib/audiences");
+const { VOICE } = require("../lib/draftComposer");
 
 const router = express.Router();
 
@@ -101,7 +103,7 @@ router.post(
   draftLimiter,
   asyncHandler(async (req, res) => {
     const profileId = requireProfile(req);
-    const { origin, sourceId, audience, brief, approveOutline: wantsOutline, createStory, levels } = req.body || {};
+    const { origin, sourceId, audience, voice, brief, approveOutline: wantsOutline, createStory, levels } = req.body || {};
     if (origin !== "harvested" && origin !== "contributed") {
       throw new ApiError(400, "Source origin must be harvested or contributed.");
     }
@@ -111,13 +113,21 @@ router.post(
     if (brief !== undefined && brief !== null && (typeof brief !== "string" || brief.length > 1000)) {
       throw new ApiError(400, "A brief is a short sentence or two, under 1,000 characters.");
     }
+    /* `levels` is true for every other reading age, or the bands wanted. */
+    if (Array.isArray(levels) && !levels.every((a) => typeof a === "string" && isAudience(a))) {
+      throw new ApiError(400, "Reading levels must name known age bands.");
+    }
+    if (voice !== undefined && voice !== null && voice !== VOICE.AUTHOR && voice !== VOICE.ABOUT) {
+      throw new ApiError(400, `A draft is written either as the scholar's own account ("${VOICE.AUTHOR}") or about them ("${VOICE.ABOUT}").`);
+    }
     const result = await createDraftJob({
       profileId, origin, sourceId,
       audience: typeof audience === "string" ? audience : undefined,
+      voice: typeof voice === "string" ? voice : undefined,
       brief: typeof brief === "string" ? brief : null,
       approveOutline: Boolean(wantsOutline),
       createStory: createStory === undefined ? true : Boolean(createStory),
-      levels: Boolean(levels),
+      levels: Array.isArray(levels) ? levels : Boolean(levels),
     });
     res.status(result.reused ? 200 : 202).json(result);
   }),

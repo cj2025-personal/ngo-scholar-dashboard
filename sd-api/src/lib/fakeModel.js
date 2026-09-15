@@ -33,23 +33,50 @@ function usage(prompt, text) {
   return { input: Math.ceil(prompt.length / 4), output: Math.ceil(text.length / 4), total: Math.ceil((prompt.length + text.length) / 4) };
 }
 
+/**
+ * An outline of paper sections; with a brief, the last section goes beyond
+ * the paper, so the extension path — the reach judge, the levels that
+ * rewrite an implication, the ledger that records it — is exercised end to
+ * end. The brief is reported as fully met; the outline tests drive the
+ * other coverage verdicts with their own fake.
+ */
 function answerOutline(prompt) {
   const passages = passagesIn(prompt, "=== PAPER, IN NUMBERED PASSAGES ===");
   const titleMatch = prompt.match(/^Paper title: (.+)$/m);
   const title = (titleMatch ? titleMatch[1].replace(/\s*\(\d{4}\)\s*$/, "") : "A paper").slice(0, 100);
+  const briefed = /^The scholar's brief for this article:/m.test(prompt);
   const n = Math.max(2, Math.min(4, passages.length));
   const beats = [];
   for (let i = 0; i < n; i += 1) {
     const p = passages[i % Math.max(passages.length, 1)];
-    beats.push({ heading: `Section ${i + 1}: ${sentences(p?.text || "")[0]?.split(/\s+/).slice(0, 4).join(" ") || "Findings"}`, goal: `Report what passage ${p?.id || "p1"} says.`, passage_ids: [p?.id || "p1"] });
+    const extension = briefed && i === n - 1;
+    beats.push({
+      heading: extension ? "What this means beyond the paper" : `Section ${i + 1}: ${sentences(p?.text || "")[0]?.split(/\s+/).slice(0, 4).join(" ") || "Findings"}`,
+      goal: extension ? `What follows from passage ${p?.id || "p1"} for the reader.` : `Report what passage ${p?.id || "p1"} says.`,
+      kind: extension ? "extension" : "paper",
+      passage_ids: [p?.id || "p1"],
+    });
   }
-  return JSON.stringify({ title: `What the paper found: ${title}`, deck: `A report on ${title}, drawn from its own text.`, beats });
+  return JSON.stringify({ title: `What the paper found: ${title}`, deck: `A report on ${title}, drawn from its own text.`, beats, brief_coverage: briefed ? { met: "full", note: "" } : null });
 }
+
+/** The one implication the fake ever draws: generic, so it follows from any passage. */
+const IMPLICATION = "This means the same problem would face anyone who meets what the paper describes.";
 
 function answerSection(prompt) {
   const cited = passagesIn(prompt, "=== PASSAGES THIS SECTION MAY USE ===");
   const first = cited[0] || { id: "p1", text: "The paper reports its findings." };
   const s1 = sentences(first.text);
+  if (/^Section kind: extension$/m.test(prompt)) {
+    /* One paragraph of the paper, one that builds on it. FAKE_MODEL_OVERREACH=1
+       adds a fact about the world, which the fake reach judge marks. */
+    const overreach = process.env.FAKE_MODEL_OVERREACH === "1" ? " This method is now used in every phone." : "";
+    const paragraphs = [
+      { text: s1.slice(0, 2).join(" "), passage_ids: [first.id], extension: false },
+      { text: `${s1[0]} ${IMPLICATION}${overreach}`, passage_ids: [first.id], extension: true },
+    ];
+    return JSON.stringify({ paragraphs, quote: null });
+  }
   const paragraphs = [{ text: s1.slice(0, 3).join(" "), passage_ids: [first.id] }];
   if (cited[1]) {
     const s2 = sentences(cited[1].text);
@@ -99,8 +126,50 @@ function answerJudge(prompt) {
   });
 }
 
-/** A paragraph for another reader: one lifted sentence for the youngest band, two otherwise. */
+/**
+ * The reach judge, answered by wording: a sentence lifted from a passage
+ * follows from it; a sentence that says "this means" follows from the first
+ * anchor; anything else is a fact from outside the paper.
+ */
+function answerReach(prompt) {
+  const passages = passagesIn(prompt, "PASSAGES FROM THE PAPER:");
+  const body = prompt.slice(prompt.indexOf("PARAGRAPHS THAT BUILD ON THEM:"));
+  const rows = [...body.matchAll(/^\((\d+)\) (.+)$/gm)].map((m) => ({ index: Number(m[1]), text: m[2] }));
+  const words = (t) => new Set(String(t).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3));
+  const anchorFor = (claim) => {
+    const cw = words(claim);
+    for (const p of passages) {
+      for (const sentence of sentences(p.text)) {
+        const sw = words(sentence);
+        const shared = [...cw].filter((w) => sw.has(w)).length;
+        if (cw.size && shared / cw.size >= 0.4) return p.id;
+      }
+    }
+    return null;
+  };
+  return JSON.stringify({
+    paragraphs: rows.map(({ index, text }) => ({
+      index,
+      claims: sentences(text).map((sentence) => {
+        const anchor = anchorFor(sentence) || (/^(?:this|that|which) means\b|would matter\b|the same problem\b/i.test(sentence) ? passages[0]?.id : null);
+        return anchor
+          ? { text: sentence, verdict: "follows", anchor_ids: [anchor] }
+          : { text: sentence, verdict: "overreach", reason: "outside_fact", anchor_ids: [] };
+      }),
+    })),
+  });
+}
+
+/**
+ * A paragraph for another reader: one lifted sentence for the youngest band,
+ * two otherwise. A paragraph that goes beyond the paper keeps its own two
+ * sentences — the paper's and the implication — so nothing is added or lost.
+ */
 function answerLevel(prompt) {
+  if (/Keep every\s+implication it draws/.test(prompt)) {
+    const own = prompt.slice(prompt.indexOf("=== PARAGRAPH TO REWRITE FOR ANOTHER READER ===")).split("\n").slice(1).join(" ").trim();
+    return JSON.stringify({ text: sentences(own).slice(0, 2).join(" ") });
+  }
   const cited = passagesIn(prompt, "=== PASSAGES THIS PARAGRAPH RESTS ON ===");
   const first = cited[0] || { text: "The paper reports its findings." };
   const s = sentences(first.text);
@@ -187,7 +256,8 @@ async function generateContent({ prompt, contents = null, tools = null }) {
   if (tools && Array.isArray(contents)) return answerAgent(contents);
   const p = String(prompt || (contents ? contents.map((c) => (c.parts || []).map((x) => x.text || "").join("\n")).join("\n") : ""));
   let text;
-  if (p.includes("PARAGRAPHS TO CHECK:")) text = answerJudge(p);
+  if (p.includes("PARAGRAPHS THAT BUILD ON THEM:")) text = answerReach(p);
+  else if (p.includes("PARAGRAPHS TO CHECK:")) text = answerJudge(p);
   else if (p.includes("=== PARAGRAPH TO REWRITE FOR ANOTHER READER ===")) text = answerLevel(p);
   else if (p.includes("=== PAPER, IN NUMBERED PASSAGES ===")) text = answerOutline(p);
   else if (p.includes("=== PASSAGES THIS SECTION MAY USE ===")) text = answerSection(p);

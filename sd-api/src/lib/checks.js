@@ -17,6 +17,19 @@
  * which is a heuristic and says so; an article that cites none of them is
  * told which ones it left out. It is a check, not a refusal: some papers
  * state no limitations, and the scholar decides.
+ *
+ * ── Claims about the world ──────────────────────────────────────────────────
+ * A paragraph that goes beyond the paper may say what follows from it; it
+ * may not say what is done with it. "Is used in", "has led to", "is the
+ * basis of" are the wordings by which an implication turns into a fact about
+ * the world that the paper does not state. The reach judge looks for the
+ * same thing claim by claim; this is the cheap net under it, by wording,
+ * and labelled a heuristic.
+ *
+ * ── Budget ──────────────────────────────────────────────────────────────────
+ * An article that is mostly what follows from the paper is no longer about
+ * the paper. Paragraphs that go beyond it may not outnumber those drawn from
+ * it. A check, not a refusal: the scholar sees the count.
  */
 
 const CHECKS_VERSION = "checks-2026.1";
@@ -35,6 +48,14 @@ const LIMITATION_CUES = [
   /\blimitation/i, /\blimited\b/i, /\bnot (?:tested|measured|examined|evaluated|studied|assessed)\b/i, /\bdid not\b/i, /\bwas not\b/i, /\bwere not\b/i,
   /\bcannot\b/i, /\bcaveat/i, /\bdegrad/i, /\bfuture work\b/i, /\bfurther (?:work|study|research)\b/i, /\bremains? to be\b/i,
   /\bsmall sample\b/i, /\bsample size\b/i, /\bonly\b/i, /\bexpected to\b/i, /\bwould (?:present|require|need)\b/i, /\bassum/i,
+];
+
+/* Wordings by which an implication becomes a claim about the world. */
+const WORLD_CLAIM_CUES = [
+  /\b(?:is|are|was|were|has been|have been|being)\s+(?:now\s+|widely\s+|already\s+|commonly\s+|routinely\s+|still\s+)?(?:used|applied|adopted|deployed|employed|relied on|built into|found in|standard)\b/i,
+  /\b(?:has|have|had)\s+(?:since\s+|already\s+)?(?:led|contributed|given rise)\s+to\b/i,
+  /\b(?:is|are|became|become)\s+(?:the|a)\s+(?:basis|foundation|standard|backbone)\s+(?:of|for)\b/i,
+  /\b(?:today|nowadays)\b[^.!?]{0,50}\b(?:engineers|companies|manufacturers|networks|phones|devices)\b[^.!?]{0,30}\b(?:use|rely|depend)\b/i,
 ];
 
 const plain = (html) =>
@@ -140,4 +161,48 @@ function limitationsCoverage({ blocks, passages }) {
   };
 }
 
-module.exports = { CHECKS_VERSION, NUMBER_WORDS, numbersIn, numericConsistency, limitationPassages, limitationsCoverage };
+/**
+ * Sentences in paragraphs that go beyond the paper which read as claims
+ * about the world rather than implications. A heuristic, and labelled so.
+ * @returns {{version: string, heuristic: true, checked: number, hits: {block: number, sentence: string}[], ok: boolean|null}}
+ */
+function worldClaims({ blocks }) {
+  const hits = [];
+  let checked = 0;
+  (blocks || []).forEach((b, i) => {
+    if (b.type !== "paragraph" || !b.extension) return;
+    checked += 1;
+    for (const sentence of plain(b.html).split(/(?<=[.!?])\s+/)) {
+      if (WORLD_CLAIM_CUES.some((re) => re.test(sentence))) hits.push({ block: i + 1, sentence: sentence.trim().slice(0, 200) });
+    }
+  });
+  return { version: CHECKS_VERSION, heuristic: true, checked, hits, ok: checked ? hits.length === 0 : null };
+}
+
+/**
+ * Paragraphs that go beyond the paper against those drawn from it.
+ * @returns {{version: string, extension: number, paper: number, ok: boolean|null, sentence: string|null}}
+ */
+function extensionBudget({ blocks }) {
+  let extension = 0;
+  let paper = 0;
+  for (const b of blocks || []) {
+    if (b.type !== "paragraph" || b.ownView || !Array.isArray(b.sourceRefs) || !b.sourceRefs.length) continue;
+    if (b.extension) extension += 1;
+    else paper += 1;
+  }
+  if (!extension) return { version: CHECKS_VERSION, extension, paper, ok: null, sentence: null };
+  const ok = extension <= paper;
+  const goes = extension === 1 ? "goes" : "go";
+  return {
+    version: CHECKS_VERSION,
+    extension,
+    paper,
+    ok,
+    sentence: ok
+      ? `${extension} paragraph${extension === 1 ? "" : "s"} ${goes} beyond the paper, against ${paper} drawn from it.`
+      : `${extension} paragraph${extension === 1 ? "" : "s"} ${goes} beyond the paper and only ${paper} ${paper === 1 ? "is" : "are"} drawn from it. An article should rest mostly on what the paper says.`,
+  };
+}
+
+module.exports = { CHECKS_VERSION, NUMBER_WORDS, WORLD_CLAIM_CUES, numbersIn, numericConsistency, limitationPassages, limitationsCoverage, worldClaims, extensionBudget };

@@ -829,6 +829,100 @@ test("a first-person draft is refused end to end, with a sentence", async () => 
   }
 });
 
+test("a brief that asks what the work means gets a section beyond the paper, judged for reach, written only for the ages asked for, and ledgered apart", async () => {
+  /* Its own database and cap: the shared one is at its daily limit by now. */
+  const tokens = await seed("sd_e2e_beyond");
+  const own = await startApi({ DRAFT_DAILY_CAP: "10", MONGODB_DB: "sd_e2e_beyond" });
+  const prev = base;
+  const prevCookie = cookie;
+  base = own.url;
+  cookie = tokens.token;
+  try {
+    const created = await call("POST", "/api/drafting/jobs", {
+      body: { origin: "harvested", sourceId: "src-e2e-3", audience: "adults", brief: "explain why this matters for anyone using a phone in a crowded place", createStory: true, levels: ["ages_8_11", "adults"] },
+    });
+    assert.equal(created.status, 202, JSON.stringify(created.data));
+    assert.deepEqual(created.data.job.levelsRequested, ["ages_8_11"], "the story's own band is never a level of itself");
+    const bands = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-3", audience: "adults", createStory: true, levels: ["toddlers"] } });
+    assert.equal(bands.status, 400, "unknown bands are refused");
+    const badVoice = await call("POST", "/api/drafting/jobs", { body: { origin: "harvested", sourceId: "src-e2e-3", audience: "adults", voice: "ghostwritten" } });
+    assert.equal(badVoice.status, 400, "a draft is the scholar's own account or about them, nothing else");
+    assert.equal(created.data.job.voice, "author", "the scholar's own account is the default");
+
+    const frames = await readEvents(`/api/drafting/jobs/${created.data.job.id}/events`);
+    const done = frames[frames.length - 1].data;
+    assert.equal(done.status, "published", JSON.stringify(done.failure || done.warnings));
+    const planned = frames.find((f) => f.event === "progress" && f.data.step === "plan_outline" && f.data.beats);
+    assert.equal(planned.data.extensions, 1, "one section beyond the paper");
+    assert.equal(planned.data.coverage, "full");
+    assert.ok(frames.some((f) => f.event === "progress" && f.data.step === "judge_reach"), "the reach judge ran");
+    assert.ok(frames.some((f) => f.event === "progress" && f.data.step === "draft_levels" && f.data.audience === "ages_8_11"), JSON.stringify(frames.filter((f) => f.data?.step === "draft_levels").map((f) => f.data)));
+    assert.ok(!frames.some((f) => f.event === "progress" && f.data.step === "draft_levels" && f.data.audience !== "ages_8_11"), "only the band asked for was written");
+    assert.ok(!done.warnings.some((w) => /brief|beyond/.test(w)), done.warnings.join(" | "));
+
+    const story = (await call("GET", `/api/editorial-stories/${done.storyId}`)).data.story;
+
+    /* The article goes out under the scholar's byline, so the prose never
+       refers to them — and with no name there is no pronoun to get wrong. */
+    assert.equal(story.provenance.voice, "author", "the voice is on the record, so levels and the agent keep it");
+    const prose = story.bodyBlocks.filter((b) => b.type === "paragraph" || b.type === "quote").map((b) => b.html).join(" ");
+    assert.ok(!/Test Scholar/i.test(prose), prose.slice(0, 300));
+    assert.equal(story.draftChecks.pronouns.ok, null, "nothing to be inconsistent about when nobody is named");
+    assert.ok(!done.warnings.some((w) => /wrong about a real person/.test(w)), done.warnings.join(" | "));
+    /* The fake lifts the paper's sentences verbatim, and this paper says "The
+       authors note that…". An article under the author's own byline may not,
+       so the check fires — and says which sentence, rather than losing the
+       draft over it. */
+    const named = done.warnings.filter((w) => /refers to you by name/.test(w));
+    assert.equal(named.length, 1, done.warnings.join(" | "));
+    assert.match(named[0], /The authors note that performance degrades/);
+
+    const extension = story.bodyBlocks.filter((b) => b.extension);
+    assert.equal(extension.length, 1, JSON.stringify(story.bodyBlocks.map((b) => [b.type, b.extension])));
+    assert.equal(extension[0].reach.verdict, "follows");
+    assert.ok(extension[0].reach.claims.length >= 1, "claim by claim");
+    assert.ok(extension[0].reach.claims.every((c) => c.verdict === "follows" && c.anchorIds.length), JSON.stringify(extension[0].reach));
+    assert.equal(extension[0].fidelity, null, "never both verdicts");
+    assert.ok(extension[0].sourceRefs.length >= 1, "an implication names the passages it builds on");
+    assert.ok(story.bodyBlocks.filter((b) => b.type === "paragraph" && !b.extension).every((b) => b.fidelity?.verdict === "supported"), "the paper's paragraphs are still the fidelity judge's");
+    assert.equal(story.draftChecks.budget.ok, true, JSON.stringify(story.draftChecks.budget));
+    assert.equal(story.draftChecks.worldClaims.ok, true);
+
+    /* The level asked for, and only it; the implication is rewritten for a child and checked again. */
+    assert.deepEqual(story.levels.map((l) => l.audience), ["ages_8_11"]);
+    const level = story.levels[0];
+    const i = story.bodyBlocks.findIndex((b) => b.extension);
+    assert.equal(level.blocks[i].extension, true, "a child's version says what goes beyond the paper too");
+    assert.equal(level.blocks[i].reach.verdict, "follows");
+    assert.ok(!level.blocks[i].fidelity);
+    assert.deepEqual(level.reach, { paragraphs: 1, follows: 1, partial: 0, overreach: 0 });
+    assert.ok(level.fidelity.supported >= 1, JSON.stringify(level.fidelity));
+
+    /* The ledger tells the two kinds apart, and the rule checks cover both. */
+    const evidence = await call("GET", `/api/editorial-stories/${done.storyId}/evidence`);
+    assert.equal(evidence.status, 200);
+    assert.equal(evidence.data.manifest.totals.extension, 1, JSON.stringify(evidence.data.manifest.totals));
+    assert.ok(evidence.data.manifest.totals.follows >= 1, JSON.stringify(evidence.data.manifest.totals));
+    assert.equal(evidence.data.manifest.totals.overreach, 0);
+    assert.equal(evidence.data.manifest.models.reach, "reach-judge-2026.1");
+    assert.equal(evidence.data.checks.budget.extension, 1);
+    assert.equal(evidence.data.checks.worldClaims.checked, 1);
+
+    /* Any subset later, from the workspace: each written on its own. */
+    const more = await call("POST", `/api/editorial-stories/${done.storyId}/levels`, { body: { audiences: ["ages_15_18"], baseVersion: story.version } });
+    assert.equal(more.status, 200, JSON.stringify(more.data));
+    assert.deepEqual(more.data.written, ["ages_15_18"]);
+    assert.deepEqual(more.data.story.levels.map((l) => l.audience).sort(), ["ages_15_18", "ages_8_11"]);
+    const approved = await call("POST", `/api/editorial-stories/${done.storyId}/levels/approve`, { body: { audiences: ["ages_8_11", "ages_15_18"], baseVersion: more.data.story.version } });
+    assert.equal(approved.status, 200, JSON.stringify(approved.data));
+    assert.deepEqual(approved.data.approved.sort(), ["ages_15_18", "ages_8_11"], "several ages approved at once");
+  } finally {
+    base = prev;
+    cookie = prevCookie;
+    own.child.kill();
+  }
+});
+
 test("in pilot mode a scholar outside the list sees the inventory but cannot draft", async () => {
   const pilot = await startApi({ DRAFTING_ROLLOUT: "pilot", DRAFTING_PILOT_PROFILES: "someone-else" });
   const prev = base;

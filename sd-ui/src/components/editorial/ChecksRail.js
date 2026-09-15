@@ -16,13 +16,30 @@ import { checkStoryRecord } from "@/lib/drafting";
 export function summariseBlocks(blocks) {
   const paragraphs = blocks.filter((b) => b.type !== "image" && b.type !== "subheading" && b.type !== "heading");
   const drafted = paragraphs.filter((b) => Array.isArray(b.sourceRefs) && b.sourceRefs.length);
-  const supported = drafted.filter((b) => b.fidelity?.verdict === "supported").length;
-  const partial = drafted.filter((b) => b.fidelity?.verdict === "partial").length;
-  const unsupported = drafted.filter((b) => b.fidelity?.verdict === "unsupported").length;
+  const paper = drafted.filter((b) => !b.extension);
+  const beyond = drafted.filter((b) => b.extension);
+  const supported = paper.filter((b) => b.fidelity?.verdict === "supported").length;
+  const partial = paper.filter((b) => b.fidelity?.verdict === "partial").length;
+  const unsupported = paper.filter((b) => b.fidelity?.verdict === "unsupported").length;
+  /* Paragraphs that go beyond the paper: judged to follow from it, or not. */
+  const follows = beyond.filter((b) => b.reach?.verdict === "follows").length;
+  const reachPartial = beyond.filter((b) => b.reach?.verdict === "partial").length;
+  const overreach = beyond.filter((b) => b.reach?.verdict === "overreach").length;
   const ownView = paragraphs.filter((b) => b.ownView).length;
   const edited = drafted.filter((b) => b.traceable === false).length;
   const uncited = paragraphs.length - drafted.length - ownView;
-  return { paragraphs: paragraphs.length, drafted: drafted.length, supported, partial, unsupported, ownView, edited, uncited, attention: partial + unsupported };
+  return {
+    paragraphs: paragraphs.length, drafted: drafted.length, supported, partial, unsupported,
+    extension: beyond.length, follows, reachPartial, overreach,
+    ownView, edited, uncited, attention: partial + unsupported + reachPartial + overreach,
+  };
+}
+
+/** Whether a drafted block still needs the scholar: short of supported, or short of following. */
+export function needsAttention(b) {
+  if (!Array.isArray(b.sourceRefs) || !b.sourceRefs.length) return false;
+  if (b.extension) return Boolean(b.reach) && b.reach.verdict !== "follows";
+  return Boolean(b.fidelity) && b.fidelity.verdict !== "supported";
 }
 
 function Meter({ assessment }) {
@@ -46,6 +63,9 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
   const [checkError, setCheckError] = useState("");
   const numbers = draftChecks?.numbers || null;
   const limitations = draftChecks?.limitations || null;
+  const worldClaims = draftChecks?.worldClaims || null;
+  const budget = draftChecks?.budget || null;
+  const pronouns = draftChecks?.pronouns || null;
   const levelsWritten = (levels || []).length;
   const levelsLive = (levels || []).filter((l) => l.approved && !l.stale).length;
   const levelsStale = (levels || []).filter((l) => l.stale).length;
@@ -60,7 +80,7 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
     onStoryChanged?.(r.data.story, alerts ? "The record has moved against this article's source. See the notice at the top." : "Checked against the record: nothing registered against the paper.");
   }
   const target = AUDIENCE_TARGETS[normaliseAudience(audience)];
-  const firstAttention = blocks.findIndex((b) => b.fidelity && b.fidelity.verdict !== "supported" && Array.isArray(b.sourceRefs) && b.sourceRefs.length);
+  const firstAttention = blocks.findIndex(needsAttention);
   return (
     <div className="ck-wrap">
       <span className="sc-kicker">Reading level</span>
@@ -80,6 +100,9 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
         <div className="ck-item"><span className="st-dot is-ok" /><span>{s.supported} paragraph{s.supported === 1 ? "" : "s"} supported by {s.supported === 1 ? "its" : "their"} passages</span></div>
         {s.partial ? <div className="ck-item"><span className="st-dot is-warn" /><span>{s.partial} partly supported · claims marked on the block</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
         {s.unsupported ? <div className="ck-item"><span className="st-dot is-bad" /><span>{s.unsupported} not supported by the paper · rewrite or remove</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
+        {s.extension ? <div className="ck-item"><span className={`st-dot ${s.follows === s.extension ? "is-ok" : "is-faint"}`} /><span>{s.follows} of {s.extension} paragraph{s.extension === 1 ? "" : "s"} beyond the paper follow{s.follows === 1 ? "s" : ""} from it · implications only</span></div> : null}
+        {s.reachPartial ? <div className="ck-item"><span className="st-dot is-warn" /><span>{s.reachPartial} partly follow{s.reachPartial === 1 ? "s" : ""} from the paper · the claims that go too far are marked</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
+        {s.overreach ? <div className="ck-item"><span className="st-dot is-bad" /><span>{s.overreach} go{s.overreach === 1 ? "es" : ""} beyond what the paper supports · rewrite or remove</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
         {s.edited ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.edited} paragraph{s.edited === 1 ? "" : "s"} rewritten by you beyond {s.edited === 1 ? "its" : "their"} source</span></div> : null}
         {s.ownView ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.ownView} marked as your own view</span></div> : null}
         {s.uncited ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.uncited} paragraph{s.uncited === 1 ? "" : "s"} written by hand, citing nothing</span></div> : null}
@@ -98,6 +121,26 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
           <span className={`st-dot ${limitations?.ok === true ? "is-ok" : limitations?.ok === false ? "is-warn" : "is-faint"}`} />
           <span>{limitations?.ok === true ? "Carries the paper's own caveats" : limitations?.ok === false ? "Cites none of the passages where the paper states its limitations" : "No limitations found in the paper by wording"}</span>
         </div>
+        {pronouns && pronouns.ok === false ? (
+          <div className="ck-item">
+            <span className="st-dot is-bad" />
+            <span>{pronouns.sentence}</span>
+            {pronouns.blocks?.length ? <button type="button" className="st-link" onClick={() => onGoTo?.(pronouns.blocks[0] - 1)}>Go to first</button> : null}
+          </div>
+        ) : null}
+        {budget && budget.ok !== null ? (
+          <div className="ck-item">
+            <span className={`st-dot ${budget.ok ? "is-ok" : "is-warn"}`} />
+            <span>{budget.sentence}</span>
+          </div>
+        ) : null}
+        {worldClaims && worldClaims.ok !== null ? (
+          <div className="ck-item">
+            <span className={`st-dot ${worldClaims.ok ? "is-ok" : "is-warn"}`} />
+            <span>{worldClaims.ok ? "Nothing beyond the paper reads as a claim about the world" : `${worldClaims.hits.length} sentence${worldClaims.hits.length === 1 ? "" : "s"} beyond the paper read${worldClaims.hits.length === 1 ? "s" : ""} as a claim about the world, not an implication`}</span>
+            {!worldClaims.ok ? <button type="button" className="st-link" onClick={() => onGoTo?.(worldClaims.hits[0].block - 1)}>Go to first</button> : null}
+          </div>
+        ) : null}
         <div className="ck-item"><span className="st-dot is-faint" /><span>These are from draft time.</span><button type="button" className="st-link" onClick={onOpenEvidence}>Check the current text</button></div>
       </div>
 

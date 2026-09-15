@@ -90,6 +90,11 @@ function Proposal({ turn, onAccept, onReject, busy, blocked = false }) {
               {c.supported} of {c.paragraphsChanged} written paragraph{c.paragraphsChanged === 1 ? "" : "s"} supported by the paper
             </span>
           ) : null}
+          {c.extensionsChanged ? (
+            <span className={c.overreach ? "block-chip is-lost" : c.reachPartial ? "block-chip is-partial" : "block-chip is-reach"}>
+              {c.follows} of {c.extensionsChanged} paragraph{c.extensionsChanged === 1 ? "" : "s"} beyond the paper follow{c.follows === 1 ? "s" : ""} from it
+            </span>
+          ) : null}
           {c.readability ? <span className={`block-chip ${c.readability.verdict === "pass" ? "" : c.readability.verdict === "warn" ? "is-partial" : "is-lost"}`}>reads at grade {c.readability.fkGrade} · target {c.readability.targetGrade}</span> : null}
           {c.imagesGenerated ? <span className="block-chip">{c.imagesGenerated} illustration{c.imagesGenerated === 1 ? "" : "s"} generated</span> : null}
           {c.refused ? <span className="block-chip is-lost">{c.refused} step{c.refused === 1 ? "" : "s"} refused by the rules</span> : null}

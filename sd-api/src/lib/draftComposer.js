@@ -2,14 +2,38 @@
  * "Draft from my research" — the prompt, and the checks on what comes back.
  *
  * ── What this turns a paper into ───────────────────────────────────────────
- * A first draft of an article ABOUT the paper, for a public reader, that the
- * scholar then edits and publishes under their own byline. It is deliberately
- * not an article AS the scholar: `voiceStanding.js` draws the line that
- * Archivyn may write about a living scholar by default and as them only with
- * standing, and no scholar has standing yet. So the draft is third person,
- * built only on what the paper says, and the scholar is the one who adds a
- * voice to it. A draft that starts "I found…" under a real name is a claim
- * the person did not make; that is the failure this file's checks exist for.
+ * A first draft of an article about the paper, for a public reader, that the
+ * scholar then edits and publishes under their own byline.
+ *
+ * ── Two voices, and the line between them ──────────────────────────────────
+ * `voiceStanding.js` draws the line that Archivyn may write ABOUT a living
+ * scholar by default and AS them only with standing, and no scholar has
+ * standing yet. A draft that starts "I found…" under a real name is a claim
+ * the person did not make. That rule still holds, in both voices here.
+ *
+ * But there is a third possibility that neither "about" nor "as" covers, and
+ * it is the one a scholar drafting their own paper actually wants:
+ *
+ *   VOICE.ABOUT   Someone else's account of the work. "Gupta found that…"
+ *                 Right for a profile, a catalogue entry, a piece the archive
+ *                 publishes in its own name.
+ *   VOICE.AUTHOR  The scholar's own account, impersonal. The work is
+ *                 described directly — "The method starts from Bartlett's
+ *                 spectrum" — and the author is never named, never given a
+ *                 pronoun, and never speaks as "I". The byline says who
+ *                 wrote it; the prose does not need to.
+ *
+ * AUTHOR is not impersonation, which is why it needs no standing: it puts no
+ * sentence in the scholar's mouth. It removes a narrator rather than adding
+ * one. It is also how scholars actually write popular accounts of their own
+ * work, and it fixes a failure ABOUT cannot avoid — an article bylined
+ * "Inder Gupta" whose prose says "Inder Gupta found a new way" reads as a
+ * press release about himself, and because each section is drafted by a
+ * separate call, the sections disagreed about his pronoun.
+ *
+ * Both voices ban the first person. AUTHOR additionally bans naming the
+ * author at all, and that ban is what makes the pronoun unguessable-and-
+ * therefore-unwrong.
  *
  * ── Why the checks are code, not prompt lines ──────────────────────────────
  * The prompt asks for third person and verbatim quotes. The model usually
@@ -25,7 +49,21 @@
  * reason the extraction pipeline stores its `profile_version`.
  */
 
-const PROMPT_VERSION = "2026-09-12.v1";
+const PROMPT_VERSION = "2026-09-14.v2";
+
+/**
+ * Whose account the article is. See the header.
+ *
+ * AUTHOR is the default for "draft from my research": the only papers this
+ * pipeline drafts from are the scholar's own, and the article goes out under
+ * their byline.
+ */
+const VOICE = { ABOUT: "about", AUTHOR: "author" };
+const DEFAULT_VOICE = VOICE.AUTHOR;
+
+function normaliseVoice(value) {
+  return value === VOICE.ABOUT || value === VOICE.AUTHOR ? value : DEFAULT_VOICE;
+}
 
 /** Who the draft is for, by age. One table shared with the readability gate and the UI. */
 const { AUDIENCES, DEFAULT_AUDIENCE, normaliseAudience } = require("./audiences");
@@ -87,7 +125,36 @@ function prepareSourceText(text, maxWords = LIMITS.MAX_SOURCE_WORDS) {
   return { text: trimmed, words: trimmed.split(/\s+/).length, truncated: true, totalWords: words.length };
 }
 
-function buildSystemInstruction() {
+/**
+ * @param {object} [p]
+ * @param {string} [p.voice]        VOICE.AUTHOR (default) or VOICE.ABOUT
+ * @param {string|null} [p.scholarName]  named in the AUTHOR rules so the model knows what not to write
+ */
+function buildSystemInstruction({ voice = DEFAULT_VOICE, scholarName = null } = {}) {
+  const name = scholarName || "the author";
+  if (normaliseVoice(voice) === VOICE.AUTHOR) {
+    return [
+      "You draft articles for Archivyn, a public archive that introduces readers to real, living scholars",
+      "through their own research. This article is the author's own account of their own paper, for a reader",
+      "who has not read it. It goes out under their byline, so the prose never refers to them at all.",
+      "",
+      "Rules that are checked after you answer:",
+      `1. Never name or refer to the author. No "${name}", no "the author", no "the researchers", no "he",`,
+      '   "she" or "they" standing for them. Write about the work, not the worker: not "Gupta\'s method finds',
+      '   weak signals" but "The method finds weak signals". A sentence that needs the author as its subject',
+      "   should take the work as its subject instead.",
+      '2. No first person either. No "I", "we", "my", "our" outside a verbatim quote. This is an impersonal',
+      "   account, not a memoir. Other researchers named in the paper may be named normally.",
+      "3. Every fact, number, name and claim must come from the paper you are given. Do not add background",
+      "   the paper does not state, and do not speculate about impact, motive or biography.",
+      "4. A quote block must be copied word for word from the paper. If you cannot quote exactly, paraphrase",
+      "   in a paragraph block instead. Quotes that are not in the paper are discarded.",
+      '5. No praise, no self-congratulation, no "groundbreaking" or "pioneering". The work speaks.',
+      "6. Where the paper describes limits, uncertainty, or open questions, include them.",
+      "",
+      "Return only the JSON object described by the schema.",
+    ].join("\n");
+  }
   return [
     "You draft articles for Archivyn, a public archive that introduces readers to real, living scholars",
     "through their own research. You are writing ABOUT a scholar's paper, for a reader who has not read it.",
@@ -182,6 +249,87 @@ function firstPersonSentences(text) {
       .map((w) => w.replace(/^[^A-Za-z']+|[^A-Za-z']+$/g, ""))
       .some((w) => FIRST_PERSON.has(w)),
   );
+}
+
+/* Ways an article refers to its own author without naming them. */
+const AUTHOR_NOUNS = /\b(?:the|this|its)\s+(?:present\s+|current\s+)?(?:author|authors|researcher|researchers|investigator|investigators|writer)\b/i;
+/* Singular personal pronouns. In an impersonal account there is rarely a
+   legitimate one, and the failure this guards is a real person's pronoun
+   being guessed — so they are reported, but as a warning, not a refusal. */
+const PERSONAL_PRONOUN = /\b(?:he|him|his|she|her|hers)\b/i;
+
+/** The forms a name is referred to by: the full name, and each part long enough to be distinctive. */
+function nameForms(scholarName) {
+  const full = String(scholarName || "").replace(/\s+/g, " ").trim();
+  if (!full) return [];
+  const parts = full.split(" ").filter((p) => p.replace(/[^A-Za-z]/g, "").length >= 3);
+  return [...new Set([full, ...parts])].filter(Boolean);
+}
+
+/**
+ * Sentences that refer to the article's own author, which VOICE.AUTHOR
+ * forbids. Two severities, because they deserve different answers:
+ *
+ *   named     the author is named, or called "the author". Unambiguous, and
+ *             the drafter is sent back to rewrite it.
+ *   pronouns  a gendered pronoun, which usually means the author crept in as
+ *             a subject but may legitimately refer to someone else the paper
+ *             names. Reported to the scholar, never a refusal — guessing
+ *             which is which is exactly the judgement a person should make.
+ *
+ * @param {string} text
+ * @param {string|null} scholarName
+ * @returns {{named: string[], pronouns: string[]}}
+ */
+function selfReferenceSentences(text, scholarName = null) {
+  const forms = nameForms(scholarName).map((f) => new RegExp(`\\b${f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"));
+  const named = [];
+  const pronouns = [];
+  for (const sentence of String(text || "").split(/(?<=[.!?])\s+/)) {
+    if (!sentence.trim()) continue;
+    if (forms.some((re) => re.test(sentence)) || AUTHOR_NOUNS.test(sentence)) named.push(sentence);
+    else if (PERSONAL_PRONOUN.test(sentence)) pronouns.push(sentence);
+  }
+  return { named, pronouns };
+}
+
+/**
+ * Whether an article written ABOUT a scholar keeps one pronoun for them
+ * throughout. Each section is drafted by its own call, so without this the
+ * sections can — and did — disagree: an article that said "he" for four
+ * sections and "she" for the last two went out under a real person's name.
+ *
+ * Says nothing about which pronoun is right; only that there must be one.
+ *
+ * @param {object[]} blocks   mapped blocks with `html`
+ * @returns {{version: string, used: string[], ok: boolean|null, sentence: string|null, blocks: number[]}}
+ */
+function pronounConsistency({ blocks }) {
+  const MASC = /\b(?:he|him|his)\b/i;
+  const FEM = /\b(?:she|her|hers)\b/i;
+  const seen = new Map();
+  for (const [i, b] of (blocks || []).entries()) {
+    if (b.type !== "paragraph" && b.type !== "quote") continue;
+    const text = String(b.html || "").replace(/<[^>]+>/g, " ");
+    if (MASC.test(text)) seen.set("he", [...(seen.get("he") || []), i + 1]);
+    if (FEM.test(text)) seen.set("she", [...(seen.get("she") || []), i + 1]);
+  }
+  const used = [...seen.keys()];
+  if (used.length <= 1) {
+    return { version: PROMPT_VERSION, used, ok: used.length === 1 ? true : null, sentence: null, blocks: [] };
+  }
+  /* Whichever is rarer is the one that slipped: name those blocks. */
+  const [minor] = [...seen.entries()].sort((a, b) => a[1].length - b[1].length);
+  return {
+    version: PROMPT_VERSION,
+    used,
+    ok: false,
+    blocks: minor[1],
+    sentence:
+      `This article calls the author "${used[0]}" in some paragraphs and "${used[1]}" in others — ` +
+      `"${minor[0]}" in block${minor[1].length === 1 ? "" : "s"} ${minor[1].join(", ")}. ` +
+      "One of them is wrong about a real person. Fix it before publishing.",
+  };
 }
 
 /** Whitespace, curly quotes and dashes collapsed so an honest quote survives
@@ -298,13 +446,19 @@ module.exports = {
   PROMPT_VERSION,
   AUDIENCES,
   DEFAULT_AUDIENCE,
+  VOICE,
+  DEFAULT_VOICE,
   LIMITS,
   RESPONSE_SCHEMA,
   normaliseAudience,
+  normaliseVoice,
   prepareSourceText,
   buildSystemInstruction,
   buildDraftPrompt,
   parseDraftResponse,
   firstPersonSentences,
+  nameForms,
+  selfReferenceSentences,
+  pronounConsistency,
   isVerbatim,
 };

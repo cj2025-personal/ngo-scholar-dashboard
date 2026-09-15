@@ -35,6 +35,11 @@
  * that cited nothing is unsupported before the judge is asked — there is
  * nothing to check it against.
  *
+ * A paragraph marked `extension` — one that says what follows from the
+ * paper rather than what it states — is not this judge's to check; it would
+ * fail here by design. The reach judge (`reach.js`) takes those, and each
+ * judge skips the other's kind.
+ *
  * ── Deterministic where it can be ───────────────────────────────────────────
  * No citation → unsupported, without a model call. A missing verdict from
  * the judge → unsupported, because silence is not support. One judge call
@@ -216,7 +221,7 @@ async function judgeSection({ blocks, passages, generate }) {
   const failing = [];
 
   out.forEach((block, i) => {
-    if (block.type !== "paragraph") return;
+    if (block.type !== "paragraph" || block.extension) return;
     const refs = (block.sourceRefs || []).map((r) => r.passageId).filter((id) => byId.has(id));
     if (refs.length === 0) {
       block.fidelity = {

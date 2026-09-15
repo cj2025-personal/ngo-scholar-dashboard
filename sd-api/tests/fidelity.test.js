@@ -103,3 +103,16 @@ test("the retry note quotes the unsupported claims back to the drafter", () => {
   assert.match(note, /leave it out/);
   assert.match(buildJudgePrompt({ paragraphs: [{ index: 1, text: "x" }], passages }), /for each of the 1 paragraph/);
 });
+
+test("a paragraph that goes beyond the paper is not this judge's: it is left untouched, without a model call", async () => {
+  let called = 0;
+  const r = await judgeSection({
+    blocks: [{ ...block("Which means any crowded band faces the same problem.", ["p1"]), extension: true }],
+    passages,
+    generate: async () => { called += 1; return { text: "{}" }; },
+  });
+  assert.equal(called, 0);
+  assert.equal(r.call, null);
+  assert.deepEqual(r.failing, []);
+  assert.equal(r.blocks[0].fidelity, undefined);
+});

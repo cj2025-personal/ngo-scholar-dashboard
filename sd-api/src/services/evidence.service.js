@@ -14,8 +14,10 @@ const { ApiError } = require("../lib/api-error");
 const { env } = require("../config/env");
 const ledger = require("../lib/evidenceLedger");
 const { FIDELITY_VERSION } = require("../lib/fidelity");
+const { REACH_VERSION } = require("../lib/reach");
 const { AGENT_VERSION } = require("../lib/storyAgent");
 const checksLib = require("../lib/checks");
+const composer = require("../lib/draftComposer");
 const { serializeMongoValue } = require("../lib/serialize");
 const { passagesFor } = require("./passages.service");
 
@@ -52,7 +54,7 @@ async function buildEvidence(db, storyDoc) {
     story: mapped,
     revisions,
     passages,
-    versions: { drafter: storyDoc.provenance?.graph_version || null, judge: FIDELITY_VERSION, agent: AGENT_VERSION },
+    versions: { drafter: storyDoc.provenance?.graph_version || null, judge: FIDELITY_VERSION, reach: REACH_VERSION, agent: AGENT_VERSION },
     keyId: k ? k.keyId : null,
   });
   return {
@@ -65,6 +67,11 @@ async function buildEvidence(db, storyDoc) {
     checks: {
       numbers: checksLib.numericConsistency({ blocks: mapped.bodyBlocks, passages }),
       limitations: checksLib.limitationsCoverage({ blocks: mapped.bodyBlocks, passages }),
+      worldClaims: checksLib.worldClaims({ blocks: mapped.bodyBlocks }),
+      budget: checksLib.extensionBudget({ blocks: mapped.bodyBlocks }),
+      /* Measured on the text as it stands, so an edit that fixes a pronoun
+         clears the notice without a redraft. */
+      pronouns: composer.pronounConsistency({ blocks: mapped.bodyBlocks }),
     },
   };
 }

@@ -55,6 +55,19 @@ export const DRAFT_AUDIENCES = [
 export const DEFAULT_AUDIENCE = "adults";
 
 /**
+ * Whose account the article is. Mirrors the server's table; the server decides.
+ *
+ * "author" is the default and the reason the feature exists: the scholar
+ * publishes it under their own byline, so the prose never refers to them.
+ * "about" is the archive's own account of their work, in the third person.
+ */
+export const DRAFT_VOICES = [
+  { value: "author", label: "My own account", hint: "Published under your byline. The article never names you or calls you “he” or “she” — it describes the work." },
+  { value: "about", label: "An account about me", hint: "Written about you in the third person, as the archive would describe your work to a reader." },
+];
+export const DEFAULT_VOICE = "author";
+
+/**
  * Draft an article from one source marked ready — the synchronous path.
  *
  * Kept for tooling; the composer uses the job path below, which survives a
@@ -74,13 +87,14 @@ export async function draftFromSource({ origin, sourceId, audience }) {
  * Start a draft job. 202 with `{ job, reused }`; `reused` means an identical
  * request already ran. With `approveOutline` the job pauses at
  * `awaiting_outline`; with `createStory` (the default) the finished draft
- * becomes a draft story and the job carries its `storyId`.
+ * becomes a draft story and the job carries its `storyId`. `levels` is true
+ * for every other reading age, or the bands to write, each on its own.
  */
-export async function createDraftJob({ origin, sourceId, audience, brief = null, approveOutline = false, createStory = true, levels = false }) {
+export async function createDraftJob({ origin, sourceId, audience, voice = DEFAULT_VOICE, brief = null, approveOutline = false, createStory = true, levels = false }) {
   return request("/api/drafting/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ origin, sourceId, audience, brief, approveOutline, createStory, levels }),
+    body: JSON.stringify({ origin, sourceId, audience, voice, brief, approveOutline, createStory, levels }),
   });
 }
 
@@ -311,6 +325,7 @@ const STEP_LABELS = {
   plan_outline: "Planning the article's sections…",
   draft_blocks: "Drafting sections…",
   judge_fidelity: "Checking the draft against the paper…",
+  judge_reach: "Checking what the draft draws from the paper…",
   assemble: "Assembling the draft…",
   verify: "Checking reading level…",
   create_story: "Opening the draft in your workspace…",

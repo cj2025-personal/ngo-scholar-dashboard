@@ -32,7 +32,7 @@
 
 const crypto = require("crypto");
 
-const LEDGER_VERSION = "evidence-ledger-2026.1";
+const LEDGER_VERSION = "evidence-ledger-2026.2";
 
 /* ── canonical JSON ─────────────────────────────────────────────────────── */
 
@@ -108,26 +108,47 @@ function publicKeyPem(keys) {
 function buildManifest({ story, revisions = [], passages = [], versions = {}, keyId = null, generatedAt = new Date() }) {
   const blocks = Array.isArray(story?.bodyBlocks) ? story.bodyBlocks : [];
   const paragraphs = [];
-  let totals = { paragraphs: 0, cited: 0, uncited: 0, own_view: 0, claims: 0, supported: 0, unsupported: 0 };
+  /* Two ledgers in one: claims drawn from the paper, judged supported or
+     not; and claims that go beyond it, judged to follow from it or not.
+     `cited` counts paragraphs drawn from the paper; `extension` counts
+     those built on it. A reader who wants only what the paper says can
+     tell the two apart, paragraph by paragraph. */
+  let totals = { paragraphs: 0, cited: 0, extension: 0, uncited: 0, own_view: 0, claims: 0, supported: 0, unsupported: 0, follows: 0, overreach: 0 };
 
   blocks.forEach((b, i) => {
     if (b.type === "image") return;
     const text = plain(b.html);
     const cited = (Array.isArray(b.sourceRefs) ? b.sourceRefs : []).map((r) => r.passageId);
-    const claims = (Array.isArray(b.fidelity?.claims) ? b.fidelity.claims : []).map((c) => ({
-      text: c.text,
-      verdict: c.verdict,
-      passage_ids: Array.isArray(c.passageIds) ? c.passageIds : [],
-      evidence: c.evidence || "",
-    }));
+    const extension = Boolean(b.extension);
+    const claims = extension
+      ? (Array.isArray(b.reach?.claims) ? b.reach.claims : []).map((c) => ({
+          text: c.text,
+          verdict: c.verdict,
+          reason: c.reason || null,
+          passage_ids: Array.isArray(c.anchorIds) ? c.anchorIds : [],
+          evidence: "",
+        }))
+      : (Array.isArray(b.fidelity?.claims) ? b.fidelity.claims : []).map((c) => ({
+          text: c.text,
+          verdict: c.verdict,
+          passage_ids: Array.isArray(c.passageIds) ? c.passageIds : [],
+          evidence: c.evidence || "",
+        }));
     const isProse = b.type === "paragraph";
     if (isProse) {
       totals.paragraphs += 1;
-      if (cited.length) totals.cited += 1; else totals.uncited += 1;
+      if (!cited.length) totals.uncited += 1;
+      else if (extension) totals.extension += 1;
+      else totals.cited += 1;
       if (b.ownView) totals.own_view += 1;
       totals.claims += claims.length;
-      totals.supported += claims.filter((c) => c.verdict === "supported").length;
-      totals.unsupported += claims.filter((c) => c.verdict !== "supported").length;
+      if (extension) {
+        totals.follows += claims.filter((c) => c.verdict === "follows").length;
+        totals.overreach += claims.filter((c) => c.verdict !== "follows").length;
+      } else {
+        totals.supported += claims.filter((c) => c.verdict === "supported").length;
+        totals.unsupported += claims.filter((c) => c.verdict !== "supported").length;
+      }
     }
     paragraphs.push({
       index: i + 1,
@@ -135,9 +156,10 @@ function buildManifest({ story, revisions = [], passages = [], versions = {}, ke
       hash: sha256(text),
       words: text ? text.split(/\s+/).length : 0,
       cited,
-      verdict: b.fidelity?.verdict || null,
+      verdict: (extension ? b.reach?.verdict : b.fidelity?.verdict) || null,
       traceable: typeof b.traceable === "boolean" ? b.traceable : null,
       own_view: Boolean(b.ownView),
+      extension,
       claims,
     });
   });
@@ -189,6 +211,7 @@ function buildManifest({ story, revisions = [], passages = [], versions = {}, ke
     models: {
       drafter: versions.drafter || null,
       judge: versions.judge || null,
+      reach: versions.reach || null,
       agent: versions.agent || null,
     },
     content_hash: sha256(canonicalJson(paragraphs.map((p) => [p.index, p.kind, p.hash]))),
@@ -242,7 +265,8 @@ function summarySentence(manifest) {
   if (!t.paragraphs) return "This story carries no evidence ledger.";
   const claims = t.claims || 0;
   if (!claims) return `${t.paragraphs} paragraph${t.paragraphs === 1 ? "" : "s"}, ${t.cited} drawn from the paper; no individual claims were recorded.`;
-  return `${claims} claim${claims === 1 ? "" : "s"} checked against the paper, ${t.supported} supported` + (t.unsupported ? `, ${t.unsupported} not` : "") + `. Approved by ${manifest.approval?.by || "the author"} as version ${manifest.story?.version}.`;
+  const beyond = t.follows || t.overreach ? `; ${t.follows || 0} implication${t.follows === 1 ? "" : "s"} follow${t.follows === 1 ? "s" : ""} from it` + (t.overreach ? `, ${t.overreach} ${t.overreach === 1 ? "goes" : "go"} too far` : "") : "";
+  return `${claims} claim${claims === 1 ? "" : "s"} checked against the paper, ${t.supported} supported` + (t.unsupported ? `, ${t.unsupported} not` : "") + `${beyond}. Approved by ${manifest.approval?.by || "the author"} as version ${manifest.story?.version}.`;
 }
 
 module.exports = {

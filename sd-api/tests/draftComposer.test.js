@@ -108,13 +108,55 @@ test("a contributed upload is described as the scholar's own", () => {
   assert.match(p, /from their own upload/);
 });
 
-test("the system instruction states the rules the parser enforces", () => {
-  const s = buildSystemInstruction();
-  assert.match(s, /Third person only/);
-  assert.match(s, /word for word/);
-  assert.match(s, /No praise/);
+test("the system instruction states the rules the parser enforces, in the voice asked for", () => {
+  /* The default is the scholar's own account: the pipeline only ever drafts
+     from their own paper, and it goes out under their byline. */
+  const own = buildSystemInstruction({ scholarName: "Test Scholar" });
+  assert.match(own, /Never name or refer to the author/);
+  assert.match(own, /"Test Scholar"/);
+  assert.match(own, /No first person either/);
+  assert.ok(!/Third person only/.test(own), "an impersonal account is not a third-person one");
+
+  const about = buildSystemInstruction({ voice: "about" });
+  assert.match(about, /Third person only/);
+  assert.ok(!/Never name or refer to the author/.test(about));
+
+  for (const s of [own, about]) {
+    assert.match(s, /word for word/);
+    assert.match(s, /No praise/);
+  }
+  assert.equal(buildSystemInstruction({ voice: "nonsense" }), own.replace(/"Test Scholar"/g, '"the author"'), "an unknown voice falls back to the default");
   assert.equal(typeof PROMPT_VERSION, "string");
   assert.deepEqual(RESPONSE_SCHEMA.required, ["title", "deck", "blocks"]);
+});
+
+test("an article published as the scholar's own work may not refer to them; a pronoun is reported, not refused", () => {
+  const { selfReferenceSentences, nameForms } = require("../src/lib/draftComposer");
+  assert.deepEqual(nameForms("Inder Jeet Gupta"), ["Inder Jeet Gupta", "Inder", "Jeet", "Gupta"]);
+  assert.deepEqual(nameForms(" "), []);
+
+  const r = selfReferenceSentences(
+    "The method builds a dictionary. Gupta built a dictionary. The authors note a limit. He tested it on four signals. Bartlett's method came first.",
+    "Inder Gupta",
+  );
+  assert.deepEqual(r.named, ["Gupta built a dictionary.", "The authors note a limit."]);
+  assert.deepEqual(r.pronouns, ["He tested it on four signals."]);
+  assert.deepEqual(selfReferenceSentences("The method finds weak signals beside strong ones.", "Inder Gupta"), { named: [], pronouns: [] });
+  /* A name is matched whole: "Gupta" does not hide inside another word. */
+  assert.deepEqual(selfReferenceSentences("The guptagram is unrelated.", "Inder Gupta").named, []);
+});
+
+test("an article written about a scholar must not change their pronoun halfway through", () => {
+  const { pronounConsistency } = require("../src/lib/draftComposer");
+  const p = (html) => ({ type: "paragraph", html });
+  assert.equal(pronounConsistency({ blocks: [p("He built the array."), p("His method worked.")] }).ok, true);
+  assert.equal(pronounConsistency({ blocks: [p("The method worked.")] }).ok, null, "no pronoun at all is nothing to be inconsistent about");
+
+  const mixed = pronounConsistency({ blocks: [p("He built it."), p("His method worked."), p("Later, she tested it."), { type: "subheading", html: "she" }] });
+  assert.equal(mixed.ok, false);
+  assert.deepEqual(mixed.used, ["he", "she"]);
+  assert.deepEqual(mixed.blocks, [3], "the rarer pronoun is the one that slipped; headings are not prose");
+  assert.match(mixed.sentence, /One of them is wrong about a real person/);
 });
 
 /* ── voice check ───────────────────────────────────────────────────────── */

@@ -11,6 +11,7 @@
 const { ApiError } = require("../lib/api-error");
 const levels = require("../lib/levels");
 const fidelity = require("../lib/fidelity");
+const reach = require("../lib/reach");
 const composer = require("../lib/draftComposer");
 const { assessDraftReadability } = require("../lib/draftReadability");
 const { AUDIENCES, normaliseAudience } = require("../lib/audiences");
@@ -48,17 +49,22 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
 
   const mapped = editorial.mapStoryDocument(storyDoc, author, provenance);
   const sourceAudience = normaliseAudience(storyDoc.provenance?.audience);
+  /* A level is the same article for another reader, so it keeps the voice the
+     article was written in. Stories drafted before voices existed are "about". */
+  const voice = composer.normaliseVoice(storyDoc.provenance?.voice || composer.VOICE.ABOUT);
   const targets = levels.targetsFor(sourceAudience, audiences);
   if (!targets.length) throw new ApiError(400, "No reading level to write: every band asked for is the one the story is already written for.");
   const toRewrite = levels.levelPlan(mapped.bodyBlocks).filter((p) => p.rewrite);
   if (!toRewrite.length) throw new ApiError(409, "Nothing in this story is still drawn from the paper, so there is nothing to rewrite for another reader.");
 
-  const system = composer.buildSystemInstruction();
+  const system = composer.buildSystemInstruction({ voice, scholarName: author?.name || null });
   const made = {};
   const calls = [];
 
   for (const audience of targets) {
-    await onProgress({ step: "draft_levels", message: `Writing it for ${AUDIENCES[audience].label.toLowerCase()}…`, audience });
+    /* `detail` is what the job's event log keeps beside the step, so the
+       composer can say which band is being written. */
+    await onProgress({ step: "draft_levels", message: `Writing it for ${AUDIENCES[audience].label.toLowerCase()}…`, detail: { audience }, audience });
     const rewrites = new Map();
     const warnings = [];
 
@@ -66,7 +72,7 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
       const block = mapped.bodyBlocks[index];
       let parsed = null;
       for (let attempt = 0; attempt <= VOICE_RETRIES; attempt += 1) {
-        const prompt = levels.buildLevelPrompt({ scholar: { name: author?.name }, title: mapped.title, block, passages, audience, sourceAudience, strictVoice: attempt > 0 });
+        const prompt = levels.buildLevelPrompt({ scholar: { name: author?.name }, title: mapped.title, block, passages, audience, sourceAudience, voice, strictVoice: attempt > 0 });
         const r = await gen({ prompt, systemInstruction: system, responseSchema: levels.LEVEL_SCHEMA, temperature: attempt ? 0.2 : 0.4, maxOutputTokens: 1024 });
         calls.push({ step: "draft_levels", audience, block: index + 1, usage: r.usage || null, model: r.modelVersion || null });
         parsed = levels.parseLevelResponse(r.text);
@@ -84,16 +90,23 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
 
     /* Judge the rewritten paragraphs claim by claim, a few at a time: claims
        with quoted evidence add up, and one call for a whole article cut the
-       judge's answer off mid-JSON. */
+       judge's answer off mid-JSON. Paragraphs drawn from the paper go to the
+       fidelity judge and paragraphs that go beyond it to the reach judge;
+       each skips the other's kind. */
     const draft = levels.assembleLevel({ blocks: mapped.bodyBlocks, rewrites });
     const judgeIndexes = [...rewrites.keys()];
     for (let start = 0; start < judgeIndexes.length; start += fidelity.JUDGE_BATCH) {
       const batch = judgeIndexes.slice(start, start + fidelity.JUDGE_BATCH);
-      const judged = await fidelity.judgeSection({ blocks: batch.map((i) => draft[i]), passages, generate: gen });
-      if (judged.call) calls.push({ ...judged.call, audience });
-      batch.forEach((i, k) => { draft[i] = judged.blocks[k]; });
+      const judgedF = await fidelity.judgeSection({ blocks: batch.map((i) => draft[i]), passages, generate: gen });
+      if (judgedF.call) calls.push({ ...judgedF.call, audience });
+      const judgedR = await reach.judgeSection({ blocks: judgedF.blocks, passages, audience, generate: gen });
+      if (judgedR.call) calls.push({ ...judgedR.call, audience });
+      batch.forEach((i, k) => { draft[i] = judgedR.blocks[k]; });
     }
-    const verdicts = judgeIndexes.map((i) => draft[i].fidelity?.verdict || null);
+    const paperIndexes = judgeIndexes.filter((i) => !draft[i].extension);
+    const reachIndexes = judgeIndexes.filter((i) => draft[i].extension);
+    const verdicts = paperIndexes.map((i) => draft[i].fidelity?.verdict || null);
+    const reachVerdicts = reachIndexes.map((i) => draft[i].reach?.verdict || null);
 
     const prose = draft.filter((b) => b.type === "paragraph").map((b) => levels.plain(b.html)).join("\n\n");
     const readability = assessDraftReadability({ text: prose, audience });
@@ -111,6 +124,12 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
         supported: verdicts.filter((v) => v === "supported").length,
         partial: verdicts.filter((v) => v === "partial").length,
         unsupported: verdicts.filter((v) => v === "unsupported").length,
+      },
+      reach: {
+        paragraphs: reachVerdicts.length,
+        follows: reachVerdicts.filter((v) => v === "follows").length,
+        partial: reachVerdicts.filter((v) => v === "partial").length,
+        overreach: reachVerdicts.filter((v) => v === "overreach").length,
       },
       generated_at: new Date(),
       model: calls[calls.length - 1]?.model || null,

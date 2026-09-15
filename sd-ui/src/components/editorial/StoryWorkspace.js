@@ -100,6 +100,7 @@ function collectInlineImagePayload(bodyBlocks) {
         type: block.type,
         html: block.html || "",
         ...(block.sourceRefs ? { sourceRefs: block.sourceRefs, draftedText: block.draftedText || "", fidelity: block.fidelity || null } : {}),
+        ...(block.sourceRefs && block.extension ? { extension: true, reach: block.reach || null } : {}),
         ...(block.ownView ? { ownView: true } : {}),
       });
       continue;

@@ -41,8 +41,20 @@ test("the prompt shows only the cited passages, the paragraph in plain text, and
   assert.ok(prompt.endsWith("The array improved the signal by eleven decibels."), "plain text, no markup");
   assert.match(prompt, /children aged 8 to 11/);
   assert.match(prompt, /curious newspaper reader/);
-  assert.match(prompt, /never as Test Scholar/);
   assert.match(levels.buildLevelPrompt({ block: blocks[1], passages, audience: "adults", sourceAudience: "adults", strictVoice: true }), /previous attempt used first-person/);
+});
+
+test("a level keeps the voice the article was written in", () => {
+  const args = { scholar: { name: "Test Scholar" }, title: "T", block: blocks[1], passages, audience: "ages_8_11", sourceAudience: "adults" };
+  /* The scholar's own account, which is the default: the author is nowhere in it. */
+  const own = levels.buildLevelPrompt(args);
+  assert.match(own, /Never refer to the author/);
+  assert.match(own, /"Test Scholar"/);
+  assert.ok(!/never as Test Scholar/.test(own));
+
+  const about = levels.buildLevelPrompt({ ...args, voice: "about" });
+  assert.match(about, /never as Test Scholar/);
+  assert.ok(!/Never refer to the author/.test(about));
 });
 
 test("a level lines up block for block, rewritten paragraphs keep their passages, and everything else is carried", () => {
@@ -82,4 +94,33 @@ test("a level records what it was made from, and an edit to the article makes it
   assert.equal(levels.staleness({}, blocks).stale, true, "a level with no record of its source is stale");
   const markupOnly = blocks.map((b, i) => (i === 1 ? { ...b, html: "The array improved the signal by <i>eleven</i> decibels." } : b));
   assert.equal(levels.staleness(level, markupOnly).stale, false, "markup is not a change; the words are");
+});
+
+test("a paragraph that goes beyond the paper is rewritten for the reader too, with its implications kept, and keeps its kind", () => {
+  const ext = { type: "paragraph", html: "Which means any crowded band faces the same limit.", sourceRefs: [{ passageId: "p2" }], traceable: true, draftedText: "Which means any crowded band faces the same limit.", extension: true, reach: { verdict: "follows", claims: [] } };
+  const withExt = [...blocks, ext];
+  const plan = levels.levelPlan(withExt);
+  assert.equal(plan[6].rewrite, true, "a child's version must not carry an adult's implication untouched");
+  assert.equal(plan[6].extension, true);
+  assert.equal(plan[1].extension, false);
+
+  const prompt = levels.buildLevelPrompt({ scholar: { name: "Test Scholar" }, title: "T", block: ext, passages, audience: "ages_8_11", sourceAudience: "adults" });
+  assert.match(prompt, /Keep every\s+implication it draws and draw no new one/);
+  assert.match(prompt, /never as findings/);
+  assert.match(prompt, /The reader is a child/);
+  assert.ok(prompt.includes("[p2]") && !prompt.includes("[p1]"));
+  assert.ok(!/Keep every fact the paragraph states/.test(prompt));
+  const adult = levels.buildLevelPrompt({ block: ext, passages, audience: "ages_15_18", sourceAudience: "adults" });
+  assert.ok(!/The reader is a child/.test(adult));
+  assert.ok(!/implication/.test(levels.buildLevelPrompt({ block: blocks[1], passages, audience: "ages_8_11", sourceAudience: "adults" })), "a paper paragraph gets the paper rules");
+
+  const level = levels.assembleLevel({ blocks: withExt, rewrites: new Map([[6, { text: "So any busy place has the same problem.", reach: { verdict: "follows", claims: [] } }]]) });
+  assert.equal(level[6].extension, true);
+  assert.equal(level[6].reach.verdict, "follows");
+  assert.equal(level[6].fidelity, null);
+  assert.deepEqual(level[6].sourceRefs, [{ passageId: "p2" }]);
+  const carried = levels.assembleLevel({ blocks: withExt, rewrites: new Map() });
+  assert.equal(carried[6].extension, true, "carried, it still says what it is");
+  assert.equal(carried[6].reach.verdict, "follows");
+  assert.ok(!("extension" in carried[1]));
 });

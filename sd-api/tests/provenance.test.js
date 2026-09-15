@@ -90,3 +90,36 @@ test("the story's provenance comes from the job, and the byline line from a read
   assert.equal(shortSourceLabel({ title: "Adaptive nulling in small arrays", year: 2011, scholarSurname: "Gupta" }), "Gupta 2011");
   assert.equal(shortSourceLabel({ title: "Adaptive nulling in small arrays", year: null }), "Adaptive nulling in");
 });
+
+test("a paragraph that goes beyond the paper stores the reach verdict in place of fidelity, and comes back as it went in", () => {
+  const p = normalizeBlockProvenance({
+    sourceRefs: [{ passageId: "p3" }], draftedText: DRAFTED, currentHtml: DRAFTED,
+    extension: true,
+    fidelity: { verdict: "supported", unsupportedClaims: [] },
+    reach: { verdict: "partial", overreachClaims: ["used in every phone", ""], claims: [
+      { text: "which means a crowded band has the same limit", verdict: "follows", reason: "", anchorIds: ["p3", "<x>"] },
+      { text: "used in every phone", verdict: "overreach", reason: "outside_fact", anchorIds: [] },
+      { text: "no reason", verdict: "overreach", reason: "nonsense", anchorIds: [] },
+      { text: "", verdict: "follows", anchorIds: ["p3"] },
+    ] },
+  });
+  assert.equal(p.extension, true);
+  assert.equal(p.fidelity, null, "never both verdicts");
+  assert.equal(p.reach.verdict, "partial");
+  assert.deepEqual(p.reach.overreachClaims, ["used in every phone"]);
+  assert.equal(p.reach.claims.length, 3);
+  assert.deepEqual(p.reach.claims[0], { text: "which means a crowded band has the same limit", verdict: "follows", reason: null, anchorIds: ["p3"] });
+  assert.equal(p.reach.claims[1].reason, "outside_fact");
+  assert.equal(p.reach.claims[2].reason, "does_not_follow", "an unknown reason is the plainest one");
+  assert.equal(p.traceable, true);
+
+  const back = presentBlockProvenance(p);
+  assert.equal(back.extension, true);
+  assert.equal(back.reach.verdict, "partial");
+  assert.equal(back.fidelity, null);
+
+  const plain = normalizeBlockProvenance({ sourceRefs: [{ passageId: "p3" }], draftedText: DRAFTED, currentHtml: DRAFTED, fidelity: { verdict: "supported", unsupportedClaims: [] } });
+  assert.ok(!("extension" in plain) && !("reach" in plain), "a paper paragraph carries neither");
+  assert.ok(!("extension" in presentBlockProvenance(plain)));
+  assert.equal(normalizeBlockProvenance({ sourceRefs: [{ passageId: "p3" }], draftedText: DRAFTED, currentHtml: DRAFTED, extension: true, reach: { verdict: "nonsense" } }).reach, null);
+});

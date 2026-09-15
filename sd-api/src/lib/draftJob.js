@@ -49,7 +49,7 @@ const STATUS = {
 const TERMINAL = new Set([STATUS.PUBLISHED, STATUS.DISCARDED, STATUS.FAILED]);
 
 /** The steps a worker reports, in order. Names are stable: the UI shows them. */
-const STEPS = ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "assemble", "verify", "create_story"];
+const STEPS = ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "judge_reach", "assemble", "verify", "create_story"];
 
 /**
  * Every move and who may make it. "worker" is the process holding the lease;

@@ -93,8 +93,8 @@ export default function ReaderBody({ story }) {
               <Tag className={cls} dangerouslySetInnerHTML={{ __html: block.html || "" }} />
               {marked ? (
                 ids.length && block.traceable !== false ? (
-                  <button type="button" className={open?.index === index ? "reader-srcmark on" : "reader-srcmark"} onClick={() => setOpen(open?.index === index ? null : { index, ids })} aria-expanded={open?.index === index}>
-                    {ids.join(", ")}
+                  <button type="button" className={`reader-srcmark${block.extension ? " is-reach" : ""}${open?.index === index ? " on" : ""}`} title={block.extension ? "Goes beyond the paper: what follows from these passages" : "From the paper"} onClick={() => setOpen(open?.index === index ? null : { index, ids })} aria-expanded={open?.index === index}>
+                    {block.extension ? "↗ " : ""}{ids.join(", ")}
                   </button>
                 ) : (
                   <span className="reader-srcmark is-author" title={block.ownView ? "The author's own view" : "Written by the author"}>author</span>
@@ -102,7 +102,8 @@ export default function ReaderBody({ story }) {
               ) : null}
               {marked && open?.index === index ? (
                 <div className="reader-pop">
-                  <div className="reader-pop-head"><span className="sc-kicker">From the paper · {open.ids.join(", ")}</span><button type="button" className="reader-pop-close" aria-label="Close" onClick={() => setOpen(null)}>×</button></div>
+                  <div className="reader-pop-head"><span className="sc-kicker">{block.extension ? "Builds on the paper" : "From the paper"} · {open.ids.join(", ")}</span><button type="button" className="reader-pop-close" aria-label="Close" onClick={() => setOpen(null)}>×</button></div>
+                  {block.extension ? <p className="reader-pop-note">This paragraph says what follows from the paper for you, the reader. It was checked, claim by claim, to follow from the passages below and to add nothing from outside the paper.</p> : null}
                   {!passages ? <p className="st-muted">Loading…</p> : open.ids.map((id) => {
                     const claims = (block.fidelity?.claims || []).filter((c) => c.verdict === "supported" && (c.passageIds || []).includes(id));
                     const marked = withEvidence(byId.get(id)?.text, claims.map((c) => c.evidence));
@@ -118,6 +119,13 @@ export default function ReaderBody({ story }) {
                       <b>What this paragraph claims</b>
                       <ul>
                         {block.fidelity.claims.map((c, k) => <li key={k} className={c.verdict === "supported" ? "" : "is-bad"}>{c.text}{c.verdict === "supported" ? "" : " — not found in the paper"}</li>)}
+                      </ul>
+                    </div>
+                  ) : block.extension && block.reach?.claims?.length ? (
+                    <div className="reader-pop-claims">
+                      <b>What this paragraph draws from the paper</b>
+                      <ul>
+                        {block.reach.claims.map((c, k) => <li key={k} className={c.verdict === "follows" ? "" : "is-bad"}>{c.text}{c.verdict === "follows" ? ` — follows from ${(c.anchorIds || []).join(", ")}` : " — goes beyond the paper"}</li>)}
                       </ul>
                     </div>
                   ) : null}

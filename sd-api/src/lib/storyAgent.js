@@ -21,15 +21,19 @@
  * ── What the agent may not do ───────────────────────────────────────────────
  * Publish. Change the byline. Cite a passage that does not exist. Write in
  * the first person. Add a fact without a passage (it may add a paragraph
- * marked as the scholar's own view only when the instruction says so). The
- * model is told these; the reducer enforces the ones it can.
+ * marked as the scholar's own view only when the instruction says so, and a
+ * paragraph that goes beyond the paper — an implication built on passages it
+ * cites — only when asked what the work means or why it matters; the reach
+ * judge then checks it). The model is told these; the reducer enforces the
+ * ones it can.
  *
  * Pure: `applyTool` is a reducer over a plain state object; `runStoryAgent`
  * takes the model, the judge and the image maker as injected functions.
  */
 
 const { AUDIENCES, normaliseAudience } = require("./audiences");
-const AGENT_VERSION = "story-agent-2026.1";
+const composer = require("./draftComposer");
+const AGENT_VERSION = "story-agent-2026.3";
 const MAX_STEPS = 12;
 const MAX_TOOL_CALLS = 24;
 
@@ -46,6 +50,7 @@ const TOOL_DECLARATIONS = [
         text: { type: "STRING", description: "The new plain text for the block. No HTML." },
         passage_ids: { type: "ARRAY", items: { type: "STRING" }, description: "Passages every fact in the new text comes from, e.g. [\"p3\"]. Empty only when own_view is true." },
         own_view: { type: "BOOLEAN", description: "True only when the scholar asked for their own commentary, not a claim from the paper." },
+        extension: { type: "BOOLEAN", description: "True only when the scholar asked what the work means or why it matters: the text draws an implication from the passages in passage_ids, said as an implication, with no fact from outside the paper." },
       },
       required: ["index", "text", "passage_ids"],
     },
@@ -61,6 +66,7 @@ const TOOL_DECLARATIONS = [
         text: { type: "STRING" },
         passage_ids: { type: "ARRAY", items: { type: "STRING" } },
         own_view: { type: "BOOLEAN" },
+        extension: { type: "BOOLEAN", description: "True only when the scholar asked what the work means or why it matters: an implication drawn from passage_ids, with no fact from outside the paper." },
       },
       required: ["after", "kind", "text", "passage_ids"],
     },
@@ -106,22 +112,45 @@ const TOOL_DECLARATIONS = [
   },
 ];
 
-const SYSTEM = [
+/**
+ * The agent's instructions, which depend on whose account the article is.
+ * Rule 2 is the only difference: an article the scholar publishes as their
+ * own work refers to them nowhere, so an edit must not put them back in.
+ *
+ * @param {object} [p]
+ * @param {string} [p.voice]  composer.VOICE.AUTHOR or VOICE.ABOUT
+ * @param {string|null} [p.scholarName]
+ */
+function buildSystem({ voice = composer.VOICE.ABOUT, scholarName = null } = {}) {
+  const name = scholarName || "the scholar";
+  const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
+  return [
   "You are an editing assistant for a scholar's article about their own research paper, on Archivyn.",
   "The scholar tells you what to change. You change the draft ONLY by calling the tools. Do not answer with prose except through `finish`.",
   "",
   "Rules, checked after you finish:",
   "1. Every factual claim you write must come from the passages shown, and the block you write must cite them in passage_ids.",
   "   If the scholar asks for something the passages do not support, do not invent it: leave it out and say so in `finish`.",
-  "2. Write about the scholar in the third person, never as them. No \"I\", \"we\", \"my\", \"our\" outside a verbatim quote.",
+  authorVoice
+    ? `2. This article is the scholar's own account, under their byline. Never refer to them: no "${name}", no "the author",` +
+      '\n   no "he" or "she" standing for them. The work is the subject. No "I", "we", "my", "our" either, outside a verbatim quote.'
+    : '2. Write about the scholar in the third person, never as them. No "I", "we", "my", "our" outside a verbatim quote.',
   "3. Touch only what the instruction asks for. Blocks you do not call a tool on stay exactly as they are.",
   "4. A quote block must be copied word for word from a passage.",
   "5. Use `own_view` only when the scholar explicitly asks for their own opinion or commentary to be added.",
-  "6. Images are illustrations. Describe what to draw; never claim an image is from the paper.",
-  "7. Keep the reading level the scholar chose; prefer short sentences and plain words.",
+  "6. Use `extension` only when the scholar asks what the work means, implies, or why it matters. Such a paragraph",
+  "   still cites the passages it builds on, says what follows from them as an implication (\"which means\", \"would",
+  "   matter wherever\"), never as a finding, and names no product, company, event, number or practice the",
+  "   passages do not mention. A reviewer checks it claim by claim.",
+  "7. Images are illustrations. Describe what to draw; never claim an image is from the paper.",
+  "8. Keep the reading level the scholar chose; prefer short sentences and plain words.",
   "",
   "Work in small steps: call a tool, read the result, continue. Call `finish` when done.",
-].join("\n");
+  ].join("\n");
+}
+
+/** The instructions for an article written about a scholar. Kept for callers that pass no voice. */
+const SYSTEM = buildSystem();
 
 /* ── state ───────────────────────────────────────────────────────────────── */
 
@@ -144,7 +173,7 @@ function stateFromStory(story) {
     blocks: (story.bodyBlocks || []).map((b, i) =>
       b.type === "image"
         ? { key: `b${i + 1}`, type: "image", imageId: b.imageId || null, caption: b.caption || "", alt: b.alt || "", width: b.width || "body", url: b.url || null }
-        : { key: `b${i + 1}`, type: b.type, html: b.html || "", sourceRefs: Array.isArray(b.sourceRefs) ? b.sourceRefs.map((r) => ({ passageId: r.passageId })) : [], draftedText: b.draftedText || "", fidelity: b.fidelity || null, ownView: Boolean(b.ownView) },
+        : { key: `b${i + 1}`, type: b.type, html: b.html || "", sourceRefs: Array.isArray(b.sourceRefs) ? b.sourceRefs.map((r) => ({ passageId: r.passageId })) : [], draftedText: b.draftedText || "", fidelity: b.fidelity || null, ownView: Boolean(b.ownView), extension: Boolean(b.extension), reach: b.reach || null },
     ),
   };
 }
@@ -156,7 +185,7 @@ function renderState(state) {
     const n = i + 1;
     if (b.type === "image") lines.push(`[${n}] (image) caption: ${b.caption || "(none)"}`);
     else {
-      const refs = b.sourceRefs?.length ? ` cites ${b.sourceRefs.map((r) => r.passageId).join(",")}` : b.ownView ? " (scholar's own view)" : " (no citation)";
+      const refs = b.sourceRefs?.length ? ` ${b.extension ? "builds on" : "cites"} ${b.sourceRefs.map((r) => r.passageId).join(",")}` : b.ownView ? " (scholar's own view)" : " (no citation)";
       lines.push(`[${n}] (${b.type})${refs}: ${plain(b.html)}`);
     }
   });
@@ -181,14 +210,24 @@ function applyTool(state, call, ctx) {
   const idx = (n) => Number(n) - 1;
   const inRange = (i) => Number.isInteger(i) && i >= 0 && i < blocks.length;
   const refsOf = (ids) => (Array.isArray(ids) ? ids.map(String).filter((id) => known.has(id)) : []);
-  const textBlock = (kind, text, refs, ownView) => ({
+  /* A paragraph is one of three things, never two: the paper's (cited), the
+     scholar's own view (uncited), or built on the paper (cited, extension). */
+  const textBlock = (kind, text, refs, ownView, extension) => ({
     key: `n${ctx.nextKey()}`, type: kind, html: escapeHtml(String(text || "").replace(/\s+/g, " ").trim()),
-    sourceRefs: refs.map((passageId) => ({ passageId })), draftedText: "", fidelity: null, ownView: Boolean(ownView), changed: true,
+    sourceRefs: refs.map((passageId) => ({ passageId })), draftedText: "", fidelity: null, ownView: Boolean(ownView) && !extension,
+    extension: kind === "paragraph" && Boolean(extension), reach: null, changed: true,
   });
-  const checkText = (text, refs, ownView, kind) => {
+  const checkText = (text, refs, ownView, kind, extension = false) => {
     const t = String(text || "").trim();
     if (!t) return "refused: empty text";
     if (kind !== "quote" && FIRST_PERSON.test(t)) return "refused: first-person wording; write about the scholar, not as them";
+    /* An article published as the scholar's own work names them nowhere, so
+       an edit must not put them back in. Their own view is theirs to assert,
+       but it is still written without naming themselves. */
+    if (kind !== "quote" && ctx.authorVoice && composer.selfReferenceSentences(t, ctx.scholarName).named.length) {
+      return "refused: this article is the scholar's own work and never refers to them; make the work the subject of the sentence";
+    }
+    if (extension && refs.length === 0) return "refused: a paragraph that goes beyond the paper must cite the passages it builds on in passage_ids";
     if (refs.length === 0 && !ownView) return "refused: no valid passage_ids; cite the passages the text comes from, or set own_view if the scholar asked for their own commentary";
     if (kind === "quote" && refs.length && !refs.some((id) => ctx.isVerbatim(t, id))) return "refused: a quote must be copied word for word from the cited passage";
     return null;
@@ -200,9 +239,10 @@ function applyTool(state, call, ctx) {
       if (!inRange(i)) return { state, result: `refused: no block ${args.index}` };
       if (blocks[i].type === "image") return { state, result: "refused: that block is an image; use delete_block or add_image" };
       const refs = refsOf(args.passage_ids);
-      const bad = checkText(args.text, refs, args.own_view, blocks[i].type);
+      const extension = blocks[i].type === "paragraph" && args.extension === true;
+      const bad = checkText(args.text, refs, args.own_view, blocks[i].type, extension);
       if (bad) return { state, result: bad };
-      blocks[i] = { ...textBlock(blocks[i].type, args.text, refs, args.own_view), key: blocks[i].key };
+      blocks[i] = { ...textBlock(blocks[i].type, args.text, refs, args.own_view, extension), key: blocks[i].key };
       return { state: { ...state, blocks }, result: `ok: block ${args.index} replaced` };
     }
     case "insert_block": {
@@ -210,9 +250,10 @@ function applyTool(state, call, ctx) {
       if (!Number.isInteger(after) || after < 0 || after > blocks.length) return { state, result: `refused: cannot insert after ${args.after}` };
       const kind = ["paragraph", "subheading", "quote"].includes(args.kind) ? args.kind : "paragraph";
       const refs = refsOf(args.passage_ids);
-      const bad = kind === "subheading" ? (String(args.text || "").trim() ? null : "refused: empty text") : checkText(args.text, refs, args.own_view, kind);
+      const extension = kind === "paragraph" && args.extension === true;
+      const bad = kind === "subheading" ? (String(args.text || "").trim() ? null : "refused: empty text") : checkText(args.text, refs, args.own_view, kind, extension);
       if (bad) return { state, result: bad };
-      blocks.splice(after, 0, textBlock(kind, args.text, refs, args.own_view));
+      blocks.splice(after, 0, textBlock(kind, args.text, refs, args.own_view, extension));
       return { state: { ...state, blocks }, result: `ok: inserted as block ${after + 1}; later blocks are renumbered` };
     }
     case "delete_block": {
@@ -302,10 +343,11 @@ function diffStates(before, after) {
  * @param {boolean} [p.imagesAllowed]
  * @param {(text:string, passageId:string)=>boolean} [p.isVerbatim]
  */
-async function runStoryAgent({ state, passages, instruction, history = [], audience = "general", generate, imagesAllowed = false, isVerbatim = () => true, onProgress = async () => {} }) {
+async function runStoryAgent({ state, passages, instruction, history = [], audience = "general", voice = composer.VOICE.ABOUT, scholarName = null, generate, imagesAllowed = false, isVerbatim = () => true, onProgress = async () => {} }) {
   let working = { ...state, blocks: state.blocks.map((b) => ({ ...b })) };
   let counter = 0;
-  const ctx = { passages, imagesAllowed, isVerbatim, nextKey: () => ++counter };
+  const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
+  const ctx = { passages, imagesAllowed, isVerbatim, authorVoice, scholarName, nextKey: () => ++counter };
   const calls = [];
   const usage = [];
 
@@ -326,7 +368,7 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
   let summary = null;
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
-    const r = await generate({ contents, systemInstruction: SYSTEM, tools: [{ functionDeclarations: TOOL_DECLARATIONS }], toolConfig: { functionCallingConfig: { mode: "ANY" } }, temperature: 0.2, maxOutputTokens: 2048 });
+    const r = await generate({ contents, systemInstruction: buildSystem({ voice, scholarName }), tools: [{ functionDeclarations: TOOL_DECLARATIONS }], toolConfig: { functionCallingConfig: { mode: "ANY" } }, temperature: 0.2, maxOutputTokens: 2048 });
     if (r.usage) usage.push(r.usage);
     const fcs = r.functionCalls || [];
     if (!fcs.length) {
@@ -356,4 +398,4 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
   return { state: working, changes, summary, calls, usage, agentVersion: AGENT_VERSION };
 }
 
-module.exports = { AGENT_VERSION, MAX_STEPS, TOOL_DECLARATIONS, SYSTEM, stateFromStory, renderState, applyTool, diffStates, runStoryAgent, plain };
+module.exports = { AGENT_VERSION, MAX_STEPS, TOOL_DECLARATIONS, SYSTEM, buildSystem, stateFromStory, renderState, applyTool, diffStates, runStoryAgent, plain };
