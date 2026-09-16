@@ -21,7 +21,7 @@ import AgentConsent from "@/components/editorial/AgentConsent";
 import NewStoryAgent from "@/components/editorial/NewStoryAgent";
 import AgentPanel from "@/components/editorial/AgentPanel";
 import SourceRail from "@/components/editorial/SourceRail";
-import ChecksRail, { summariseBlocks } from "@/components/editorial/ChecksRail";
+import ChecksRail, { needsAttention, summariseBlocks } from "@/components/editorial/ChecksRail";
 import PublishCheck from "@/components/editorial/PublishCheck";
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
 import HistoryRail from "@/components/editorial/HistoryRail";
@@ -81,6 +81,38 @@ function storyToForm(story) {
 
 function createEmptyForm() {
   return storyToForm(null);
+}
+
+/**
+ * A heading field that wraps and grows.
+ *
+ * The title and subtitle were `<input>` elements, which cannot wrap: in the
+ * review workspace the centre column is about 680px, and any title past
+ * roughly thirty-eight characters scrolled out of sight mid-word. The
+ * scholar could not read the name of their own article.
+ *
+ * Enter is swallowed, because these are one paragraph each however many
+ * lines they take.
+ */
+function AutoGrowField({ className, value, placeholder, onChange }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      className={className}
+      placeholder={placeholder}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }}
+    />
+  );
 }
 
 async function readError(response) {
@@ -178,7 +210,11 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const [pendingDraftJob, setPendingDraftJob] = useState(null);
   const stopWatchingRef = useRef(null);
   const [mode, setMode] = useState("write"); // "write" | "preview"
-  const [railTab, setRailTab] = useState("agent"); // "source" | "checks" | "agent"
+  /* Checks when the draft has something flagged, the agent otherwise. Opening
+     on "What should change?" while four paragraphs need a look answers a
+     question the scholar has not asked yet. */
+  const [railTab, setRailTab] = useState(() =>
+    (initialStory?.bodyBlocks || []).some(needsAttention) ? "checks" : "agent");
   const [passages, setPassages] = useState(null);
   const [showPublishCheck, setShowPublishCheck] = useState(false);
   const [proposalPending, setProposalPending] = useState(false);
@@ -536,8 +572,11 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
       ) : (
         <label className="sc-write-addcover"><FaPlus size={13} aria-hidden /> Add a cover image<input type="file" accept="image/*" onChange={handleCoverFileChange} hidden /></label>
       )}
-      <input type="text" className="sc-write-title" placeholder="Title" value={form.title} onChange={(event) => updateField("title", event.target.value)} />
-      <input type="text" className="sc-write-subtitle" placeholder="Add a subtitle…" value={form.subtitle} onChange={(event) => updateField("subtitle", event.target.value)} />
+      {/* Textareas, not inputs: a single-line input cannot wrap, so any title
+          past about thirty-eight characters was cut mid-word and the article's
+          own name was unreadable. They grow to their content and never scroll. */}
+      <AutoGrowField className="sc-write-title" placeholder="Title" value={form.title} onChange={(value) => updateField("title", value)} />
+      <AutoGrowField className="sc-write-subtitle" placeholder="Add a subtitle…" value={form.subtitle} onChange={(value) => updateField("subtitle", value)} />
       <div className="sc-write-body">
         <RichTextBlockEditor blocks={form.bodyBlocks} onChange={updateBodyBlocks} activeBlockId={activeBlockId} onActiveBlockChange={setActiveBlockId} sourceLabel={sourceLabel} />
       </div>
@@ -582,7 +621,18 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
           <span className="sc-write-saved">
             {isSaving ? "Saving…" : dirty ? (form.status === "draft" ? "Unsaved · saving shortly" : "Unsaved changes") : savedAt ? "Saved" : `v${form.version}`}
           </span>
-          {reviewMode && summary.attention > 0 ? <span className="sc-write-attention">{summary.attention} paragraph{summary.attention === 1 ? "" : "s"} need{summary.attention === 1 ? "s" : ""} your attention</span> : null}
+          {/* It used to be a label. Saying what needs doing without offering
+              to take you there makes the reader hunt for it in a rail. */}
+          {reviewMode && summary.attention > 0 ? (
+            <button
+              type="button"
+              className="sc-write-attention"
+              onClick={() => { const i = form.bodyBlocks.findIndex(needsAttention); if (i >= 0) goToBlock(i, "checks"); }}
+              title="Go to the first paragraph that needs a look"
+            >
+              {summary.attention} paragraph{summary.attention === 1 ? "" : "s"} need{summary.attention === 1 ? "s" : ""} your attention
+            </button>
+          ) : null}
           <button type="button" className="sc-write-ghost" onClick={() => setMode(mode === "write" ? "preview" : "write")}>{mode === "write" ? "Preview" : "Keep writing"}</button>
           <button type="button" className="sc-write-secondary" onClick={() => submitStory("draft")} disabled={isSaving || proposalPending}>{isSaving ? "Saving…" : "Save draft"}</button>
           {reviewMode ? (

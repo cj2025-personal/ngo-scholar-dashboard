@@ -2550,7 +2550,8 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .sc-write-cover-btn.is-remove { color: var(--burgundy); }
 
 /* Title + subtitle — borderless, editorial scale */
-.sc-write-title, .sc-write-subtitle { width: 100%; border: 0; outline: 0; background: transparent; font-family: var(--sd-sans); color: var(--ink); padding: 0; margin: 0; }
+/* Textareas now, so a long title wraps instead of scrolling out of view. */
+.sc-write-title, .sc-write-subtitle { display: block; width: 100%; border: 0; outline: 0; background: transparent; font-family: var(--sd-sans); color: var(--ink); padding: 0; margin: 0; resize: none; overflow: hidden; }
 .sc-write-title { font-family: var(--sd-serif); font-size: 42px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin-bottom: 12px; }
 .sc-write-title::placeholder { color: #aeb8cc; }
 /* 48px, not 28: the formatting bubble needs clearance above the first
@@ -2896,6 +2897,19 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .block-chip.is-context { color: #14532d; background: #e6f4ea; }
 .block-chip.is-context::before { content: "✎"; }
 .ch-beat-kind.is-context { background: #e6f4ea; color: #14532d; }
+/* The reading-age bar, folded until a level exists. One quiet line instead
+   of two rows of controls above the article the scholar came to read. */
+.lv-wrap.is-folded { margin-bottom: 14px; }
+.lv-fold {
+  display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px;
+  border: 1px dashed var(--sd-line); border-radius: 999px; background: none;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--sd-muted);
+  cursor: pointer; transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+.lv-fold:hover { border-color: var(--navy); border-style: solid; color: var(--navy); background: var(--ark-navy-soft); }
+.lv-fold__hint { font-weight: 500; color: var(--sd-faint); }
+.lv-fold:hover .lv-fold__hint { color: var(--navy); }
+
 .ck-verify { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .ck-verify__row { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.45; color: var(--sd-heading); cursor: pointer; }
 .ck-verify__row input { margin: 3px 0 0; accent-color: #14532d; flex: 0 0 auto; }
@@ -3138,7 +3152,13 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 
 .sc-writer.is-review { max-width: none; margin: 0; }
 .sc-write-status.is-review { color: var(--ark-warning); background: var(--ark-warning-soft); border-color: rgba(180, 83, 9, 0.2); }
-.sc-write-attention { font-size: 12px; color: var(--ark-warning); font-weight: 600; margin-right: 4px; }
+.sc-write-attention {
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--ark-warning);
+  margin-right: 4px; padding: 3px 9px; border: 1px solid rgba(180, 83, 9, 0.28);
+  border-radius: 999px; background: var(--ark-warning-soft); cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.sc-write-attention:hover { border-color: var(--ark-warning); background: #fdefd8; }
 .ws-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr) 380px; gap: 0; min-height: calc(100vh - 140px); }
 .ws-left { border-right: 1px solid var(--sd-line); padding: 20px 16px; background: var(--sd-surface); position: sticky; top: 118px; align-self: start; max-height: calc(100vh - 118px); overflow: auto; }
 .ws-center { min-width: 0; padding: 0 32px; }

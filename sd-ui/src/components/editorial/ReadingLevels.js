@@ -78,6 +78,7 @@ export default function ReadingLevels({ story, viewLevel, onView, onChanged, dir
      needs doing — and every band once nothing does, so "write again" and
      "approve all" are one click each. */
   const [picked, setPicked] = useState(null);
+  const [open, setOpen] = useState(false);
   const pending = bands.filter((a) => needsWriting(byAudience.get(a.value))).map((a) => a.value);
   const selected = picked || (pending.length ? pending : bands.map((a) => a.value));
   const toggle = (value) => setPicked((selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]));
@@ -106,6 +107,23 @@ export default function ReadingLevels({ story, viewLevel, onView, onChanged, dir
 
   const writeLabel = busy === "write" ? "Writing…" : everyBand ? "Write for every age" : selected.length ? `Write ${selected.length} selected` : "Write selected";
   const writeTitle = dirty ? "Save your edits first" : "Write the article for the ticked reading ages, each from the passages it already cites and judged on its own";
+
+  /* Before any level exists this bar is two rows of controls the scholar will
+     use once, at the end, sitting above the cover image and the title — about
+     ninety pixels of a laptop screen spent on the last job, at the moment
+     they opened the draft to read it. Folded until it has something to say. */
+  const nothingWritten = bands.every((a) => !byAudience.get(a.value));
+  if (nothingWritten && !open) {
+    return (
+      <div className="lv-wrap is-folded">
+        <button type="button" className="lv-fold" onClick={() => setOpen(true)} aria-expanded="false">
+          <FaWandMagicSparkles size={11} aria-hidden />
+          Also write this for other reading ages
+          <span className="lv-fold__hint">{bands.map((a) => a.label).join(" · ")}</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="lv-wrap">

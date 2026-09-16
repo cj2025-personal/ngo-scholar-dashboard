@@ -72,7 +72,11 @@ export function chipFor(block, sourceLabel) {
   return {
     traceable,
     overlap: live,
-    label: traceable ? `from ${sourceLabel || "source"} · ${ids}` : "no longer traceable",
+    /* The passages, not the paper's name. One article repeated "from
+       Spectral Domain Sparse Represen…" under all seventeen of its
+       paragraphs, and the bar above the article already says which paper
+       this was drawn from. The name stays in the tooltip. */
+    label: traceable ? ids : "no longer traceable",
     title: traceable
       ? `Drafted from passage${block.sourceRefs.length === 1 ? "" : "s"} ${ids} of the source. ${Math.round(live * 100)}% of the drafted wording remains.`
       : `This block has been edited beyond its source: ${Math.round(live * 100)}% of the drafted wording remains, under the ${Math.round(TRACE_THRESHOLD * 100)}% needed to keep the chip.`,

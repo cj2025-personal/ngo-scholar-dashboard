@@ -196,7 +196,11 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.locator(".ev-wrap .ck-item").first()).toContainText("Every number is in the paper");
   await expect(page.locator(".ev-wrap")).toContainText("When you publish");
 
-  /* Every reading age from one approval: write them, read one, approve it. */
+  /* Every reading age from one approval: write them, read one, approve it.
+     The bar is folded until a level exists, so it is opened the way a scholar
+     opens it — the controls above the article are the last job, not the first. */
+  await expect(page.locator(".lv-bar")).toHaveCount(0, "folded before any level is written");
+  await page.locator(".lv-fold").click();
   await page.locator(".lv-bar").getByRole("button", { name: "Write for every age" }).click();
   await expect(page.locator(".lv-status.is-ready")).toHaveCount(3, { timeout: 60_000 });
   await page.locator(".lv-pill", { hasText: "Ages 12–14" }).click();
