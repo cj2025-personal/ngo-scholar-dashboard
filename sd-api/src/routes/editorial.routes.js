@@ -18,7 +18,7 @@ const {
 } = require("../services/editorial.service");
 const { askStoryAgent, listStoryTurns, resolveStoryTurn, streamProposalImage, storyPassages, publicStoryPassages } = require("../services/storyAgent.service");
 const evidence = require("../services/evidence.service");
-const { generateLevels, approveLevels } = require("../services/levels.service");
+const { generateLevels, approveLevels, discardLevels } = require("../services/levels.service");
 const recordService = require("../services/record.service");
 const { env } = require("../config/env");
 const { readServiceToken, secretsMatch } = require("../lib/service-auth");
@@ -270,6 +270,25 @@ router.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     res.status(200).json(await approveLevels({
+      storyId: req.params.storyId,
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
+      user: req.auth.user,
+      audiences: Array.isArray(req.body?.audiences) ? req.body.audiences.map(String) : null,
+      baseVersion: req.body?.baseVersion ?? null,
+    }));
+  }),
+);
+
+/**
+ * Discard reading levels. Named bands, or every band the scholar has not
+ * approved. A level that was live for readers stops being shown.
+ */
+router.post(
+  "/:storyId/levels/discard",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await discardLevels({
       storyId: req.params.storyId,
       scholarId: req.auth.user.scholar_id,
       profileId: req.auth.user.profile_id,

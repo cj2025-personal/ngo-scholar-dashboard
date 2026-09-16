@@ -167,6 +167,17 @@ export async function generateStoryLevels(storyId, { audiences = null, baseVersi
   });
 }
 
+/**
+ * Discard reading levels: the bands named, or every band not yet approved.
+ * A level that was live for readers stops being shown, so the caller asks
+ * first. A version of the story like any other write.
+ */
+export async function discardStoryLevels(storyId, { audiences = null, baseVersion = null } = {}) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/levels/discard`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiences, baseVersion }),
+  });
+}
+
 /** Approve levels for readers. */
 export async function approveStoryLevels(storyId, { audiences = null, baseVersion = null } = {}) {
   return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/levels/approve`, {

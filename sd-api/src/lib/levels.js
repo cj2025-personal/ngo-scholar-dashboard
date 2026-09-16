@@ -189,6 +189,37 @@ function stripFence(raw) {
   return m ? m[1] : s;
 }
 
+/**
+ * Which levels a discard removes, and what it costs.
+ *
+ * A level can be written, rewritten and approved; until now it could never
+ * be removed, so a scholar who did not want the ages 8–11 version was asked
+ * to approve it for as long as the story existed. Discarding is that answer.
+ *
+ * Named bands are removed if they exist; with none named, every level the
+ * scholar has not approved — which is what "waiting for your approval" means
+ * on the Studio queue. Removing an approved level takes it away from readers,
+ * so it is counted separately and the caller says so before it happens.
+ *
+ * @param {object} have            the story's `levels` map
+ * @param {string[]|null} audiences  bands to remove, or null for every unapproved one
+ * @returns {{remove: string[], live: string[], missing: string[]}}
+ */
+function levelsToDiscard(have, audiences = null) {
+  const levelsOn = have && typeof have === "object" ? have : {};
+  if (!Array.isArray(audiences) || audiences.length === 0) {
+    const remove = Object.keys(levelsOn).filter((a) => levelsOn[a] && !levelsOn[a].approved);
+    return { remove, live: [], missing: [] };
+  }
+  const wanted = [...new Set(audiences.map((a) => normaliseAudience(a)))];
+  const remove = wanted.filter((a) => levelsOn[a]);
+  return {
+    remove,
+    live: remove.filter((a) => levelsOn[a].approved),
+    missing: wanted.filter((a) => !levelsOn[a]),
+  };
+}
+
 module.exports = {
   LEVELS_VERSION,
   LEVEL_MARKER,
@@ -202,4 +233,5 @@ module.exports = {
   assembleLevel,
   sourceHashes,
   staleness,
+  levelsToDiscard,
 };

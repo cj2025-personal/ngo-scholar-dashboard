@@ -615,6 +615,39 @@ test("the story is written for every reading age, lines up block for block, and 
   assert.ok(history.data.revisions.some((v) => v.source === "levels"), JSON.stringify(history.data.revisions.map((v) => v.source)));
   assert.ok(history.data.revisions.some((v) => /Approved the/.test(v.note || "")));
 
+  /* A level the scholar does not want is thrown away. The one still waiting
+     goes with a plain discard; the article and the approved levels stay. */
+  const beforeDiscard = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  const discarded = await call("POST", `/api/editorial-stories/${state.storyId}/levels/discard`, { body: { baseVersion: beforeDiscard.version } });
+  assert.equal(discarded.status, 200, JSON.stringify(discarded.data));
+  assert.deepEqual(discarded.data.discarded, ["ages_8_11"], "only the one waiting for approval");
+  assert.deepEqual(discarded.data.wasLive, [], "nothing was taken from readers");
+  assert.deepEqual(discarded.data.story.levels.map((l) => l.audience).sort(), ["ages_12_14", "ages_15_18"]);
+  assert.equal(discarded.data.story.bodyBlocks.length, beforeDiscard.bodyBlocks.length, "the article itself is untouched");
+  /* Nothing left waiting, so a second plain discard has nothing to do. */
+  const again = await call("POST", `/api/editorial-stories/${state.storyId}/levels/discard`, { body: {} });
+  assert.equal(again.status, 400);
+  assert.match(again.data.error, /Nothing to discard/);
+  /* A band with no level says so rather than silently succeeding. */
+  const absent = await call("POST", `/api/editorial-stories/${state.storyId}/levels/discard`, { body: { audiences: ["ages_8_11"] } });
+  assert.equal(absent.status, 404);
+  /* Naming a live band takes it from readers, and the history says so. */
+  const live = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  const dropLive = await call("POST", `/api/editorial-stories/${state.storyId}/levels/discard`, { body: { audiences: ["ages_12_14"], baseVersion: live.version } });
+  assert.equal(dropLive.status, 200, JSON.stringify(dropLive.data));
+  assert.deepEqual(dropLive.data.wasLive, ["ages_12_14"]);
+  const afterDrop = await call("GET", `/api/editorial-stories/public/slug/${state.slug}`, { cookieValue: "" });
+  assert.deepEqual(afterDrop.data.story.levels.map((l) => l.audience), ["ages_15_18"], "readers stop seeing a discarded level");
+  const afterDiscard = await call("GET", `/api/editorial-stories/${state.storyId}/revisions`);
+  assert.ok(afterDiscard.data.revisions.some((v) => /Discarded the/.test(v.note || "")), "discarding is on the record");
+  /* Someone else's story is not theirs to strip. */
+  const notMine = await call("POST", "/api/editorial-stories/000000000000000000000000/levels/discard", { body: {} });
+  assert.equal(notMine.status, 404);
+
+  /* Put the article back where the rest of this test expects it. */
+  const rewritten = await call("POST", `/api/editorial-stories/${state.storyId}/levels`, { body: { audiences: ["ages_8_11", "ages_12_14"], baseVersion: (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story.version } });
+  assert.equal(rewritten.status, 200, JSON.stringify(rewritten.data));
+
   /* An edit to the article makes every level stale, and readers see none until it is rewritten. */
   const current = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
   const i = current.bodyBlocks.findIndex((b) => b.type === "paragraph" && b.sourceRefs?.length && b.traceable !== false);

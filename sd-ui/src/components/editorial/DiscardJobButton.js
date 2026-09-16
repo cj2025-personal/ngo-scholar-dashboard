@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { FaTrashCan } from "react-icons/fa6";
 
 import { discardDraftJob } from "@/lib/drafting";
 
@@ -32,5 +33,11 @@ export default function DiscardJobButton({ jobId, label = "Discard" }) {
       </span>
     );
   }
-  return <button type="button" className="del-btn" onClick={() => setAsking(true)}>{label}</button>;
+  /* The same mark as the other two ways out, so one queue does not show
+     three different-looking ways to be rid of a row. */
+  return (
+    <button type="button" className="del-btn" onClick={() => setAsking(true)} title="Discard this draft">
+      <FaTrashCan size={11} aria-hidden /> {label}
+    </button>
+  );
 }

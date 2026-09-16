@@ -8,6 +8,25 @@ import {
 
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
 import DiscardJobButton from "@/components/editorial/DiscardJobButton";
+import DiscardLevelsButton from "@/components/editorial/DiscardLevelsButton";
+
+/**
+ * The way out of a queue row.
+ *
+ * Every row here nags about something, and until now only a draft job could
+ * be dismissed: a story in review, or reading levels the scholar never
+ * wanted, stayed on the list for as long as they existed. Each row now says
+ * what removing it means — discard the job, delete the story, throw away the
+ * levels — except the two that belong to the Documents portal, where this
+ * page has no business deleting anything.
+ */
+function RemoveAction({ remove }) {
+  if (!remove) return null;
+  if (remove.kind === "job") return <DiscardJobButton jobId={remove.jobId} />;
+  if (remove.kind === "story") return <DeleteStoryButton storyId={remove.storyId} title={remove.title} />;
+  if (remove.kind === "levels") return <DiscardLevelsButton storyId={remove.storyId} count={remove.count} />;
+  return null;
+}
 
 /**
  * Studio: the one thing to do now, then the shape of the work, then the queue.
@@ -87,23 +106,24 @@ export default function StudioHome({ me, sources, jobs, stories }) {
   const todos = [];
   for (const job of jobs || []) {
     if (job.status === "awaiting_outline") {
-      todos.push({ tone: "warn", kind: "Outline", lead: "An outline is waiting for your approval", detail: `“${shortTitle(job.outline?.title || job.source?.title)}” · ${job.outline?.beats?.length || 0} sections proposed · ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Review outline", jobId: job.id });
+      todos.push({ tone: "warn", kind: "Outline", lead: "An outline is waiting for your approval", detail: `“${shortTitle(job.outline?.title || job.source?.title)}” · ${job.outline?.beats?.length || 0} sections proposed · ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Review outline", remove: { kind: "job", jobId: job.id } });
     } else if (job.status === "awaiting_review" && !job.storyId) {
-      todos.push({ tone: "warn", kind: "Draft", lead: "A draft is waiting for you", detail: `From “${shortTitle(job.source?.title)}” · ${timeAgo(job.finishedAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Open", jobId: job.id });
+      todos.push({ tone: "warn", kind: "Draft", lead: "A draft is waiting for you", detail: `From “${shortTitle(job.source?.title)}” · ${timeAgo(job.finishedAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Open", remove: { kind: "job", jobId: job.id } });
     } else if (job.status === "running" || job.status === "queued") {
-      todos.push({ tone: "info", kind: "In progress", lead: "A draft is being written", detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Watch", jobId: job.status === "queued" ? job.id : null });
+      todos.push({ tone: "info", kind: "In progress", lead: "A draft is being written", detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, /* A job still running cannot be discarded; one still queued can. */
+        cta: "Watch", remove: job.status === "queued" ? { kind: "job", jobId: job.id } : null });
     }
   }
   /* The record moved against a source. Before anything else, always. */
   for (const s of all.filter((st) => st.record?.alerts && !st.record.acknowledgedAt)) {
-    todos.push({ tone: "grave", kind: "The record", lead: `The paper behind “${shortTitle(s.title, 50)}” has changed on the record`, detail: s.record.headline, href: `/editorial/${s.id}`, cta: "Deal with it" });
+    todos.push({ tone: "grave", kind: "The record", lead: `The paper behind “${shortTitle(s.title, 50)}” has changed on the record`, detail: s.record.headline, href: `/editorial/${s.id}`, cta: "Deal with it", remove: { kind: "story", storyId: s.id, title: s.title } });
   }
   for (const s of all.filter((st) => st.levels?.waiting > 0)) {
-    todos.push({ tone: "warn", kind: "Reading ages", lead: `${s.levels.waiting} reading level${s.levels.waiting === 1 ? "" : "s"} waiting for your approval`, detail: `“${shortTitle(s.title, 60)}” · written for other ages, not yet shown to readers`, href: `/editorial/${s.id}`, cta: "Review levels" });
+    todos.push({ tone: "warn", kind: "Reading ages", lead: `${s.levels.waiting} reading level${s.levels.waiting === 1 ? "" : "s"} waiting for your approval`, detail: `“${shortTitle(s.title, 60)}” · written for other ages, not yet shown to readers`, href: `/editorial/${s.id}`, cta: "Review levels", remove: { kind: "levels", storyId: s.id, count: s.levels.waiting } });
   }
   const reviewing = all.filter((s) => s.status === "draft" && s.provenance);
   for (const s of reviewing.slice(0, 2)) {
-    todos.push({ tone: "warn", kind: "Draft", lead: "A draft is waiting for your review", detail: `“${shortTitle(s.title)}” · drafted from ${s.provenance?.title ? `“${shortTitle(s.provenance.title, 50)}”` : "your paper"} · ${timeAgo(s.updatedAt)}`, href: `/editorial/${s.id}`, cta: "Review" });
+    todos.push({ tone: "warn", kind: "Draft", lead: "A draft is waiting for your review", detail: `“${shortTitle(s.title)}” · drafted from ${s.provenance?.title ? `“${shortTitle(s.provenance.title, 50)}”` : "your paper"} · ${timeAgo(s.updatedAt)}`, href: `/editorial/${s.id}`, cta: "Review", remove: { kind: "story", storyId: s.id, title: s.title } });
   }
   const readyNotDrafted = draftable.filter((p) => !all.some((s) => s.provenance?.sourceId === p.id)).slice(0, 1);
   for (const p of readyNotDrafted) {
@@ -149,7 +169,7 @@ export default function StudioHome({ me, sources, jobs, stories }) {
                 {rest.length ? (
                   <a href="#st-queue" className="st-btn-xl is-quiet">See everything waiting</a>
                 ) : null}
-                {next.jobId ? <DiscardJobButton jobId={next.jobId} /> : null}
+                <RemoveAction remove={next.remove} />
               </div>
               <p className="st-next__note">
                 {rest.length
@@ -215,7 +235,7 @@ export default function StudioHome({ me, sources, jobs, stories }) {
                       <span className="st-todo-lead">{t.lead}</span>
                       <div className="st-todo-detail">{t.detail}</div>
                     </div>
-                    {t.jobId ? <DiscardJobButton jobId={t.jobId} /> : null}
+                    <RemoveAction remove={t.remove} />
                     <Link href={t.href} className={t.tone === "grave" ? "sc-write-secondary st-btn-primary" : "sc-write-secondary st-btn"}>
                       {t.cta}
                     </Link>

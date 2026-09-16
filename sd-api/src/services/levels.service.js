@@ -199,4 +199,44 @@ async function approveLevels({ storyId, scholarId, profileId, user, audiences = 
   return serializeMongoValue({ ...story, approved: wanted });
 }
 
-module.exports = { generateLevelsForDoc, generateLevels, approveLevels };
+/**
+ * The scholar discards reading levels they do not want.
+ *
+ * Named bands, or every band they have not approved — the ones the Studio
+ * queue asks them about. A level that is live for readers may be discarded
+ * too, and then readers stop seeing it; that is a change to what is
+ * published, so it is a version of the story like any other write, recorded
+ * in the history with who did it and which bands went.
+ */
+async function discardLevels({ storyId, scholarId, profileId, user, audiences = null, baseVersion = null }) {
+  const editorial = require("./editorial.service");
+  const { getDb } = require("../db/mongo");
+  const db = await getDb();
+  const storyDoc = await editorial.findOwnedStory({ storyId, scholarId, profileId });
+  const have = storyDoc.levels || {};
+  const { remove, live, missing } = levels.levelsToDiscard(have, audiences);
+  if (missing.length) {
+    throw new ApiError(404, `There is no ${missing.map((a) => AUDIENCES[a].label.toLowerCase()).join(" or ")} level on this story to discard.`);
+  }
+  if (!remove.length) {
+    throw new ApiError(400, "There are no reading levels waiting on this story. Nothing to discard.");
+  }
+
+  const actor = user?.login_email || scholarId;
+  const next = { ...have };
+  for (const a of remove) delete next[a];
+  const named = remove.map((a) => AUDIENCES[a].label.toLowerCase());
+  await editorial.commitStoryWrite(db, {
+    story: storyDoc,
+    set: { levels: next, updated_by: actor },
+    source: storyVersion.SOURCE.SCHOLAR,
+    actor,
+    note: `Discarded the ${named.join(", ")} level${remove.length === 1 ? "" : "s"}${live.length ? `, ${live.length} of which ${live.length === 1 ? "was" : "were"} live for readers` : ""}`,
+    baseVersion: storyVersion.parseBaseVersion(baseVersion),
+  });
+  await editorial.refreshEvidenceAfterWrite(db, storyDoc._id);
+  const story = await editorial.getEditorialStory({ storyId, scholarId, profileId });
+  return serializeMongoValue({ ...story, discarded: remove, wasLive: live });
+}
+
+module.exports = { generateLevelsForDoc, generateLevels, approveLevels, discardLevels };

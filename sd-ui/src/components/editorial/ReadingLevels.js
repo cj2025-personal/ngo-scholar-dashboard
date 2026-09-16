@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { FaCheck, FaRotate, FaWandMagicSparkles } from "react-icons/fa6";
 
+import DiscardLevelsButton from "@/components/editorial/DiscardLevelsButton";
 import { DRAFT_AUDIENCES, approveStoryLevels, generateStoryLevels } from "@/lib/drafting";
 import { normaliseAudience } from "@/lib/readability";
 
@@ -158,6 +159,16 @@ export default function ReadingLevels({ story, viewLevel, onView, onChanged, dir
               {!current.approved && !current.stale ? (
                 <button type="button" className="sc-write-publish st-btn-primary" disabled={busy !== "" || dirty} onClick={() => approve([current.audience])}><FaCheck size={11} aria-hidden /> {busy === "approve" ? "Approving…" : "Approve for readers"}</button>
               ) : null}
+              {/* Written, and not wanted. Without this a level could only be
+                  rewritten or approved, so an unwanted one asked forever. */}
+              <DiscardLevelsButton
+                storyId={story.id}
+                audiences={[current.audience]}
+                count={1}
+                live={Boolean(current.approved)}
+                label="Discard this level"
+                onDone={(data) => { onView?.(null); onChanged?.(data.story, `The ${(DRAFT_AUDIENCES.find((a) => a.value === current.audience)?.label || "reading").toLowerCase()} level is gone.${current.approved ? " Readers no longer see it." : ""} You can write it again whenever you like.`); }}
+              />
             </div>
           </div>
           {current.stale ? <p className="sc-write-msg is-error">This level was written from an earlier version of the article, so readers are not shown it. Rewrite it to bring it up to date.</p> : null}
