@@ -232,23 +232,50 @@ function buildDraftPrompt({ scholar = {}, source = {}, text, truncated = false, 
 
 /* Exact forms, case-sensitive, so "US" (the country) and "Us" do not trip it
    while "I", "We" at sentence start and "we" mid-sentence do. */
+/* The singular first person is the author, always, with no second reading. */
 const FIRST_PERSON = new Set([
   "I", "I'm", "I've", "I'd", "I'll", "me", "my", "mine", "myself",
-  "we", "We", "we're", "We're", "we've", "We've", "we'd", "we'll", "We'll",
-  "our", "Our", "ours", "ourselves", "us",
-  "My", "Me", "Mine", "Myself", "Ours", "Ourselves",
+  "My", "Me", "Mine", "Myself",
 ]);
 
-/** Sentences of `text` that speak in the first person. */
+/**
+ * "We" has two meanings and only one of them is forbidden.
+ *
+ * ── What this cost ──────────────────────────────────────────────────────────
+ * Every `we`, `us` and `our` counted as the author speaking, so an article
+ * for a child — where "things we use every day" and "it helps us find" are
+ * ordinary English for everyone, the reader included — tripped the guard on
+ * the first section and the run refused. A scholar approved six sections and
+ * got a sentence telling them to try a different paper. Measured on the real
+ * model: three such sentences in the first section, none of them the author.
+ *
+ * ── The line ────────────────────────────────────────────────────────────────
+ * The authorial "we" attaches to the work: a verb for doing research, or a
+ * possessive over what was produced. The inclusive "we" attaches to the
+ * world. So `we found`, `we measured`, `our method`, `our results` are the
+ * author; `we use every day`, `helps us find`, `tells us about the weather`
+ * are not. Everyday verbs are deliberately absent from the list — "we use"
+ * and "we see" are how you explain anything to anyone.
+ *
+ * A heuristic, so it can miss: "we wanted to know whether" is the author and
+ * passes. That is the cheap failure — one sentence in front of the scholar,
+ * who is reading the draft anyway. The expensive failure was the other
+ * direction, and it threw six sections away.
+ */
+const RESEARCH_VERB = /\b[Ww]e\s+(?:\w+ly\s+|also\s+|then\s+|first\s+|next\s+|have\s+|had\s+|here\s+)*(?:found|find|show|showed|shown|present|presented|propose|proposed|develop|developed|design|designed|build|built|test|tested|measure|measured|ran|run|observe|observed|report|reported|conclude|concluded|demonstrate|demonstrated|evaluate|evaluated|compare|compared|analyse|analysed|analyze|analyzed|derive|derived|simulate|simulated|investigate|investigated|introduce|introduced|implement|implemented|collect|collected|record|recorded|obtain|obtained|establish|established|verify|verified|confirm|confirmed|validate|validated|quantify|quantified|assess|assessed|examine|examined|estimate|estimated|calculate|calculated|compute|computed|apply|applied|carried\s+out|carry\s+out|set\s+out|cut|reduce|reduced|improve|improved|achieve|achieved|increase|increased|decrease|decreased|eliminate|eliminated|suppress|suppressed|solve|solved)\b/;
+const OUR_WORK = /\b[Oo]ur\s+(?:\w+\s+){0,2}(?:method|methods|approach|approaches|work|paper|papers|study|studies|research|result|results|finding|findings|data|dataset|experiment|experiments|simulation|simulations|analysis|algorithm|algorithms|technique|techniques|model|models|array|arrays|system|systems|design|implementation|measurement|measurements|trial|trials|test|tests|contribution|contributions|proposal|hypothesis)\b/;
+
+/** Sentences of `text` that speak in the author's own first person. */
 function firstPersonSentences(text) {
   const sentences = String(text || "").split(/(?<=[.!?])\s+/);
-  return sentences.filter((sentence) =>
-    sentence
-      .replace(/[“”"]/g, "")
+  return sentences.filter((raw) => {
+    const sentence = raw.replace(/[“”"]/g, "");
+    const singular = sentence
       .split(/\s+/)
       .map((w) => w.replace(/^[^A-Za-z']+|[^A-Za-z']+$/g, ""))
-      .some((w) => FIRST_PERSON.has(w)),
-  );
+      .some((w) => FIRST_PERSON.has(w));
+    return singular || RESEARCH_VERB.test(sentence) || OUR_WORK.test(sentence);
+  });
 }
 
 /* Ways an article refers to its own author without naming them. */

@@ -143,6 +143,54 @@ test("first-person prose earns one retry per section, then the run refuses", asy
   await assert.rejects(runDraftGraph(input, stubborn), /first person after a retry/);
 });
 
+test("first person that survives the retry costs the paragraph, not the article", async () => {
+  /* Two paragraphs, one of which insists on speaking as the scholar. The
+     article used to be thrown away whole for this: a scholar who approved
+     six sections was told to try a different paper because one sentence in
+     section one said "we". */
+  const oneBad = {
+    generate: async (req) => {
+      const r0 = await fakeModel().generate(req);
+      if (req.responseSchema === plan.SECTION_SCHEMA) {
+        const d = JSON.parse(r0.text);
+        const cited = [...req.prompt.matchAll(/\[(p\d+)\]/g)].map((x) => x[1]);
+        d.paragraphs = [
+          { text: "We measured the improvement at eleven decibels.", passage_ids: [cited[0]] },
+          { text: d.paragraphs[0].text, passage_ids: [cited[0]] },
+        ];
+        return { text: JSON.stringify(d) };
+      }
+      return r0;
+    },
+  };
+  const r = await runDraftGraph(input, oneBad);
+  const prose = r.bodyBlocks.filter((b) => b.type === "paragraph");
+  assert.ok(prose.length >= 3, "the article survives, one paragraph per section");
+  assert.ok(prose.every((b) => !/We measured/.test(b.html)), "the paragraph that spoke as the scholar is gone");
+  assert.ok(r.warnings.some((w) => /writing as you rather than about you/.test(w)), r.warnings.join(" | "));
+  assert.ok(r.warnings.some((w) => /We measured the improvement/.test(w)), "the warning quotes the sentence");
+});
+
+test("the inclusive we of an explainer is not the scholar speaking, and does not cost a retry", async () => {
+  /* The sentences a real model wrote for an ages 8-11 article, which used to
+     refuse the run on the first section. */
+  const childish = {
+    generate: async (req) => {
+      const r0 = await fakeModel().generate(req);
+      if (req.responseSchema === plan.SECTION_SCHEMA) {
+        const d = JSON.parse(r0.text);
+        d.paragraphs[0].text = "It helps us find where sounds come from. This is useful for many things we use every day.";
+        return { text: JSON.stringify(d) };
+      }
+      return r0;
+    },
+  };
+  const r = await runDraftGraph(input, childish);
+  assert.ok(r.calls.filter((c) => c.step === "draft_blocks").every((c) => !c.strictVoice), "no section was sent back for voice");
+  assert.ok(r.bodyBlocks.some((b) => /things we use every day/.test(b.html)), "the prose is kept as written");
+  assert.ok(!r.warnings.some((w) => /writing as you/.test(w)), r.warnings.join(" | "));
+});
+
 test("the judge sends a section back with the claims named, and a redraft that passes is accepted", async () => {
   /* Unsupported until the drafter has been told once. */
   const model = fakeModel({ judge: (text) => (/redrafted/.test(text) ? "supported" : "unsupported") });

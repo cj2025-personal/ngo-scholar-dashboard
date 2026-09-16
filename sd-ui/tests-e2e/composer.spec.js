@@ -82,6 +82,21 @@ test("from a paper to a published story, with the agent editing by instruction",
   await outline2.getByRole("button", { name: /Approve and draft/ }).click();
   await expect(page.locator(".ch-msg.is-user").last()).toContainText("Approved");
 
+  /* What the scholar approved lands in the page they were looking at: the
+     title in the title field, a heading for every section they kept, and the
+     prose under each — then the page saves it and becomes the story. Asserted
+     against the outline they approved, not against a fixture, because the
+     thing that can silently break is the handover from rail to page. */
+  const approvedHeadings = await outline2.locator(".ch-beat:not(.is-cut) .ch-beat-heading").allInnerTexts();
+  const approvedTitle = await outline2.locator(".ch-outline-title").innerText();
+  await expect(page.getByPlaceholder("Title", { exact: true })).toHaveValue(approvedTitle, { timeout: 120_000 });
+  for (const heading of approvedHeadings) {
+    await expect(page.locator(".block-row", { hasText: heading.replace(/Beyond the paper|Your own context/g, "").trim() }).first()).toBeVisible();
+  }
+  await expect(page.locator(".block-row .block-editor-surface").first()).not.toBeEmpty();
+  const words = Number((await page.locator(".sc-write-metatext").innerText()).match(/(\d[\d,]*) words/)?.[1].replace(/,/g, "") || 0);
+  expect(words).toBeGreaterThan(100);
+
   /* Step 4 runs on the server; the draft is a story before the page moves. */
   await expect(page).toHaveURL(/\/editorial\/[0-9a-f]{24}$/, { timeout: 120_000 });
 

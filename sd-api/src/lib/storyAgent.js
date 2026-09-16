@@ -196,7 +196,11 @@ function renderPassages(passages) {
   return passages.map((p) => `[${p.id}] ${p.text}`).join("\n\n");
 }
 
-const FIRST_PERSON = /(^|[^A-Za-z'])(I|I'm|I've|I'd|we|We|we're|our|Our|my|My|us)(?=[^A-Za-z']|$)/;
+/* One definition of "the author speaking", shared with the drafter: "I" and
+   "my" always, "we" and "our" only where they stand for the people who did
+   the work. Two copies of this rule drifted apart once already — this one
+   refused "things we use every day" in a paragraph written for a child. */
+const FIRST_PERSON = { test: (t) => composer.firstPersonSentences(t).length > 0 };
 
 /**
  * Apply one tool call to a state. Returns { state, result } where result is

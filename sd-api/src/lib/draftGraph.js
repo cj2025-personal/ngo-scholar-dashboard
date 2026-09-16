@@ -53,7 +53,16 @@ const { assessDraftReadability, simplificationNote, VERDICT } = require("./draft
 const { USE } = require("./draftEligibility");
 const checks = require("./checks");
 
-const GRAPH_VERSION = "draft-graph-2026.4";
+const GRAPH_VERSION = "draft-graph-2026.5";
+
+/** A block's text, as the voice checks read it: markup out, entities back. */
+function plainText(html) {
+  return String(html || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 /** One retry per section for voice; the graph refuses after that. */
 const SECTION_VOICE_RETRIES = 1;
@@ -172,8 +181,24 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
           strictVoice = strictVoice || result.violations.length > 0;
           strictSelf = strictSelf || result.selfReferences.length > 0;
         }
+        /* First person that survives the retry costs the paragraph, not the
+           article. It used to throw, and a scholar who had approved six
+           sections was told to try a different paper because one sentence in
+           section one said "we". The paragraph goes, the rest stands, and the
+           warning says what went — the same answer unsupported claims get.
+           A section left with no prose still refuses, as it did. */
         if (result.violations.length > 0) {
-          throw new Error(`Section ${beat.index} kept writing in the first person after a retry.`);
+          const offends = (b) => composer.firstPersonSentences(plainText(b.html)).length > 0;
+          const kept = result.blocks.filter((b) => !offends(b));
+          if (!kept.some((b) => b.type === "paragraph")) {
+            throw new Error(`Section ${beat.index} kept writing in the first person after a retry.`);
+          }
+          const gone = result.blocks.length - kept.length;
+          warnings.push(
+            `${gone} paragraph${gone === 1 ? "" : "s"} in "${beat.heading}" ${gone === 1 ? "was" : "were"} left out because ${gone === 1 ? "it kept" : "they kept"} writing as you rather than about you: ` +
+            `${result.violations.slice(0, 2).map((x) => `“${x.trim().slice(0, 100)}”`).join(" ")} Ask the agent for ${gone === 1 ? "another" : "more"} on this point if you want ${gone === 1 ? "it" : "them"} back.`,
+          );
+          result = { ...result, blocks: kept };
         }
         /* A name that survives the retry is not worth losing the draft over:
            it is one word for the scholar to cut, and the warning says where. */
