@@ -12,6 +12,11 @@
  * Grades are Flesch-Kincaid grade levels. The younger the reader, the
  * tighter the tolerance: a draft is an introduction, not a set text.
  *
+ * The band has two sides. `maxAbove` is how far above the target prose may
+ * sit before it is too hard; `maxBelow` is how far below before it is too
+ * thin for the reader it was written for. `maxBelow: null` means no floor,
+ * which is right only for the youngest band.
+ *
  * `young` marks the bands where a paragraph that goes beyond the paper is
  * also judged for suitability: nothing frightening, nothing beyond the
  * reader's world. The reach judge reads it; nothing else does.
@@ -23,6 +28,8 @@ const AUDIENCES = {
     readers: "readers aged 8 to 11",
     grade: 4,
     maxAbove: 1.5,
+    /* No floor: prose simpler than a child needs is still right for a child. */
+    maxBelow: null,
     young: true,
     brief:
       "children aged 8 to 11. Very short sentences, one idea in each, everyday words. " +
@@ -34,6 +41,7 @@ const AUDIENCES = {
     readers: "readers aged 12 to 14",
     grade: 7,
     maxAbove: 2.0,
+    maxBelow: 3.0,
     young: true,
     brief:
       "students aged 12 to 14. Short sentences and concrete examples. Define every " +
@@ -45,6 +53,7 @@ const AUDIENCES = {
     readers: "readers aged 15 to 18",
     grade: 9,
     maxAbove: 2.0,
+    maxBelow: 2.5,
     brief:
       "students aged 15 to 18. Short sentences and concrete examples. Define every " +
       "technical term in the sentence that introduces it. Do not talk down.",
@@ -55,6 +64,11 @@ const AUDIENCES = {
     readers: "adult readers",
     grade: 10,
     maxAbove: 3.0,
+    /* Measured across seven drafts: every adult article landed below its
+       target, 7.8 to 9.4 against 10, because nothing ever said it was too
+       simple. A reader given grade-8 prose when they read at grade 10 is
+       being talked down to. */
+    maxBelow: 2.0,
     brief:
       "an interested adult with no background in the field — a curious newspaper reader. " +
       "Plain language; define any technical term the first time it appears.",

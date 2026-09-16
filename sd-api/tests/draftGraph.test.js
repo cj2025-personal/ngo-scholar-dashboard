@@ -29,7 +29,10 @@ const source = { id: "src-1", origin: "harvested", title: "Adaptive nulling", ye
 const prepared = composer.prepareSourceText(PAPER);
 const input = { source, scholar: { name: "Test Scholar" }, audience: "general", prepared };
 
-const PLAIN = "The array steers a null toward each source of noise, so the signal the receiver hears is cleaner. ".repeat(3);
+/* Prose that sits inside the adult reading band — grade 9.3 against a target
+   of 10 — so these tests measure node order, retries and provenance rather
+   than tripping the readability loop, which has its own tests. */
+const PLAIN = "The array steers a null toward each source of noise, so the receiver hears a cleaner signal. Unwanted energy is suppressed before detection. Interference arriving from another direction is reduced by the same mechanism. ".repeat(3);
 
 /**
  * A fake model that answers the outline, each section, and the judge.

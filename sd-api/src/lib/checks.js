@@ -364,4 +364,122 @@ function headingSupport({ blocks, passages, title = null }) {
   return { version: CHECKS_VERSION, heuristic: true, checked, unsupported, ok: checked ? unsupported.length === 0 : null };
 }
 
-module.exports = { CHECKS_VERSION, NUMBER_WORDS, WORLD_CLAIM_CUES, ATTRIBUTION_CUES, HEADING_IGNORE, HEADING_MIN_MISSING, numbersIn, numericConsistency, limitationPassages, limitationsCoverage, worldClaims, extensionBudget, attributionCues, verifyList, headingSupport };
+/**
+ * How much the prose repeats itself, counted.
+ *
+ * Measured across seven drafts before anything was done about it: three
+ * words opened between half and two thirds of every sentence, one article
+ * began 23 of its 97 sentences with "This", and 2 of 84 paragraphs opened
+ * with anything joining them to what came before. A reader feels that as
+ * flatness without being able to name it, so it is named here.
+ *
+ * A count, not a verdict on the writing: it reports, and the scholar decides.
+ */
+const JOINING_OPENERS = /^(?:but|yet|so|still|then|because|although|though|while|however|even|that is|in other words|the result|the catch|what follows|worse|better|instead|by contrast|for all that|and)\b/i;
+
+/**
+ * The words that open a draft's sentences, most used first.
+ *
+ * Separate from the verdict below, which says nothing until there are enough
+ * sentences to judge a share. The drafter needs the count from the first
+ * section onward — that is when the habit forms — so this always answers.
+ */
+function openerCounts(blocks) {
+  const sentences = (blocks || [])
+    .filter((b) => b.type === "paragraph")
+    .flatMap((b) => plain(b.html).split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean));
+  const counts = {};
+  for (const s of sentences) {
+    const w = (s.split(/\s+/)[0] || "").toLowerCase().replace(/[^a-z]/g, "");
+    if (w) counts[w] = (counts[w] || 0) + 1;
+  }
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([word, n]) => ({ word, n, share: sentences.length ? +(n / sentences.length).toFixed(2) : 0 }));
+}
+
+/**
+ * How much of a paragraph is the paper's own wording.
+ *
+ * An article is meant to be the paper explained, not the paper retyped. The
+ * whole point of the pipeline is that it paraphrases — measured across seven
+ * drafts, 1-3% of six-word runs matched the source. Then a change aimed at
+ * raising the reading level told the drafter to prefer exact terms, and one
+ * paragraph came back 38% verbatim. Nothing was watching, so nothing said so.
+ *
+ * Quotes are exempt: a quote block is supposed to be word for word.
+ */
+const BORROW_LIMIT = 0.2;
+
+function borrowed({ blocks, passages }) {
+  const words = (t) => plain(t).toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  const runs = (list, n) => {
+    const out = new Set();
+    for (let i = 0; i + n <= list.length; i += 1) out.add(list.slice(i, i + n).join(" "));
+    return out;
+  };
+  const source = runs((passages || []).flatMap((p) => words(p.text)), 6);
+  if (!source.size) return { version: CHECKS_VERSION, heuristic: true, checked: 0, worst: null, hits: [], ok: null, sentence: null };
+
+  const hits = [];
+  let checked = 0;
+  (blocks || []).forEach((b, i) => {
+    if (b.type !== "paragraph") return;
+    const w = words(b.html);
+    if (w.length < 20) return;
+    checked += 1;
+    const mine = [...runs(w, 6)];
+    const shared = mine.filter((g) => source.has(g)).length;
+    const share = mine.length ? shared / mine.length : 0;
+    if (share > BORROW_LIMIT) hits.push({ block: i + 1, share: +share.toFixed(2), words: w.length });
+  });
+  const worst = hits.length ? Math.max(...hits.map((h) => h.share)) : 0;
+  return {
+    version: CHECKS_VERSION, heuristic: true, checked, hits, worst: +worst.toFixed(2),
+    ok: checked ? hits.length === 0 : null,
+    sentence: hits.length
+      ? `${hits.length} paragraph${hits.length === 1 ? "" : "s"} repeat${hits.length === 1 ? "s" : ""} the paper's own wording closely (up to ${Math.round(worst * 100)}% of six-word runs: ${hits.map((h) => `block ${h.block}`).join(", ")}). An article is the paper explained, not the paper retyped.`
+      : null,
+  };
+}
+
+function repetition({ blocks }) {
+  const paras = (blocks || []).filter((b) => b.type === "paragraph");
+  const sentences = paras.flatMap((b) => plain(b.html).split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean));
+  /* Under a dozen sentences a share means nothing: three distinct openers
+     out of six is 50% and perfectly varied. */
+  if (sentences.length < 12) return { version: CHECKS_VERSION, heuristic: true, sentences: sentences.length, ok: null, openers: [], repeatedRuns: 0, joinedParagraphs: 0, paragraphs: paras.length, sentence: null };
+
+  const firstWord = (s) => (s.split(/\s+/)[0] || "").toLowerCase().replace(/[^a-z]/g, "");
+  const counts = {};
+  for (const s of sentences) { const w = firstWord(s); if (w) counts[w] = (counts[w] || 0) + 1; }
+  const openers = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([word, n]) => ({ word, n, share: +(n / sentences.length).toFixed(2) }));
+  const topThreeShare = openers.reduce((a, o) => a + o.n, 0) / sentences.length;
+  /* One word carrying a fifth of the article's sentences is what a reader
+     hears: "This" opened 23 of 97 sentences in one measured draft. Judged on
+     the commonest alone, with a real count behind it, so varied prose with
+     few sentences is not accused of droning. */
+  const top = openers[0] || { word: "", n: 0, share: 0 };
+  const dominated = top.n >= 5 && top.share > 0.18;
+
+  /* Three in a row opening the same way is the thing a reader hears. */
+  let repeatedRuns = 0;
+  let run = 1;
+  for (let i = 1; i < sentences.length; i += 1) {
+    if (firstWord(sentences[i]) && firstWord(sentences[i]) === firstWord(sentences[i - 1])) { run += 1; if (run === 3) repeatedRuns += 1; }
+    else run = 1;
+  }
+  const joinedParagraphs = paras.filter((b) => JOINING_OPENERS.test(plain(b.html))).length;
+
+  const ok = !dominated && repeatedRuns === 0;
+  const parts = [];
+  if (dominated) parts.push(`${top.n} of ${sentences.length} sentences begin with “${top.word}”`);
+  if (repeatedRuns) parts.push(`${repeatedRuns} run${repeatedRuns === 1 ? "" : "s"} of three sentences opening the same way`);
+  return {
+    version: CHECKS_VERSION, heuristic: true, sentences: sentences.length, paragraphs: paras.length,
+    openers, topThreeShare: +topThreeShare.toFixed(2), topShare: +top.share.toFixed(2), repeatedRuns, joinedParagraphs, ok,
+    sentence: ok ? null : `${parts.join("; ")}. Varying how sentences open costs nothing and changes no fact.`,
+  };
+}
+
+module.exports = { CHECKS_VERSION, NUMBER_WORDS, WORLD_CLAIM_CUES, ATTRIBUTION_CUES, HEADING_IGNORE, HEADING_MIN_MISSING, JOINING_OPENERS, BORROW_LIMIT, repetition, openerCounts, borrowed, numbersIn, numericConsistency, limitationPassages, limitationsCoverage, worldClaims, extensionBudget, attributionCues, verifyList, headingSupport };

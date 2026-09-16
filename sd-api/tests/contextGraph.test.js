@@ -26,7 +26,9 @@ const source = { id: "src-1", origin: "harvested", title: "Adaptive nulling", ye
 const prepared = composer.prepareSourceText(PAPER);
 const input = { source, scholar: { name: "Test Scholar" }, audience: "adults", voice: "author", prepared, brief: "How does this help anyone today, and where does the same problem turn up in practice?" };
 
-const PLAIN = "The array steers a null toward each source of noise, so the signal the receiver hears is cleaner. ".repeat(3);
+/* Inside the adult reading band, so these tests are about the context judge
+   and not about the readability loop. */
+const PLAIN = "The array steers a null toward each source of noise, so the receiver hears a cleaner signal. Unwanted energy is suppressed before detection. Interference arriving from another direction is reduced by the same mechanism. ".repeat(3);
 const CONTEXT = "In practice the same problem turns up wherever a receiver must hear a weak signal beside a strong one, such as a handset at the edge of a cell in the 2.4 GHz band.";
 const MISATTRIBUTED = "The paper shows this method is used in every phone sold today.";
 

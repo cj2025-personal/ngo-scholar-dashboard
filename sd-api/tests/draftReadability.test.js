@@ -79,11 +79,18 @@ test("tolerance widens on short text, and a very short text never fails", () => 
   assert.equal(l.tolerance, AUDIENCE_TARGETS.ages_15_18.maxAbove);
 });
 
-test("too easy is noted, never failed", () => {
+test("too easy fails for a reader with a floor, and is only noted for one without", () => {
+  /* This used to pass at any depth below target, and every adult draft
+     measured drifted under: a band with a ceiling and no floor sinks. */
   const r = assessDraftReadability({ text: repeat(SIMPLE, 20), audience: "adults" });
-  assert.equal(r.verdict, VERDICT.WARN);
+  assert.equal(r.verdict, VERDICT.FAIL);
+  assert.equal(r.tooSimple, true);
   assert.match(r.reason, /below the level/);
   assert.ok(r.drift < 0);
+
+  /* A child has no floor: simpler than they need is still right for them. */
+  const child = assessDraftReadability({ text: repeat(SIMPLE, 20), audience: "ages_8_11" });
+  assert.notEqual(child.verdict, VERDICT.FAIL);
 });
 
 test("an unknown audience is judged as a general reader, and empty text is a warning", () => {

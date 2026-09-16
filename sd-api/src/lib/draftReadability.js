@@ -37,7 +37,7 @@ const { measureReadability, RELIABLE_WORD_FLOOR } = require("./readability");
  * by age band. Older keys (`general`, `students`) are accepted as aliases.
  */
 const { AUDIENCES, DEFAULT_AUDIENCE, normaliseAudience } = require("./audiences");
-const AUDIENCE_TARGETS = Object.fromEntries(Object.entries(AUDIENCES).map(([k, a]) => [k, { grade: a.grade, maxAbove: a.maxAbove, label: a.readers }]));
+const AUDIENCE_TARGETS = Object.fromEntries(Object.entries(AUDIENCES).map(([k, a]) => [k, { grade: a.grade, maxAbove: a.maxAbove, maxBelow: a.maxBelow ?? null, label: a.readers }]));
 
 /** Under this many words, one more grade of tolerance. */
 const SHORT_TEXT_WORDS = 300;
@@ -84,6 +84,21 @@ function assessDraftReadability({ text, audience }) {
     return { ...base, verdict: VERDICT.FAIL, reason: describe };
   }
 
+  /* The other side of the band. Prose far below the reader's level is not
+     safe, it is condescending, and nothing here used to say so: measured
+     across seven drafts, every adult article landed under its target and
+     passed. A band with only a ceiling drifts down until it hits nothing. */
+  const floor = target.maxBelow === null || target.maxBelow === undefined ? null : target.maxBelow + (m.words < SHORT_TEXT_WORDS ? SHORT_TEXT_EXTRA_GRADES : 0);
+  if (floor !== null && drift < -floor) {
+    const describe =
+      `reads ${Math.abs(drift).toFixed(1)} grades below the level for ${target.label} ` +
+      `(Flesch-Kincaid ${m.fkGrade} against a target of ${target.grade}; ${m.avgSentenceWords} words per sentence)`;
+    /* Too simple is never worth refusing a draft over, and on a short or
+       unreliable measurement it is not worth a rewrite either. */
+    if (!m.reliable) return { ...base, verdict: VERDICT.WARN, reason: `${describe}; only ${m.words} words, under the ${RELIABLE_WORD_FLOOR} needed to measure reliably` };
+    return { ...base, verdict: VERDICT.FAIL, reason: describe, tooSimple: true };
+  }
+
   if (drift < -NOTE_BELOW_GRADES) {
     return {
       ...base, verdict: VERDICT.WARN,
@@ -101,6 +116,23 @@ function assessDraftReadability({ text, audience }) {
 function simplificationNote(assessment) {
   if (!assessment || assessment.verdict !== VERDICT.FAIL) return null;
   const t = AUDIENCE_TARGETS[normaliseAudience(assessment.audience)] || AUDIENCE_TARGETS[DEFAULT_AUDIENCE];
+
+  /* Too simple. The correction is the same machinery pointed the other way:
+     write for the reader you have. Nothing here asks for a new fact — a
+     sentence joined to the one after it says exactly what the two said. */
+  if (assessment.tooSimple) {
+    return (
+      `Your previous draft measured at reading grade ${assessment.fkGrade}; the target for ${t.label} is grade ${t.grade}, ` +
+      `so it reads well below the reader it is for. Rewrite at their level: join sentences that belong together with ` +
+      `"which", "because", "so" and "while" rather than leaving each on its own, and vary the length — around ${t.grade >= 10 ? "18" : "14"} words on ` +
+      "average, with some noticeably longer and some short for emphasis. Where you are describing a named thing in a long " +
+      "plain phrase, name it once with a short definition and use the name after that. " +
+      "Do not otherwise move closer to the paper's own sentences: this is the article's wording, not the paper's, and " +
+      "copying its phrasing to raise the reading level is the wrong fix. Add no fact that is not already in the draft; " +
+      "say what is there in fewer, fuller sentences of your own."
+    );
+  }
+
   return (
     `Your previous draft measured at reading grade ${assessment.fkGrade}; the target for ${t.label} is grade ${t.grade}. ` +
     "Shorten sentences to 15–20 words, prefer one- and two-syllable words, and define each technical term in " +

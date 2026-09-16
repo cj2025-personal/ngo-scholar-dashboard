@@ -162,6 +162,27 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
       let fidelityNote = null;
       let reachNote = null;
       let contextNote = null;
+
+      /* What the reader has already been told. Sections are separate calls,
+         so without this each one starts cold: before it existed, 2 of 84
+         paragraphs opened with anything joining them to what came before,
+         and terms were defined again several sections later. Only text
+         already written and already judged is passed on. */
+      const written = s.outline.beats.slice(0, s.outline.beats.indexOf(beat)).map((b) => sections[b.index]).filter(Boolean);
+      const writtenBlocks = written.flatMap((sec) => sec.blocks);
+      const lastProse = [...writtenBlocks].reverse().find((b) => b.type === "paragraph");
+      const previously = written.length
+        ? {
+            headings: s.outline.beats.slice(0, s.outline.beats.indexOf(beat)).map((b) => b.heading),
+            terms: plan.termsIntroduced(writtenBlocks),
+            lastSentence: lastProse
+              ? plainText(lastProse.html).split(/(?<=[.!?])\s+/).filter(Boolean).pop()?.slice(0, 240) || null
+              : null,
+            /* The words already carrying the article's sentences, so the next
+               section does not reach for them again. */
+            openers: checks.openerCounts(writtenBlocks).filter((o) => o.n >= 2).slice(0, 4),
+          }
+        : null;
       let accepted = null;
 
       for (let round = 0; round <= FIDELITY_RETRIES; round += 1) {
@@ -174,6 +195,7 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
           const prompt = plan.buildSectionPrompt({
             scholar: s.scholar, beat, passages: s.passages, outline: s.outline, audience: s.audience, voice: s.voice,
             brief: s.brief || null, strictVoice, strictSelf, readabilityNote: s.readabilityNote || null, fidelityNote, reachNote, contextNote,
+            previously,
           });
           const r = await generate({ prompt, systemInstruction: systemFor(s), responseSchema: plan.SECTION_SCHEMA, temperature: strictVoice || strictSelf ? 0.2 : 0.4, maxOutputTokens: 2048 });
           calls.push({ step: "draft_blocks", beat: beat.index, usage: r.usage || null, model: r.modelVersion || null, strictVoice, strictSelf, round });
@@ -507,7 +529,18 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
         `${headings.unsupported.map((u) => `“${u.text}” (${u.missing.slice(0, 3).join(", ")})`).join("; ")}. A reader skims headings, so change ${headings.unsupported.length === 1 ? "it" : "them"} before publishing.`,
       );
     }
-    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations, worldClaims, budget, pronouns, attribution, verify: verifyItems, headings } };
+    /* How much the prose repeats itself. Reported, never a refusal: it is a
+       count about rhythm, and rhythm is the scholar's to judge. */
+    const repeats = checks.repetition({ blocks: s.draft.bodyBlocks });
+    if (repeats.ok === false) warnings.push(repeats.sentence);
+
+    /* And how much of it is the paper's own wording rather than the
+       article's. A paraphrasing pipeline that starts copying says nothing
+       about it unless something counts. */
+    const borrow = checks.borrowed({ blocks: s.draft.bodyBlocks, passages: s.passages });
+    if (borrow.ok === false) warnings.push(borrow.sentence);
+
+    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations, worldClaims, budget, pronouns, attribution, verify: verifyItems, headings, repetition: repeats, borrowed: borrow } };
   }
 
   return { pick_source, plan_outline, draft_blocks, assemble, verify };

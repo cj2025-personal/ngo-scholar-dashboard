@@ -369,7 +369,39 @@ const SECTION_SCHEMA = {
   required: ["paragraphs"],
 };
 
-function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, brief = null, strictVoice = false, strictSelf = false, readabilityNote = null, fidelityNote = null, reachNote = null, contextNote = null, voice = composer.DEFAULT_VOICE }) {
+/**
+ * How the prose should move, for the reader it is for.
+ *
+ * Measured across seven drafts before this existed: mean sentence 12.6
+ * words, a fifth of them eight words or shorter, one in seventy longer than
+ * twenty-five. Every sentence the same length is a drone, and the only
+ * instruction the pipeline ever gave about sentences fired when a draft was
+ * too hard and said "shorten". Nothing asked for variety.
+ *
+ * Rhythm is not content: joining two sentences says what the two said.
+ */
+function rhythmFor(aud) {
+  if (aud.grade <= 4) {
+    return [
+      "Rhythm: short sentences, one idea in each. Vary them a little so the page does not drone — a few of ten or",
+      "twelve words among the short ones. Do not start three sentences in a row with the same word.",
+    ];
+  }
+  if (aud.grade <= 7) {
+    return [
+      "Rhythm: around fourteen words on average. Join two short sentences where one idea leads to the other, and keep",
+      "the short ones for the points that matter. Do not start three sentences in a row with the same word.",
+    ];
+  }
+  return [
+    "Rhythm: around eighteen words on average, and varied — at least one sentence per paragraph noticeably longer,",
+    'carrying a clause ("which…", "because…", "while…"), and short ones where a point lands. A paragraph of sentences',
+    "all the same length reads as a list. Do not start three sentences in a row with the same word, and do not open",
+    'more than one paragraph in this section with "This".',
+  ];
+}
+
+function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, brief = null, strictVoice = false, strictSelf = false, readabilityNote = null, fidelityNote = null, reachNote = null, contextNote = null, voice = composer.DEFAULT_VOICE, previously = null }) {
   const aud = composer.AUDIENCES[composer.normaliseAudience(audience)];
   const name = scholar.name || "the scholar";
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
@@ -464,6 +496,33 @@ function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, b
   if (contextNote) {
     lines.push("", contextNote);
   }
+  lines.push("", ...rhythmFor(aud));
+
+  /* Each section is written by its own call, so without this one it knows
+     nothing of the others: measured before it existed, 2 of 84 paragraphs
+     opened with anything joining them to what came before, and terms were
+     explained again in later sections. What is passed is text already
+     written and already judged, never new material. */
+  if (previously && (previously.headings?.length || previously.lastSentence)) {
+    lines.push(
+      "",
+      "WHAT THE READER HAS ALREADY BEEN TOLD — do not explain any of it a second time, and do not repeat these points:",
+      ...(previously.headings?.length ? [`Sections already written: ${previously.headings.join(" · ")}`] : []),
+      ...(previously.terms?.length ? [`Terms already introduced and defined: ${previously.terms.join(", ")}. Use them plainly from here.`] : []),
+      ...(previously.lastSentence ? [`The sentence immediately before this section: “${previously.lastSentence}”`, "Open in a way that follows from it. Do not restate it."] : []),
+      /* Per-section instructions did not move this: measured after adding
+         them, one article still opened 33 of its 117 sentences with "This",
+         because each call only ever saw its own two or three paragraphs.
+         What is already used has to be named across the whole article. */
+      ...(previously.openers?.length
+        ? [
+            `Words that already open sentences elsewhere in this article: ${previously.openers.map((o) => `“${o.word}” ${o.n}×`).join(", ")}.`,
+            `Do not begin any sentence in this section with ${previously.openers.slice(0, 3).map((o) => `“${o.word}”`).join(" or ")}. Begin with the subject you are talking about, or with a word that joins this to what came before — “But”, “So”, “Because”, “Once”, “Where”.`,
+          ]
+        : []),
+    );
+  }
+
   lines.push("", kind === BEAT_KIND.CONTEXT ? "=== PASSAGES THIS SECTION RELATES TO ===" : "=== PASSAGES THIS SECTION MAY USE ===", renderPassages(cited), "=== END ===");
   return lines.join("\n");
 }
@@ -574,6 +633,32 @@ function assembleFrom(bodyBlocks) {
   return { bodyBlocks: bodyBlocks.map(({ headingEdited: _e, ...b }) => b), prose, words };
 }
 
+/**
+ * The technical terms a draft has already introduced, so a later section
+ * does not stop to explain them again.
+ *
+ * Acronyms, and the expansion beside one — "Spectral Domain Sparse
+ * Representation (SDSR)" yields both. A heuristic feeding a prompt hint, so
+ * a miss costs nothing and a false one costs a term used plainly, which is
+ * what should happen the second time anyway.
+ */
+function termsIntroduced(blocks) {
+  const out = new Set();
+  for (const b of blocks || []) {
+    if (b.type !== "paragraph" && b.type !== "quote") continue;
+    const text = unescapeHtml(String(b.html || "")).replace(/<[^>]+>/g, " ");
+    for (const m of text.matchAll(/\b([A-Z][A-Za-z]*(?:[ -][A-Z][A-Za-z]*){0,4})\s*\(([A-Z]{2,6})\)/g)) {
+      out.add(`${m[1]} (${m[2]})`);
+    }
+    for (const m of text.matchAll(/(?<![A-Za-z])([A-Z]{2,6})(?![A-Za-z])/g)) {
+      if (!/^(?:A|I|THE|AND|OR|IT|IS)$/.test(m[1])) out.add(m[1]);
+    }
+  }
+  /* The expansion supersedes the bare acronym it contains. */
+  const full = [...out].filter((t) => t.includes("("));
+  return [...out].filter((t) => t.includes("(") || !full.some((f) => f.includes(`(${t})`))).slice(0, 12);
+}
+
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 
 function clean(v) {
@@ -600,6 +685,8 @@ module.exports = {
   SECTION_SCHEMA,
   splitPassages,
   renderPassages,
+  rhythmFor,
+  termsIntroduced,
   buildOutlinePrompt,
   parseOutline,
   buildSectionPrompt,
