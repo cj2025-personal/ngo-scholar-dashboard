@@ -70,7 +70,9 @@ const JUDGE_SYSTEM = [
   '  not a specific; a particular a reader could look up is: "the 2.4 GHz band", "IEEE 802.11", "Philips", "since',
   '  2019", "the Hubble telescope", "a 2015 study by Smith".',
   "- unsuitable: ONLY when the prompt says the reader is a child: true if the claim is frightening, graphic, sexual,",
-  "  about self-harm, or assumes a world beyond a child's. Otherwise false.",
+  "  about self-harm, or assumes a world beyond a child's. Weapons, warfare, surveillance of people, and harm done to",
+  "  anyone are unsuitable for a child however calmly they are put — a sentence that tells a child the point of this",
+  "  work is finding people in order to hurt them is unsuitable even when it names no violence. Otherwise false.",
   "",
   "Rules:",
   "- Judge attribution by the sentence's wording, not by whether the claim is true.",
@@ -162,8 +164,17 @@ function deriveVerdict(claims) {
   return VERDICT.PARTIAL;
 }
 
-/** Every particular the paragraph brings in, once each, for the author to verify. */
-function specificsOf(claims) {
+/**
+ * Every particular the paragraph brings in from outside, once each, for the
+ * author to verify.
+ *
+ * A term the paper already uses is not from outside: asking a scholar to
+ * verify "Bartlett's method" against the world, when their own paper names
+ * it on page one, spends the one thing this list is for. So anything the
+ * passages say is dropped, and what remains is what the model supplied.
+ */
+function specificsOf(claims, paperText = "") {
+  const paper = String(paperText || "").toLowerCase();
   const seen = new Set();
   const out = [];
   for (const c of claims) {
@@ -171,6 +182,9 @@ function specificsOf(claims) {
       const key = s.text.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
+      /* Whole-term match: "radar" in the paper clears "radar", and does not
+         clear "radar altimeters", which is a claim about a thing it is not. */
+      if (key.length >= 3 && paper.includes(key)) continue;
       out.push({ text: s.text, kind: s.kind, verified: false });
     }
   }
@@ -181,9 +195,11 @@ function specificsOf(claims) {
  * @param {string} raw
  * @param {number[]} expectedIndexes
  * @param {Set<string>|null} [knownIds]
+ * @param {string} [paperText]  the passages shown, so a term the paper itself
+ *                              uses is not put on the author's verify list
  * @returns {Map<number, {verdict: string, claims: object[], misattributedClaims: string[], toVerify: object[], reasons: string[]}>}
  */
-function parseJudgeResponse(raw, expectedIndexes, knownIds = null) {
+function parseJudgeResponse(raw, expectedIndexes, knownIds = null, paperText = "") {
   let data;
   try {
     data = JSON.parse(stripFence(raw));
@@ -201,7 +217,7 @@ function parseJudgeResponse(raw, expectedIndexes, knownIds = null) {
       verdict: deriveVerdict(claims),
       claims,
       misattributedClaims: failing.map((c) => c.text),
-      toVerify: specificsOf(claims),
+      toVerify: specificsOf(claims, paperText),
       reasons: [...new Set(failing.map((c) => REASON_TEXT[c.reason] || c.reason))],
     });
   }
@@ -244,7 +260,10 @@ async function judgeSection({ blocks, passages, audience = null, generate }) {
   const shown = (shownIds.length ? shownIds : passages.slice(0, CLAIM_LIMITS.passages).map((p) => p.id)).map((id) => byId.get(id));
   const prompt = buildJudgePrompt({ paragraphs: toJudge.map((p) => ({ index: p.index, text: p.text })), passages: shown, audience });
   const r = await generate({ prompt, systemInstruction: JUDGE_SYSTEM, responseSchema: JUDGE_SCHEMA, temperature: 0, maxOutputTokens: 8192 });
-  const verdicts = parseJudgeResponse(r.text, toJudge.map((p) => p.index), new Set(shown.map((p) => p.id)));
+  /* The whole paper, not just the passages shown: a term the scholar's own
+     paper uses anywhere is theirs already and is not for them to go and check. */
+  const paperText = passages.map((p) => p.text).join(" ");
+  const verdicts = parseJudgeResponse(r.text, toJudge.map((p) => p.index), new Set(shown.map((p) => p.id)), paperText);
 
   const failing = [];
   for (const p of toJudge) {

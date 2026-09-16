@@ -91,12 +91,14 @@ test("a context section is the author's own, judged for attribution, and its spe
   assert.equal(ctx[0].fidelity, undefined, "never the fidelity judge's");
   assert.equal(ctx[0].context.verdict, context.VERDICT.CLEAR);
   assert.deepEqual(ctx[0].context.anchorIds, ["p2"]);
-  assert.deepEqual(ctx[0].context.toVerify.map((v) => [v.text, v.verified]), [["2.4 GHz band", false], ["eleven decibels", false]]);
+  /* "eleven decibels" is the paper's own, so it is not on the author's list
+     to go and check; only what the model brought in from outside is. */
+  assert.deepEqual(ctx[0].context.toVerify.map((v) => [v.text, v.verified]), [["2.4 GHz band", false]]);
   assert.ok(r.bodyBlocks.filter((b) => b.type === "paragraph" && !b.ownView).every((b) => b.fidelity?.verdict === "supported"), "the paper's paragraphs are still the fidelity judge's");
 
   /* The checks name what the author must do before publishing. */
-  assert.equal(r.checks.verify.unverified, 2);
-  assert.ok(r.warnings.some((w) => /2 specifics .* verify/i.test(w)), r.warnings.join(" | "));
+  assert.equal(r.checks.verify.unverified, 1);
+  assert.ok(r.warnings.some((w) => /1 specific .* verify/i.test(w)), r.warnings.join(" | "));
   assert.equal(r.checks.attribution.ok, true);
   assert.equal(r.checks.budget.context, 1);
   assert.ok(r.calls.some((c) => c.step === "judge_context"));
@@ -160,6 +162,76 @@ test("the brief map decides a section's kind, and an ask the plan never answered
   const unbriefed = plan.parseOutline(raw, passages, { allowExtension: false });
   assert.deepEqual(unbriefed.beats.map((b) => b.kind), ["paper", "paper", "paper"]);
   assert.equal(unbriefed.briefMap, null);
+});
+
+test("a heading the machine invented is repaired; one the scholar wrote is left alone and only reported", async () => {
+  /* The heading names a field the paper and the article never mention — the
+     shape of the real failure, where "Cancer Treatment and Protein Folding"
+     sat over paragraphs that said nothing of the kind. */
+  const invented = "Applications in Cancer Treatment and Protein Folding";
+  const model = fakeModel();
+  const withHeading = {
+    generate: async (req) => {
+      if (req.responseSchema === plan.OUTLINE_SCHEMA) {
+        const d = JSON.parse((await model.generate(req)).text);
+        d.beats[d.beats.length - 1].heading = invented;
+        d.beats[d.beats.length - 1].kind = "paper";
+        return { text: JSON.stringify(d) };
+      }
+      /* The repair asks for a replacement heading; give it one that fits. */
+      if (req.responseSchema?.properties?.heading) return { text: JSON.stringify({ heading: "What the array does with noise" }) };
+      return model.generate(req);
+    },
+  };
+  const r = await runDraftGraph(input, { generate: withHeading.generate });
+  const headings = r.bodyBlocks.filter((b) => b.type === "subheading").map((b) => b.html);
+  assert.ok(!headings.includes(invented), `the invented heading survived: ${JSON.stringify(headings)}`);
+  assert.ok(headings.includes("What the array does with noise"), JSON.stringify(headings));
+  assert.ok(r.warnings.some((w) => /named “cancer”|named “protein”|“cancer”/.test(w)), r.warnings.join(" | "));
+  /* A brief answered by a heading was not answered. */
+  assert.equal(r.coverage?.met, "part");
+
+  /* The same heading, but the scholar's own: reported, never touched. */
+  const approved = normaliseApprovedOutline(
+    { title: "t", deck: "d", beats: [{ heading: "A", kind: "paper", passageIds: ["p1"] }, { heading: "B", kind: "paper", passageIds: ["p2"] }] },
+    { beats: [{ heading: "A", kind: "paper", passageIds: ["p1"] }, { heading: invented, kind: "paper", passageIds: ["p2"] }] },
+    [{ id: "p1" }, { id: "p2" }],
+  );
+  assert.equal(approved.beats[0].headingEdited, false, "a heading the scholar left alone is the machine's");
+  assert.equal(approved.beats[1].headingEdited, true, "a heading the scholar rewrote is theirs");
+
+  const mine = await runDraftGraph({ ...input, outline: approved }, { generate: withHeading.generate });
+  assert.ok(mine.bodyBlocks.some((b) => b.type === "subheading" && b.html === invented), "the scholar's own heading was rewritten");
+  assert.ok(mine.warnings.some((w) => /Your heading/.test(w)), mine.warnings.join(" | "));
+});
+
+test("no article leaves a heading with nothing under it", async () => {
+  /* An invariant, not a reproduction. A section that loses all its prose to
+     the judges refuses the run rather than shipping an empty one, so this
+     state should be unreachable — which is exactly why it is worth asserting:
+     the drafter drops paragraphs in four places now, and the day one of them
+     stops refusing, a heading promising a section that is not there is what a
+     reader would get. `emptyHeadings` in the graph is the guard; this is the
+     alarm on it. */
+  const model = fakeModel();
+  const overreaching = {
+    generate: async (req) => {
+      if (req.responseSchema === require("../src/lib/reach").JUDGE_SCHEMA) {
+        const rows = [...String(req.prompt).matchAll(/^\((\d+)\) (.+)$/gm)].map((m) => Number(m[1]));
+        return { text: JSON.stringify({ paragraphs: rows.map((index) => ({ index, claims: [{ text: "x", verdict: "overreach", reason: "outside_fact", anchor_ids: [] }] })) }) };
+      }
+      return model.generate(req);
+    },
+  };
+  const r = await runDraftGraph(input, overreaching);
+  const blocks = r.bodyBlocks;
+  blocks.forEach((b, i) => {
+    if (b.type !== "subheading" && b.type !== "heading") return;
+    const under = blocks.slice(i + 1);
+    const end = under.findIndex((x) => x.type === "subheading" || x.type === "heading");
+    const section = end < 0 ? under : under.slice(0, end);
+    assert.ok(section.some((x) => x.type === "paragraph" || x.type === "quote"), `"${b.html}" has nothing under it`);
+  });
 });
 
 test("an approved outline keeps a context kind only where the proposal had it", () => {

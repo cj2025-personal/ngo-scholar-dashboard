@@ -61,8 +61,10 @@ test("one call judges a section's context paragraphs, shows their anchors, and l
   assert.equal(first.verdict, VERDICT.CLEAR);
   assert.equal(first.verifierVersion, CONTEXT_VERSION);
   assert.deepEqual(first.checks, { anchored: 1, judged: true, claims: 3 });
-  /* Specifics, once each, case-insensitively; every one unverified until the author says so. */
-  assert.deepEqual(first.toVerify.map((v) => v.text), ["2.4 GHz band", "Wi-Fi", "Bluetooth", "eleven decibels"]);
+  /* Specifics, once each, case-insensitively; every one unverified until the
+     author says so — and "eleven decibels" is dropped, because the paper says
+     it, so it is not the author's to go and check against the world. */
+  assert.deepEqual(first.toVerify.map((v) => v.text), ["2.4 GHz band", "Wi-Fi", "Bluetooth"]);
   assert.ok(first.toVerify.every((v) => v.verified === false));
   assert.deepEqual(first.claims[1].anchorIds, ["p1"], "a claim the passages state keeps its anchor");
 

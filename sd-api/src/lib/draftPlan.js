@@ -549,7 +549,9 @@ function assemble({ outline, sections }) {
   for (const beat of outline.beats) {
     const section = sections[beat.index];
     if (!section) continue;
-    bodyBlocks.push({ type: "subheading", html: escapeHtml(beat.heading), sourceRefs: [] });
+    /* `headingEdited` rides along so the drafter knows whose words these are;
+       it is not stored on the story. */
+    bodyBlocks.push({ type: "subheading", html: escapeHtml(beat.heading), sourceRefs: [], ...(beat.headingEdited ? { headingEdited: true } : {}) });
     bodyBlocks.push(...section.blocks);
   }
   const prose = bodyBlocks
@@ -558,6 +560,18 @@ function assemble({ outline, sections }) {
     .join("\n\n");
   const words = bodyBlocks.reduce((n, b) => n + (b.type === "subheading" ? 0 : unescapeHtml(b.html).split(/\s+/).filter(Boolean).length), 0);
   return { bodyBlocks, prose, words };
+}
+
+/** The same shape as `assemble`, from a block list already built — used when
+    a heading has been repaired or removed and the counts must follow. */
+function assembleFrom(bodyBlocks) {
+  const prose = bodyBlocks
+    .filter((b) => b.type === "paragraph")
+    .map((b) => unescapeHtml(b.html))
+    .join("\n\n");
+  const words = bodyBlocks.reduce((n, b) => n + (b.type === "subheading" ? 0 : unescapeHtml(b.html).split(/\s+/).filter(Boolean).length), 0);
+  /* The marker is for the drafter, not the story. */
+  return { bodyBlocks: bodyBlocks.map(({ headingEdited: _e, ...b }) => b), prose, words };
 }
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
@@ -591,4 +605,5 @@ module.exports = {
   buildSectionPrompt,
   parseSection,
   assemble,
+  assembleFrom,
 };

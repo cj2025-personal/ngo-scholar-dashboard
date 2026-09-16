@@ -258,4 +258,110 @@ function verifyList({ blocks }) {
   return { version: CHECKS_VERSION, items, total: items.length, unverified, ok: items.length ? unverified === 0 : null };
 }
 
-module.exports = { CHECKS_VERSION, NUMBER_WORDS, WORLD_CLAIM_CUES, ATTRIBUTION_CUES, numbersIn, numericConsistency, limitationPassages, limitationsCoverage, worldClaims, extensionBudget, attributionCues, verifyList };
+/**
+ * A heading may not name what the article never says.
+ *
+ * ── The hole this closes ────────────────────────────────────────────────────
+ * Every judge and every check above skips a block that is not a paragraph, so
+ * headings and the title were the one part of an article nothing read. Asked
+ * to link a signal-processing paper to cancer, the drafter obeyed where it
+ * could not be caught: the paragraphs said nothing about cancer, because the
+ * reach judge forbids it, and the heading over them said "Potential
+ * Applications in Cancer Treatment and Protein Folding". A reader skims
+ * headings. That one was a lie the whole pipeline was built to prevent.
+ *
+ * ── Deliberately narrow ─────────────────────────────────────────────────────
+ * A heading is flagged only for a word that appears nowhere in the article's
+ * prose AND nowhere in the paper. Not "unsupported by this section" — absent
+ * from everything the scholar and the paper actually said. "Everyday devices"
+ * over prose about phones is fine; "cancer" over prose that never mentions it
+ * is not. Generic article words are ignored, because a heading is allowed to
+ * frame as well as name.
+ */
+const HEADING_IGNORE = new Set([
+  "the", "and", "for", "with", "from", "that", "this", "what", "when", "where", "which", "how", "why", "into", "over", "under", "about",
+  "your", "our", "its", "their", "they", "them", "than", "then", "some", "more", "most", "less", "best", "better", "good", "great",
+  "new", "newer", "old", "modern", "today", "now", "here", "there", "also", "still", "just", "even", "only", "very", "much", "many",
+  "approach", "approaches", "method", "methods", "way", "ways", "idea", "ideas", "thing", "things", "part", "parts", "case", "cases",
+  "matter", "matters", "mattered", "means", "meaning", "important", "importance", "understanding", "overview", "introduction", "conclusion",
+  "story", "article", "section", "look", "looking", "make", "makes", "making", "work", "works", "working", "use", "uses", "using", "used",
+  "help", "helps", "helping", "find", "finds", "finding", "findings", "see", "seeing", "show", "shows", "showing", "get", "gets",
+  "can", "could", "would", "should", "may", "might", "must", "will", "does", "did", "done", "has", "have", "had", "been", "being",
+  "one", "two", "three", "four", "five", "first", "second", "third", "next", "last", "other", "others", "another", "both", "all", "any",
+  "problem", "problems", "challenge", "challenges", "solution", "solutions", "result", "results", "answer", "answers", "question", "questions",
+  "big", "small", "long", "short", "hard", "easy", "simple", "complex", "real", "true", "different", "same", "own", "kind", "kinds", "sort",
+  /* Framing a section is not claiming a topic: "Potential applications of X"
+     asserts nothing beyond X, and X is what this check is about. */
+  "potential", "application", "applications", "apply", "applies", "applying", "applied", "relevance", "relevant", "implication", "implications",
+  "impact", "impacts", "future", "beyond", "value", "benefit", "benefits", "advantage", "advantages", "promise", "practice", "practical",
+  /* Ordinary English a heading frames with. A verb is not a topic: "Where it
+     breaks" claims nothing the prose must contain, and removing that heading
+     for the word "breaks" was this check's first false positive. The check is
+     for domain nouns an article never mentions, so everyday words are out. */
+  "break", "breaks", "broken", "fail", "fails", "failed", "failure", "failures", "struggle", "struggles", "struggling",
+  "hide", "hides", "hidden", "hiding", "lose", "loses", "lost", "win", "wins", "keep", "keeps", "take", "takes", "give", "gives",
+  "come", "comes", "coming", "goes", "going", "stay", "stays", "read", "reads", "reading", "tell", "tells", "say", "says",
+  "need", "needs", "want", "wants", "happen", "happens", "change", "changes", "changed", "improve", "improves", "improved", "improvement",
+  "reduce", "reduces", "reduced", "solve", "solves", "solved", "build", "builds", "built", "start", "starts", "stop", "stops",
+  "know", "knows", "knowing", "think", "thinks", "learn", "learns", "hear", "hears", "hearing", "listen", "listens", "listening",
+  "catch", "catches", "miss", "misses", "missing", "pick", "picks", "picking", "choose", "chooses", "choosing", "choice", "choices",
+  "matter", "mattering", "worked", "wrong", "right", "wrongly", "better", "worse", "worst", "harder", "easier", "faster", "slower",
+  "inside", "outside", "before", "after", "while", "against", "without", "within", "through", "across", "around", "between", "behind",
+  "step", "steps", "test", "tests", "tested", "testing", "check", "checks", "trade", "trades", "limit", "limits", "limited", "limitation", "limitations",
+  "found", "paper", "papers", "study", "studies", "research", "author", "authors", "reader", "readers", "people", "someone", "everyone", "anyone",
+]);
+
+/* One odd word in a heading is imagery — "Steering silence toward the noise"
+   says nothing false about an article that never uses the word "silence".
+   Several odd words together is a topic the article does not have, which is
+   what "Cancer Treatment and Protein Folding" was. So the check fires on the
+   second word, not the first: precision over recall, because a false positive
+   costs the scholar a good heading and a miss costs a warning. */
+const HEADING_MIN_MISSING = 2;
+
+/**
+ * @param {object} p
+ * @param {object[]} p.blocks   mapped blocks, subheadings included
+ * @param {{id: string, text: string}[]} p.passages
+ * @param {string|null} [p.title]  the article's title, checked the same way
+ * @returns {{version: string, heuristic: true, checked: number, unsupported: {index: number|null, kind: string, text: string, missing: string[]}[], ok: boolean|null}}
+ */
+function headingSupport({ blocks, passages, title = null }) {
+  const said = new Set();
+  const add = (text) => { for (const w of plain(text).toLowerCase().split(/[^a-z0-9]+/)) if (w.length >= 4) said.add(w); };
+  for (const b of blocks || []) if (b.type === "paragraph" || b.type === "quote") add(b.html);
+  for (const p of passages || []) add(p.text);
+
+  /* A word counts as said if the article or the paper used any form of it.
+     Crude stemming, because "steering" over prose that says "steers" is the
+     same word and flagging it would cost an honest heading. */
+  const stem = (w) => w.replace(/(ing|edly|ed|ies|es|s|ly)$/, "").slice(0, 12);
+  const stems = new Set([...said].map(stem));
+  const everSaid = (w) => {
+    if (said.has(w) || stems.has(stem(w))) return true;
+    const st = stem(w);
+    if (st.length < 4) return false;
+    for (const s of stems) if (s.startsWith(st) || st.startsWith(s)) return true;
+    return false;
+  };
+  const missingIn = (text) => [...new Set(plain(text).toLowerCase().split(/[^a-z0-9]+/))]
+    .filter((w) => w.length >= 4 && !HEADING_IGNORE.has(w))
+    .filter((w) => !everSaid(w));
+
+  const unsupported = [];
+  let checked = 0;
+  (blocks || []).forEach((b, i) => {
+    if (b.type !== "subheading" && b.type !== "heading") return;
+    checked += 1;
+    const missing = missingIn(b.html);
+    if (missing.length >= HEADING_MIN_MISSING) unsupported.push({ index: i + 1, kind: "heading", text: plain(b.html), missing });
+  });
+  if (title) {
+    checked += 1;
+    const missing = missingIn(title);
+    if (missing.length >= HEADING_MIN_MISSING) unsupported.push({ index: null, kind: "title", text: String(title), missing });
+  }
+  return { version: CHECKS_VERSION, heuristic: true, checked, unsupported, ok: checked ? unsupported.length === 0 : null };
+}
+
+module.exports = { CHECKS_VERSION, NUMBER_WORDS, WORLD_CLAIM_CUES, ATTRIBUTION_CUES, HEADING_IGNORE, HEADING_MIN_MISSING, numbersIn, numericConsistency, limitationPassages, limitationsCoverage, worldClaims, extensionBudget, attributionCues, verifyList, headingSupport };

@@ -126,6 +126,12 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   const selectedPaper = draftable.find((p) => paperKey(p) === paper) || null;
   const outlineWaiting = job?.status === "awaiting_outline";
   const locked = Boolean(job);
+  /* Until the inventory has loaded, the agent does not yet know which papers
+     the scholar holds, so a paper preselected from the Papers shelf is not
+     matched yet. Sending in that window answered "Which paper should this
+     come from?" about a paper already named in the pill — the greeting then
+     arrived after the answer. So the composer waits to be ready. */
+  const ready = Boolean(inventory);
   const extraBands = levelBands.filter((v) => v !== audience);
 
   const push = useCallback((m) => setMessages((cur) => [...cur, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...m }]), []);
@@ -234,7 +240,8 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
 
   async function send() {
     const ask = text.trim();
-    if (!ask || busy) return;
+    /* Enter reaches here even when the button is disabled. */
+    if (!ask || busy || !ready) return;
     if (!locked && !selectedPaper) {
       push({ role: "user", text: ask });
       push({ role: "agent", text: "Which paper should this come from? Pick one below; only papers we hold in full and may reproduce are listed." });
@@ -327,7 +334,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
               rows={1}
               placeholder={outlineWaiting ? PLACEHOLDER_REPLY : PLACEHOLDER_START}
               value={text}
-              disabled={busy || (locked && !outlineWaiting)}
+              disabled={!ready || busy || (locked && !outlineWaiting)}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             />
@@ -388,7 +395,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
 
             {locked ? <span className="ch-locked">Set for this draft · <button type="button" className="st-link" onClick={startAnother}>Start another</button></span> : null}
 
-            <button type="submit" className="ag-send" disabled={busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><FaPaperPlane size={13} aria-hidden /></button>
+            <button type="submit" className="ag-send" disabled={!ready || busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><FaPaperPlane size={13} aria-hidden /></button>
           </div>
         </div>
         <div className="ag-hint">

@@ -86,6 +86,7 @@ const State = Annotation.Root({
   readabilityNote: Annotation(),
   readabilityRetried: Annotation(),
   checks: Annotation(),
+  headingChecks: Annotation(),
   warnings: Annotation({ reducer: (a, b) => [...(a || []), ...(b || [])], default: () => [] }),
   calls: Annotation({ reducer: (a, b) => [...(a || []), ...(b || [])], default: () => [] }),
 });
@@ -286,10 +287,150 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
     return { sections, calls, warnings };
   }
 
+  /**
+   * A heading may not name what the article never says.
+   *
+   * Every judge skips a block that is not a paragraph, so headings and the
+   * title were the one part of an article nothing read. Asked to link this
+   * paper to cancer, the drafter obeyed where it could not be caught: the
+   * paragraphs said nothing about cancer, because the reach judge forbids
+   * it, and the heading over them read "Potential Applications in Cancer
+   * Treatment and Protein Folding". A reader skims headings.
+   *
+   * So a heading that names something absent from the whole article and from
+   * the paper is rewritten from the prose it sits over, once. If the rewrite
+   * still names what is not there, the heading goes: a section without a
+   * subheading reads perfectly well, and an honest gap beats a false label.
+   * Whatever is repaired or dropped is said out loud, and the brief's
+   * coverage is corrected — a plan that promised cancer and delivered signal
+   * processing did not fully meet the brief, whatever it claimed.
+   */
+  /** A heading with nothing under it. Its section's prose was all dropped. */
+  function emptyHeadings(blocks) {
+    const out = [];
+    blocks.forEach((b, i) => {
+      if (b.type !== "subheading" && b.type !== "heading") return;
+      let hasProse = false;
+      for (let k = i + 1; k < blocks.length; k += 1) {
+        if (blocks[k].type === "subheading" || blocks[k].type === "heading") break;
+        if (blocks[k].type === "paragraph" || blocks[k].type === "quote") { hasProse = true; break; }
+      }
+      if (!hasProse) out.push(i);
+    });
+    return out;
+  }
+
+  async function repairHeadings(s, draft) {
+    const first = checks.headingSupport({ blocks: draft.bodyBlocks, passages: s.passages, title: s.outline.title });
+    const warnings = [];
+    const repaired = [];
+    const calls = [];
+
+    /* A heading whose section lost every paragraph to a judge promises a
+       reader something that is not there. "Finding enemies with signals"
+       survived a section the reach judge had emptied, because the check
+       above reads vocabulary and this one reads the article's shape. */
+    const strandedFirst = emptyHeadings(draft.bodyBlocks);
+    if (first.ok !== false && strandedFirst.length === 0) {
+      return { draft, warnings, headings: first, coverage: null, calls, repaired };
+    }
+    const blocks = draft.bodyBlocks.map((b) => ({ ...b }));
+    for (const bad of first.unsupported.filter((u) => u.kind === "heading")) {
+      const at = bad.index - 1;
+      /* A heading the scholar wrote or renamed is theirs. Say what it names
+         that the article does not, and leave it alone — rewriting a person's
+         own words on their behalf is the one thing this system never does. */
+      if (blocks[at]?.headingEdited) {
+        warnings.push(
+          `Your heading “${bad.text}” names ${bad.missing.slice(0, 4).map((w) => `“${w}”`).join(", ")}, which neither this article nor the paper mentions. It was left exactly as you wrote it.`,
+        );
+        continue;
+      }
+      /* The prose this heading sits over, which is what it must describe. */
+      const prose = [];
+      for (let i = at + 1; i < blocks.length && blocks[i].type !== "subheading" && blocks[i].type !== "heading"; i += 1) {
+        if (blocks[i].type === "paragraph") prose.push(plainText(blocks[i].html));
+      }
+      let replacement = null;
+      if (prose.length) {
+        try {
+          const r = await generate({
+            prompt: [
+              "Write a heading of at most eight words for the passage below.",
+              "Name only what the passage actually says. Do not name a field, a disease, a product, a company or an",
+              "application the passage does not mention. No colon-and-subtitle pattern.",
+              "",
+              "=== PASSAGE ===", prose.join("\n\n"), "=== END ===",
+              "",
+              'Return only JSON: {"heading": "…"}',
+            ].join("\n"),
+            systemInstruction: systemFor(s),
+            responseSchema: { type: "OBJECT", properties: { heading: { type: "STRING" } }, required: ["heading"] },
+            temperature: 0.2,
+            maxOutputTokens: 256,
+          });
+          calls.push({ step: "repair_heading", usage: r.usage || null, model: r.modelVersion || null });
+          const text = String(JSON.parse(String(r.text).replace(/^```(?:json)?|```$/g, "").trim())?.heading || "").replace(/\s+/g, " ").trim();
+          if (text && checks.headingSupport({ blocks, passages: s.passages, title: text }).unsupported.every((u) => u.kind !== "title")) {
+            replacement = text.slice(0, 140);
+          }
+        } catch { /* a repair that fails is a heading that goes */ }
+      }
+      if (replacement) {
+        repaired.push(`“${bad.text}” → “${replacement}”`);
+        blocks[at] = { ...blocks[at], html: replacement.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") };
+      } else {
+        repaired.push(`“${bad.text}” (removed)`);
+        blocks[at] = null;
+      }
+      warnings.push(
+        `The heading “${bad.text}” named ${bad.missing.slice(0, 4).map((w) => `“${w}”`).join(", ")}, which neither this article nor the paper mentions${replacement ? `, so it now reads “${replacement}”` : ", so it was removed"}. The section's own words were not changed.`,
+      );
+    }
+    /* Whatever the repairs left, a heading over nothing goes — the scholar's
+       own wording included, because this is not a rewrite of their words but
+       the removal of a label with nothing beneath it. */
+    const afterRepair = blocks.filter(Boolean);
+    const stranded = emptyHeadings(afterRepair);
+    for (const i of stranded) {
+      warnings.push(
+        `The heading “${plainText(afterRepair[i].html)}” was removed: every paragraph under it was left out by the checks, so it promised a section that is not there.`,
+      );
+      repaired.push(`“${plainText(afterRepair[i].html)}” (removed, nothing under it)`);
+      afterRepair[i] = null;
+    }
+    const kept = afterRepair.filter(Boolean);
+    const titleBad = first.unsupported.find((u) => u.kind === "title");
+    if (titleBad) {
+      warnings.push(
+        `The title “${titleBad.text}” names ${titleBad.missing.slice(0, 4).map((w) => `“${w}”`).join(", ")}, which neither this article nor the paper mentions. Change it before you publish.`,
+      );
+    }
+    const after = plan.assembleFrom(kept);
+    const headings = checks.headingSupport({ blocks: kept, passages: s.passages, title: s.outline.title });
+    /* A brief answered by a heading was not answered. */
+    const coverage = repaired.length
+      ? { met: plan.COVERAGE.PART, note: `A section promised something the paper cannot carry: ${first.unsupported.filter((u) => u.kind === "heading").flatMap((u) => u.missing).slice(0, 4).join(", ")}.` }
+      : null;
+    return { draft: after, warnings, headings, coverage, repaired, calls };
+  }
+
   async function assemble(s) {
     await progress("assemble", "Assembling the draft…");
-    const draft = plan.assemble({ outline: s.outline, sections: s.sections });
-    return { draft };
+    const assembled = plan.assemble({ outline: s.outline, sections: s.sections });
+    const fixed = await repairHeadings(s, assembled);
+    if (fixed.warnings.length) {
+      await progress("assemble", `Corrected ${fixed.repaired.length} heading${fixed.repaired.length === 1 ? "" : "s"} that named what the article does not say.`, { repaired: fixed.repaired });
+    }
+    return {
+      /* Through assembleFrom either way, so the "whose heading is this"
+         marker never reaches the story. */
+      draft: plan.assembleFrom(fixed.draft.bodyBlocks),
+      warnings: fixed.warnings,
+      calls: fixed.calls,
+      headingChecks: fixed.headings,
+      ...(fixed.coverage ? { outline: { ...s.outline, coverage: fixed.coverage } } : {}),
+    };
   }
 
   async function verify(s) {
@@ -357,7 +498,16 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
         `Only the first ${s.prepared.words.toLocaleString()} of ${s.prepared.totalWords.toLocaleString()} words were used; the rest of the paper is not reflected here.`,
       );
     }
-    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations, worldClaims, budget, pronouns, attribution, verify: verifyItems } };
+    /* Measured again on the assembled article, so a heading the repair pass
+       left standing is on the record and in front of the scholar at publish. */
+    const headings = checks.headingSupport({ blocks: s.draft.bodyBlocks, passages: s.passages, title: s.outline.title });
+    if (headings.ok === false) {
+      warnings.push(
+        `${headings.unsupported.length === 1 ? "A heading names" : `${headings.unsupported.length} headings name`} something neither this article nor the paper says: ` +
+        `${headings.unsupported.map((u) => `“${u.text}” (${u.missing.slice(0, 3).join(", ")})`).join("; ")}. A reader skims headings, so change ${headings.unsupported.length === 1 ? "it" : "them"} before publishing.`,
+      );
+    }
+    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations, worldClaims, budget, pronouns, attribution, verify: verifyItems, headings } };
   }
 
   return { pick_source, plan_outline, draft_blocks, assemble, verify };
@@ -412,12 +562,16 @@ function normaliseApprovedOutline(proposed, approved, passages) {
   const known = new Set(passages.map((p) => p.id));
   /* The kinds beyond the paper the proposal offered, by heading. */
   const proposedKind = new Map((proposed.beats || []).filter((b) => b.kind && b.kind !== plan.BEAT_KIND.PAPER).map((b) => [b.heading, b.kind]));
+  /* Headings the machine proposed. Anything else in the approved outline is
+     the scholar's own wording, which the drafter may not rewrite or remove. */
+  const proposedHeadings = new Set((proposed.beats || []).map((b) => b.heading));
   const beats = (Array.isArray(approved?.beats) ? approved.beats : proposed.beats)
     .map((b, i) => ({
       index: i + 1,
       heading: String(b.heading || "").replace(/\s+/g, " ").trim().slice(0, 140) || `Section ${i + 1}`,
       goal: String(b.goal || "").replace(/\s+/g, " ").trim().slice(0, 300),
       kind: b.kind && b.kind !== plan.BEAT_KIND.PAPER && (proposedKind.get(b.heading) === b.kind || proposedKind.get(String(b.proposedHeading || "")) === b.kind) ? b.kind : plan.BEAT_KIND.PAPER,
+      headingEdited: !proposedHeadings.has(String(b.heading || "").replace(/\s+/g, " ").trim()),
       passageIds: (Array.isArray(b.passageIds) ? b.passageIds : []).map(String).filter((id) => known.has(id)),
     }))
     .filter((b) => b.passageIds.length > 0);
