@@ -55,7 +55,14 @@ html {
 html,
 body {
   max-width: 100vw;
-  overflow-x: hidden;
+  /* `clip`, not `hidden`. `overflow-x: hidden` computes overflow-y to `auto`,
+     which makes html and body scroll containers — and a scroll container
+     between a sticky element and the viewport is where sticky dies. Every
+     sticky thing in the app was silently not sticking: the editor bar with
+     Save draft and Publish check, the outline rail, the checks rail. On a
+     5,500px draft they all scrolled off and did not come back.
+     `clip` refuses the same horizontal overflow without creating a scrollport. */
+  overflow-x: clip;
 }
 
 body {
@@ -2428,7 +2435,28 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
      `overflow: hidden` on the metadata was doing nothing. Wrap comes back
      below, where one row genuinely cannot hold both. */
   display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: nowrap;
-  padding: 12px 0; background: var(--paper); border-bottom: 1px solid var(--sd-line-soft);
+  padding: 12px 0;
+  /* Nothing at rest. The bar used to paint a flat --paper — rgb(246,248,252)
+     — over a page that is rgb(233,238,253) where the bar sits, so it read as
+     a pale band laid across the article. Transparent, it is simply the page.
+     It cannot stay transparent once it sticks, though: a bar that does not
+     hide what passes under it puts the article's own sentences through the
+     Publish button. So the fill arrives with the scroll, and only then.
+     One flat colour cannot match the page everywhere — there is a radial
+     gradient across it — which is why this is a frost rather than a match. */
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.sc-write-bar.is-stuck {
+  /* Opaque. A translucent fill leaves the article legible through the bar —
+     at 94% the ghost of a sentence still ran behind the buttons, because a
+     backdrop blur is not guaranteed to composite and cannot be relied on to
+     do the hiding. Once the bar is covering text it is a toolbar, and a
+     toolbar is allowed to be solid. */
+  background: rgb(243, 246, 252);
+  border-bottom-color: var(--sd-line-soft);
+  box-shadow: 0 8px 20px -18px rgba(23, 37, 84, 0.4);
 }
 @media (max-width: 680px) {
   .sc-write-bar { flex-wrap: wrap; }
@@ -3160,7 +3188,37 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 }
 .sc-write-attention:hover { border-color: var(--ark-warning); background: #fdefd8; }
 .ws-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr) 380px; gap: 0; min-height: calc(100vh - 140px); }
-.ws-left { border-right: 1px solid var(--sd-line); padding: 20px 16px; background: var(--sd-surface); position: sticky; top: 118px; align-self: start; max-height: calc(100vh - 118px); overflow: auto; }
+/* Fills the column even when its sections are folded: a sticky rail sized to
+   its content leaves a white card hanging in the middle of the page with its
+   border stopping in mid-air. */
+.ws-left { border-right: 1px solid var(--sd-line); padding: 14px 14px 20px; background: var(--sd-surface); position: sticky; top: 118px; align-self: start; height: calc(100vh - 118px); overflow: auto; }
+
+/* ── The left rail, in sections that fold ──────────────────────────────────
+   Where you are, what the article is, what the marks mean. Native <details>,
+   so the keyboard and the open state come free and a section folded stays
+   folded. Before this the rail was an outline, a legend, and two thirds of a
+   screen of nothing under them. */
+.ws-sect { border-bottom: 1px solid var(--sd-line-soft); }
+.ws-sect:last-of-type { border-bottom: 0; }
+.ws-sect__head {
+  display: flex; align-items: center; gap: 8px; padding: 11px 2px; cursor: pointer;
+  list-style: none; user-select: none; border-radius: 8px;
+}
+.ws-sect__head::-webkit-details-marker { display: none; }
+.ws-sect__head:hover .sc-kicker { color: var(--navy); }
+.ws-sect__chev { flex: 0 0 auto; color: var(--sd-faint); transition: transform 160ms ease; }
+.ws-sect[open] > .ws-sect__head .ws-sect__chev { transform: rotate(90deg); }
+.ws-sect__count { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--sd-faint); }
+.ws-sect__body { padding: 0 2px 14px; }
+
+/* "This draft": the things about the story that do not change while you read,
+   which used to fill the bar with a paper title long enough to push the
+   buttons off the edge. */
+.ws-facts { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 0; font-size: 12.5px; }
+.ws-facts dt { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sd-faint); margin-top: 10px; }
+.ws-facts dt:first-child { margin-top: 0; }
+.ws-facts dd { margin: 0; color: var(--sd-heading); line-height: 1.45; overflow-wrap: anywhere; }
+.ws-facts dd a { color: var(--navy); text-decoration: underline; text-underline-offset: 2px; }
 .ws-center { min-width: 0; padding: 0 32px; }
 .ws-center .sc-write-canvas { max-width: 760px; margin: 0 auto; }
 .ws-right { border-left: 1px solid var(--sd-line); background: var(--sd-surface); position: sticky; top: 118px; align-self: start; max-height: calc(100vh - 118px); display: flex; flex-direction: column; }

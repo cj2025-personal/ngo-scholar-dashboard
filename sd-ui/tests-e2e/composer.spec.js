@@ -102,7 +102,11 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* The review workspace: status, provenance, the outline the scholar approved. */
   await expect(page.locator(".sc-write-status")).toHaveText("Machine draft · in review");
-  await expect(page.locator(".sc-write-metatext")).toContainText("Drawn from “Adaptive nulling in small antenna arrays”");
+  /* Which paper it came from lives in "This draft" in the rail now, not in
+     the bar: a paper title is long enough to push the buttons off the edge. */
+  await page.locator(".ws-sect__head", { hasText: "This draft" }).click();
+  await expect(page.locator(".ws-facts")).toContainText("Adaptive nulling in small antenna arrays");
+  await expect(page.locator(".ws-facts")).toContainText("Written for");
   await expect(page.locator(".ws-outline-item")).toHaveCount(beatCount - 1);
   await expect(page.getByPlaceholder("Title", { exact: true })).toHaveValue(/^What the paper found/);
   const chips = page.locator(".block-row .block-chip");

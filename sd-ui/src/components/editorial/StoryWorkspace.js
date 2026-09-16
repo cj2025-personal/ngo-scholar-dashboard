@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FaArrowLeft,
   FaArrowUpRightFromSquare,
+  FaChevronRight,
   FaGear,
   FaPlus,
   FaWandMagicSparkles,
@@ -30,7 +31,7 @@ import ReadingLevels from "@/components/editorial/ReadingLevels";
 import RecordBanner from "@/components/editorial/RecordBanner";
 import { acceptAiTerms, generateStoryLevels, getStoryPassages } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
-import { assessForAudience } from "@/lib/readability";
+import { AUDIENCE_TARGETS, assessForAudience, normaliseAudience } from "@/lib/readability";
 
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000";
@@ -81,6 +82,25 @@ function storyToForm(story) {
 
 function createEmptyForm() {
   return storyToForm(null);
+}
+
+/**
+ * A foldable section of the left rail.
+ *
+ * Native `<details>`: the disclosure, the keyboard and the open state come
+ * with it, and a section the scholar folds stays folded while they read.
+ */
+function RailSection({ title, count = null, defaultOpen = false, children }) {
+  return (
+    <details className="ws-sect" open={defaultOpen}>
+      <summary className="ws-sect__head">
+        <FaChevronRight size={9} className="ws-sect__chev" aria-hidden />
+        <span className="sc-kicker">{title}</span>
+        {count !== null ? <span className="ws-sect__count">{count}</span> : null}
+      </summary>
+      <div className="ws-sect__body">{children}</div>
+    </details>
+  );
 }
 
 /**
@@ -241,6 +261,17 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const savedSignatureRef = useRef(null);
 
   const reviewMode = Boolean(form.provenance && form.id);
+
+  /* The bar is transparent until the page moves under it. See the rule for
+     `.sc-write-bar.is-stuck`: at rest it should be the page, and once it is
+     covering text it has to be something. */
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setStuck(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
   /* Provenance is resolved when a story is read. A write's response may
      carry none; adopting that as "no paper behind this" would drop the
      workspace out of review mode mid-edit. What was known stays known. */
@@ -605,16 +636,20 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
 
   return (
     <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}${!reviewMode && railOpen ? " has-rail" : ""}`}>
-      <div className="sc-write-bar">
+      <div className={stuck ? "sc-write-bar is-stuck" : "sc-write-bar"}>
         <div className="sc-write-bar-left">
           <Link href="/editorial" className="sc-write-back"><FaArrowLeft size={12} aria-hidden /> Stories</Link>
           <span className={statusPill.cls}>{statusPill.text}</span>
           {form.publicUrl ? (
             <a className="sc-write-live" href={form.publicUrl} target="_blank" rel="noreferrer">View as reader <FaArrowUpRightFromSquare size={10} aria-hidden="true" /><span className="sr-only"> (opens in a new tab)</span></a>
           ) : null}
+          {/* The bar carries what changes: where you are, and what is wrong.
+              Everything fixed about the story — which paper, how long, when
+              it was saved — moved to "This draft" in the rail, where it can
+              be read once and folded away. It used to fill the bar with a
+              paper title long enough to push the buttons off the edge. */}
           <span className="sc-write-metatext">
-            {reviewMode && form.provenance?.title ? <>Drawn from “{form.provenance.title}” · </> : null}
-            {totalWords} {totalWords === 1 ? "word" : "words"} &middot; {readingTime} min &middot; {formatDate(form.updatedAt)}
+            {totalWords.toLocaleString()} {totalWords === 1 ? "word" : "words"} &middot; {readingTime} min
           </span>
         </div>
         <div className="sc-write-bar-right">
@@ -679,24 +714,54 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
         ) : editorColumn
       ) : (
         <div className="ws-grid">
+          {/* Three things, each foldable, in the order they are wanted: where
+              you are in the article, what the article is, and what the marks
+              mean. The outline is open because it is used while reading; the
+              other two are read once. Before this the rail held an outline
+              and a legend and then two thirds of a screen of nothing. */}
           <aside className="ws-left">
-            <span className="sc-kicker">Outline</span>
-            <nav className="ws-outline">
-              {sections.map((s) => (
-                <button key={s.id} type="button" className={s.blockIds.includes(activeBlockId) ? "ws-outline-item on" : "ws-outline-item"} onClick={() => { const first = form.bodyBlocks.findIndex((b) => b.id === s.blockIds[0]); if (first >= 0) goToBlock(first); }}>
-                  <span className={`st-dot ${s.attention ? "is-warn" : "is-ok"}`} aria-hidden />
-                  <span className="ws-outline-text">{s.heading}</span>
-                </button>
-              ))}
-            </nav>
-            <div className="sc-divider" />
-            <span className="sc-kicker">Legend</span>
-            <div className="ws-legend">
-              <div><span className="st-dot is-ok" /> Every claim supported</div>
-              <div><span className="st-dot is-warn" /> Something to check</div>
-              <div><span className="block-chip" style={{ padding: "0 7px" }}>p7</span> Passage it came from</div>
-              <div><span className="block-chip is-lost" style={{ padding: "0 7px" }}>edited</span> Your words now</div>
-            </div>
+            <RailSection title="Outline" defaultOpen count={sections.length}>
+              <nav className="ws-outline">
+                {sections.map((s) => (
+                  <button key={s.id} type="button" className={s.blockIds.includes(activeBlockId) ? "ws-outline-item on" : "ws-outline-item"} onClick={() => { const first = form.bodyBlocks.findIndex((b) => b.id === s.blockIds[0]); if (first >= 0) goToBlock(first); }}>
+                    <span className={`st-dot ${s.attention ? "is-warn" : "is-ok"}`} aria-hidden />
+                    <span className="ws-outline-text">{s.heading}</span>
+                  </button>
+                ))}
+              </nav>
+            </RailSection>
+
+            <RailSection title="This draft">
+              <dl className="ws-facts">
+                {form.provenance?.title ? (
+                  <>
+                    <dt>Drawn from</dt>
+                    <dd title={form.provenance.title}>
+                      {form.provenance.url
+                        ? <a href={form.provenance.url} target="_blank" rel="noreferrer">{form.provenance.title}</a>
+                        : form.provenance.title}
+                      {form.provenance.year ? ` (${form.provenance.year})` : ""}
+                    </dd>
+                  </>
+                ) : null}
+                <dt>Length</dt>
+                <dd>{totalWords.toLocaleString()} words · {readingTime} min</dd>
+                <dt>Written for</dt>
+                <dd>{AUDIENCE_TARGETS[normaliseAudience(audience)]?.label || "Adults"}</dd>
+                <dt>Version</dt>
+                <dd>v{form.version} · {formatDate(form.updatedAt)}</dd>
+              </dl>
+            </RailSection>
+
+            <RailSection title="What the marks mean">
+              <div className="ws-legend">
+                <div><span className="st-dot is-ok" /> Every claim supported</div>
+                <div><span className="st-dot is-warn" /> Something to check</div>
+                <div><span className="block-chip" style={{ padding: "0 7px" }}>p7</span> Passage it came from</div>
+                <div><span className="block-chip is-context" style={{ padding: "0 7px" }}>yours</span> Your own context</div>
+                <div><span className="block-chip is-lost" style={{ padding: "0 7px" }}>edited</span> Your words now</div>
+              </div>
+            </RailSection>
           </aside>
 
           <div className="ws-center">

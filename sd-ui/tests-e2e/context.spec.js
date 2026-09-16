@@ -42,7 +42,9 @@ test("a brief about the world today gets the author's own context, held for the 
 
   /* The paragraph is the scholar's, with one specific to verify; the draft's
      own warning says so. */
-  const chip = page.locator(".block-chip.is-context");
+  /* In the article, not the rail: the legend shows a sample chip of the same
+     kind, which is the point of a legend. */
+  const chip = page.locator(".block-row .block-chip.is-context");
   await expect(chip).toHaveCount(1);
   await expect(chip).toContainText("1 to verify");
   await expect(page.locator(".block-chip.is-reach")).toHaveCount(0, "a context brief plans context, not an implication");
