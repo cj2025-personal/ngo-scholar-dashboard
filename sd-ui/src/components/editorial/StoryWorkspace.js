@@ -266,11 +266,27 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
      `.sc-write-bar.is-stuck`: at rest it should be the page, and once it is
      covering text it has to be something. */
   const [stuck, setStuck] = useState(false);
+  const barRef = useRef(null);
   useEffect(() => {
+    const root = document.documentElement;
+    /* The rails sit directly under the bar, so they need its height — which
+       changes when the bar wraps on a narrow window. Measured rather than
+       assumed, because the number that was assumed (118px) was reserving
+       room for navigation that scrolls away. */
+    const measure = () => {
+      const h = barRef.current?.getBoundingClientRect().height;
+      if (h) root.style.setProperty("--ws-bar-h", `${Math.round(h)}px`);
+    };
     const onScroll = () => setStuck(window.scrollY > 8);
     onScroll();
+    measure();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", measure);
+      root.style.removeProperty("--ws-bar-h");
+    };
   }, []);
   /* Provenance is resolved when a story is read. A write's response may
      carry none; adopting that as "no paper behind this" would drop the
@@ -636,7 +652,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
 
   return (
     <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}${!reviewMode && railOpen ? " has-rail" : ""}`}>
-      <div className={stuck ? "sc-write-bar is-stuck" : "sc-write-bar"}>
+      <div ref={barRef} className={stuck ? "sc-write-bar is-stuck" : "sc-write-bar"}>
         <div className="sc-write-bar-left">
           <Link href="/editorial" className="sc-write-back"><FaArrowLeft size={12} aria-hidden /> Stories</Link>
           <span className={statusPill.cls}>{statusPill.text}</span>

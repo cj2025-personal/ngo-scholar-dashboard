@@ -2429,7 +2429,10 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 
 /* Editor bar — sticks just under the app top bar (64px) */
 .sc-write-bar {
-  position: sticky; top: 64px; z-index: 20;
+  /* Pinned to the top, not to 64px below it. That offset was reserving room
+     for the app's navigation, which is `position: relative` and scrolls away
+     — so the bar floated with a band of the article showing above it. */
+  position: sticky; top: 0; z-index: 20;
   /* nowrap so the left group *shrinks* instead of pushing the actions onto a
      second row: a flex container that may wrap never applies flex-shrink, so
      `overflow: hidden` on the metadata was doing nothing. Wrap comes back
@@ -3191,7 +3194,10 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 /* Fills the column even when its sections are folded: a sticky rail sized to
    its content leaves a white card hanging in the middle of the page with its
    border stopping in mid-air. */
-.ws-left { border-right: 1px solid var(--sd-line); padding: 14px 14px 20px; background: var(--sd-surface); position: sticky; top: 118px; align-self: start; height: calc(100vh - 118px); overflow: auto; }
+/* Directly under the bar, whatever height it takes — `--ws-bar-h` is measured
+   from the bar itself, so a bar that wraps on a narrow window does not leave
+   the rails overlapping it or floating below it. */
+.ws-left { border-right: 1px solid var(--sd-line); padding: 14px 14px 20px; background: var(--sd-surface); position: sticky; top: var(--ws-bar-h, 56px); align-self: start; height: calc(100vh - var(--ws-bar-h, 56px)); overflow: auto; }
 
 /* ── The left rail, in sections that fold ──────────────────────────────────
    Where you are, what the article is, what the marks mean. Native <details>,
@@ -3221,7 +3227,7 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .ws-facts dd a { color: var(--navy); text-decoration: underline; text-underline-offset: 2px; }
 .ws-center { min-width: 0; padding: 0 32px; }
 .ws-center .sc-write-canvas { max-width: 760px; margin: 0 auto; }
-.ws-right { border-left: 1px solid var(--sd-line); background: var(--sd-surface); position: sticky; top: 118px; align-self: start; max-height: calc(100vh - 118px); display: flex; flex-direction: column; }
+.ws-right { border-left: 1px solid var(--sd-line); background: var(--sd-surface); position: sticky; top: var(--ws-bar-h, 56px); align-self: start; max-height: calc(100vh - var(--ws-bar-h, 56px)); display: flex; flex-direction: column; }
 .ws-tabs { display: flex; border-bottom: 1px solid var(--sd-line); }
 .ws-tab { flex: 1; text-align: center; padding: 12px 8px; font-size: 12px; font-weight: 600; color: var(--sd-faint); border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-family: inherit; }
 .ws-tab.on { color: var(--navy); border-bottom-color: var(--navy); }
@@ -3382,7 +3388,7 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 }
 
 /* ══ Agent console (Codex-style thread with a docked composer) ═══════════ */
-.ws-right.is-agent { height: calc(100vh - 118px); }
+.ws-right.is-agent { height: calc(100vh - var(--ws-bar-h, 56px)); }
 .ws-right.is-agent .ws-rail-body { padding: 0; }
 .ag-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
 .ag-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--sd-line-soft); font-size: 12px; color: var(--sd-muted); }
