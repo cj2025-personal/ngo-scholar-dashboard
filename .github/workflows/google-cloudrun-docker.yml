@@ -243,15 +243,15 @@ jobs:
           # identifier cannot disagree.
           env_vars: |
             NODE_ENV=production
-            MONGODB_DB=${{ vars.MONGODB_DB || 'ngo_profiles' }}
-            CORS_ORIGIN=${{ vars.SCHOLAR_CORS_ORIGIN }}
-            AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || 'ngo_session' }}
-            AUTH_COOKIE_DOMAIN=${{ vars.AUTH_COOKIE_DOMAIN }}
+            MONGODB_DB=${{ vars.MONGODB_DB || secrets.MONGODB_DB || 'ngo_profiles' }}
+            CORS_ORIGIN=${{ vars.SCHOLAR_CORS_ORIGIN || secrets.SCHOLAR_CORS_ORIGIN }}
+            AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || secrets.AUTH_COOKIE_NAME || 'sd_session' }}
+            AUTH_COOKIE_DOMAIN=${{ vars.AUTH_COOKIE_DOMAIN || secrets.AUTH_COOKIE_DOMAIN }}
             LLM_PROVIDER=vertex
             STORY_LLM_MODEL=${{ vars.STORY_LLM_MODEL || 'gemini-2.5-flash' }}
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
             GCP_LOCATION=${{ secrets.GCP_REGION }}
-            GCS_EDITORIAL_IMAGES_BUCKET=${{ vars.GCS_EDITORIAL_IMAGES_BUCKET }}
+            GCS_EDITORIAL_IMAGES_BUCKET=${{ vars.GCS_EDITORIAL_IMAGES_BUCKET || secrets.GCS_EDITORIAL_IMAGES_BUCKET || 'editorial-images' }}
             DRAFTING_ENABLED=${{ vars.DRAFTING_ENABLED || '1' }}
             DRAFTING_WORKER=${{ vars.DRAFTING_WORKER || '1' }}
 
@@ -300,9 +300,9 @@ jobs:
       - name: 'Build and Push Container'
         id: 'build'
         env:
-          API_URL: '${{ vars.SCHOLAR_API_PUBLIC_URL || needs.api.outputs.url }}'
-          SITE_URL: '${{ vars.SCHOLAR_SITE_URL }}'
-          DOCS_PORTAL_URL: '${{ vars.DOCS_PORTAL_URL }}'
+          API_URL: '${{ vars.SCHOLAR_API_PUBLIC_URL || secrets.SCHOLAR_API_PUBLIC_URL || needs.api.outputs.url }}'
+          SITE_URL: '${{ vars.SCHOLAR_SITE_URL || secrets.SCHOLAR_SITE_URL }}'
+          DOCS_PORTAL_URL: '${{ vars.DOCS_PORTAL_URL || secrets.DOCS_PORTAL_URL }}'
         run: |-
           if [ -z "${API_URL}" ]; then
             echo "::error::No sd-api URL. The api job publishes one; set vars.SCHOLAR_API_PUBLIC_URL to override." >&2
@@ -337,9 +337,9 @@ jobs:
           # secret of its own and mounts nothing from Secret Manager.
           env_vars: |
             NODE_ENV=production
-            AUTH_API_URL=${{ vars.SCHOLAR_API_PUBLIC_URL || needs.api.outputs.url }}
-            AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || 'ngo_session' }}
-            SITE_URL=${{ vars.SCHOLAR_SITE_URL }}
+            AUTH_API_URL=${{ vars.SCHOLAR_API_PUBLIC_URL || secrets.SCHOLAR_API_PUBLIC_URL || needs.api.outputs.url }}
+            AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || secrets.AUTH_COOKIE_NAME || 'sd_session' }}
+            SITE_URL=${{ vars.SCHOLAR_SITE_URL || secrets.SCHOLAR_SITE_URL }}
 
       - name: 'Show sd-ui URL'
         run: 'echo "sd-ui: ${{ steps.deploy.outputs.url }}"'
