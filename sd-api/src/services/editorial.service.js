@@ -14,7 +14,9 @@ const { humanPublisher, makesPublic } = require("../lib/actor");
 const storyVersion = require("../lib/storyVersion");
 const levelsLib = require("../lib/levels");
 const recordLib = require("../lib/record");
+const ledger = require("../lib/evidenceLedger");
 const { AUDIENCES: AUDIENCE_TABLE } = require("../lib/audiences");
+const { readsForStories } = require("./reads.service");
 const {
   normalizeBlockProvenance,
   presentBlockProvenance,
@@ -171,6 +173,7 @@ function normalizeRawBodyBlocks(blocks, fallbackContent = "") {
         fidelity: block?.fidelity,
         extension: block?.extension,
         reach: block?.reach,
+        recheckedAt: block?.recheckedAt,
         currentHtml: html,
       });
 
@@ -966,6 +969,12 @@ function mapStoryDocument(story, author = null, provenance = null) {
         generatedAt: l.generated_at || null,
         readability: l.readability || null,
         fidelity: l.fidelity || null,
+        /* What the level was checked against: the paper, or — for an article
+           written by hand, which has none — the scholar's own paragraphs.
+           Presented because every surface reporting fidelity has to be able to
+           say which, and they are not the same claim. Levels written before
+           this was recorded carry no value and are read as "source". */
+        grounding: l.grounding || "source",
         /* Paragraphs that go beyond the paper, judged for reach; null on a level written before there were any. */
         reach: l.reach || null,
         stale: st.stale,
@@ -1021,6 +1030,9 @@ function mapStoryDocument(story, author = null, provenance = null) {
           version: story.evidence.manifest.story?.version ?? null,
           stale: (story.evidence.manifest.story?.version ?? null) !== storyVersion.versionOf(story),
           totals: story.evidence.manifest.totals || null,
+          /* One sentence, written once, so the footer under the article and
+             the verify page cannot drift apart in what they claim. */
+          summary: ledger.readerSentence(story.evidence.manifest.totals),
         }
       : null,
     slug: story.slug || slugify(title),
@@ -1094,6 +1106,22 @@ async function findOwnedStory({ storyId, scholarId, profileId }) {
   }
 
   return story;
+}
+
+/**
+ * Ownership and status, composed so neither can erase the other.
+ *
+ * Named and exported because this is where the leak lived: both halves are
+ * `$or` objects, and combining them with a spread kept only the second. A
+ * scholar asking for their published stories got everyone's.
+ */
+function buildStoryListQuery({ scholarId, profileId, status = "all" }) {
+  return {
+    $and: [
+      { $or: buildScholarStoryFilters({ scholarId, profileId }) },
+      buildStoryStatusQuery(status),
+    ],
+  };
 }
 
 function buildStoryStatusQuery(status) {
@@ -1456,17 +1484,39 @@ async function deleteEditorialStory({ storyId, scholarId, profileId, user }) {
 
 async function listEditorialStories({ scholarId, profileId, status = "all" }) {
   const db = await getDb();
+  /* `$and`, not a spread.
+     Ownership is expressed as `$or`, and so is the `published` status filter -
+     `buildPublicStoryQuery` matches published-or-scheduled-and-due. Spreading
+     the second object over the first replaced the ownership `$or` with the
+     status one and the query lost its owner clause entirely, so
+     `?status=published` returned every scholar's published stories to whoever
+     asked. `draft` and `scheduled` were unaffected only because they happen to
+     use plain `status` keys, which is luck, not design. Composing with `$and`
+     keeps both clauses whatever shape either takes. */
   const stories = await getStoryCollection(db)
-    .find({
-      $or: buildScholarStoryFilters({ scholarId, profileId }),
-      ...buildStoryStatusQuery(status),
-    })
+    .find(buildStoryListQuery({ scholarId, profileId, status }))
     .sort({ updatedAt: -1, createdAt: -1 })
     .limit(50)
     .toArray();
 
+  /* What came of the work, carried on the same read as the work itself. Only
+     a published story can have been read, so only those are asked about. */
+  const publishedIds = stories
+    .filter((story) => story.status === "published" || story.status === "scheduled")
+    .map((story) => story._id);
+  const reads = await readsForStories(db, publishedIds);
+
   return serializeMongoValue({
-    stories: stories.map(mapStorySummary),
+    stories: stories.map((story) => {
+      const summary = mapStorySummary(story);
+      /* `null`, not `{total: 0}`, for a story that was never published: "no
+         reads yet" and "cannot have been read" are different things and the
+         dashboard says them differently. */
+      summary.reads = publishedIds.some((id) => id.equals(story._id))
+        ? reads.get(String(story._id)) || { total: 0, recent: 0 }
+        : null;
+      return summary;
+    }),
   });
 }
 
@@ -2113,6 +2163,11 @@ async function createStoryFromDraft({ job, draft }) {
 }
 
 module.exports = {
+  /* Exported for the ownership-scope tests: the composition below is what
+     leaked one scholar's stories to another. */
+  buildScholarStoryFilters,
+  buildStoryStatusQuery,
+  buildStoryListQuery,
   applyStoryRevision,
   deleteEditorialStory,
   listStoryRevisions,

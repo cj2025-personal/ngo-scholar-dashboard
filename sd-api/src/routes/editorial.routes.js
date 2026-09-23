@@ -20,6 +20,8 @@ const { askStoryAgent, listStoryTurns, resolveStoryTurn, streamProposalImage, st
 const evidence = require("../services/evidence.service");
 const { generateLevels, approveLevels, discardLevels } = require("../services/levels.service");
 const recordService = require("../services/record.service");
+const { recheckBlock } = require("../services/recheck.service");
+const { recordStoryRead } = require("../services/reads.service");
 const { env } = require("../config/env");
 const { readServiceToken, secretsMatch } = require("../lib/service-auth");
 const { getDb } = require("../db/mongo");
@@ -311,6 +313,22 @@ router.post(
   }),
 );
 
+/** The scholar rewrote a paragraph and wants the judge's verdict on what it says now. */
+router.post(
+  "/:storyId/blocks/:index/recheck",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await recheckBlock({
+      storyId: req.params.storyId,
+      index: Number(req.params.index),
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
+      user: req.auth.user,
+      baseVersion: req.body?.baseVersion ?? null,
+    }));
+  }),
+);
+
 /** The scholar has seen the alert. */
 router.post(
   "/:storyId/record/acknowledge",
@@ -323,6 +341,26 @@ router.post(
 );
 
 /* ── passages behind a story ─────────────────────────────────────────────── */
+
+/**
+ * Public: one read of a published story.
+ *
+ * Called by the reader itself once someone has stayed with the article, not
+ * on page load. Always 204: it must not say whether the slug exists, whether
+ * the caller was throttled, or whether anything was counted, because each of
+ * those answers turns a counter into something to probe with.
+ */
+router.post(
+  "/public/slug/:slug/read",
+  /* A ceiling per caller across every story, above the service's own one-per-
+     story-per-ten-minutes. Generous enough that a household or a lecture
+     theatre behind one address is never turned away. */
+  rateLimit({ name: "story-read", limit: 120, windowMs: 10 * 60 * 1000 }),
+  asyncHandler(async (req, res) => {
+    await recordStoryRead(await getDb(), { slug: req.params.slug, from: req.ip || "" });
+    res.status(204).end();
+  }),
+);
 
 /** Public: the passages a published story's chips point at, for the Sources toggle. */
 router.get(
