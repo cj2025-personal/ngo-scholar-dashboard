@@ -8,6 +8,18 @@
 # — it removes the stored long-lived key — and the swap is two lines; see the
 # comment above the auth step.
 #
+# ── Where the secrets live ────────────────────────────────────────────────
+# In Secret Manager, not in GitHub, following user-dashboard-api, paris-service
+# and ngo-auth-api. GitHub holds only what it needs to authenticate to Google
+# and address the registry — four values, none of them an application secret:
+#
+#   GCP_SA_KEY, GCP_PROJECT_ID, GCP_REGION, GCP_ARTIFACT_REPOSITORY
+#
+# Everything the running service needs is either mounted from Secret Manager by
+# the deploy step or is plain configuration in `env_vars`. A database password
+# therefore never passes through an Actions runner, never lands in a log, and
+# rotates by adding a secret version rather than by editing this repository.
+#
 # Two services from two images, in one repo:
 #
 #   archivyn-scholar-api  <- sd-api
@@ -149,6 +161,26 @@ jobs:
           fi
           echo "repository ${REPOSITORY} present in ${REGION}."
 
+          # Cloud Run refuses to start a revision that mounts a Secret Manager
+          # secret which does not exist, and reports it as a failed revision
+          # rather than as a missing secret. Named here instead.
+          missing=""
+          for s in MONGODB_URI scholar-api-service-token scholar-api-ledger-signing-key; do
+            gcloud secrets describe "$s" --project="${PROJECT_ID}" >/dev/null 2>&1 || missing="${missing} $s"
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error::Secret Manager is missing:${missing}. Create them before deploying — the revision would start and immediately fail." >&2
+            exit 1
+          fi
+          echo "secrets present: MONGODB_URI, scholar-api-service-token, scholar-api-ledger-signing-key"
+
+          SA="scholar-api-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
+          if ! gcloud iam service-accounts describe "${SA}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+            echo "::error::Runtime service account ${SA} does not exist." >&2
+            exit 1
+          fi
+          echo "runtime service account present."
+
       - name: 'Build and Push Container'
         id: 'build'
         run: |-
@@ -159,9 +191,29 @@ jobs:
           docker push "${IMAGE}"
           echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
 
-      # Credentials come from the runtime service account through ADC — no key
-      # file in the image. `config/key.json` is a developer-machine convenience
-      # and is excluded by both .gitignore and .dockerignore.
+      # ── Secrets come from Secret Manager, not from GitHub ──────────────────
+      #
+      # `secrets:` mounts a Secret Manager version as an environment variable on
+      # the revision. The value never enters this workflow, so it cannot reach a
+      # log, a fork, or anyone with read access to the repository's settings —
+      # and rotating one is a new secret version, not a commit and a re-deploy.
+      #
+      # Cloud Run REFUSES TO START a revision that mounts a secret which does
+      # not exist, so every name below must be present in the project before a
+      # deploy. The three here are:
+      #
+      #   MONGODB_URI                     already existed; shared with the estate
+      #   scholar-api-service-token       created for this service
+      #   scholar-api-ledger-signing-key  created for this service
+      #
+      # The runtime service account is granted secretAccessor on exactly those
+      # three and nothing else. It is `scholar-api-runtime` rather than the
+      # existing `archivyn-api-runtime` deliberately: sharing that identity
+      # would hand sd-api the admin API's secrets as well.
+      #
+      # Credentials for Vertex and GCS come from the same service account
+      # through ADC — no key file in the image. `sd-api/config/key.json` is a
+      # developer-machine convenience, excluded by .gitignore and .dockerignore.
       - id: 'deploy'
         name: 'Deploy to Cloud Run'
         uses: 'google-github-actions/deploy-cloudrun@v2'
@@ -171,28 +223,35 @@ jobs:
           image: '${{ steps.build.outputs.image }}'
           flags: >-
             --allow-unauthenticated
-            --service-account=${{ secrets.SCHOLAR_API_RUNTIME_SERVICE_ACCOUNT }}
+            --service-account=scholar-api-runtime@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
             --port=8080
             --cpu=1
             --memory=1Gi
             --min-instances=${{ vars.SCHOLAR_API_MIN_INSTANCES || '0' }}
             --max-instances=10
             --timeout=300s
+          secrets: |-
+            MONGODB_URI=MONGODB_URI:latest
+            SERVICE_TOKEN=scholar-api-service-token:latest
+            LEDGER_SIGNING_KEY=scholar-api-ledger-signing-key:latest
+          # Configuration, not secrets. A database name, an origin and a bucket
+          # are not credentials, and putting them in Secret Manager would only
+          # make them harder to read and change.
+          #
+          # LEDGER_KEY_ID is deliberately absent: evidenceLedger derives a key
+          # id from the public key when none is given, so the signature and its
+          # identifier cannot disagree.
           env_vars: |
             NODE_ENV=production
-            MONGODB_URI=${{ secrets.MONGODB_URI }}
-            MONGODB_DB=${{ secrets.MONGODB_DB }}
-            CORS_ORIGIN=${{ secrets.SCHOLAR_CORS_ORIGIN }}
-            AUTH_COOKIE_NAME=${{ secrets.AUTH_COOKIE_NAME }}
-            AUTH_COOKIE_DOMAIN=${{ secrets.AUTH_COOKIE_DOMAIN }}
-            SERVICE_TOKEN=${{ secrets.SERVICE_TOKEN }}
-            LEDGER_KEY_ID=${{ secrets.LEDGER_KEY_ID }}
-            LEDGER_SIGNING_KEY=${{ secrets.LEDGER_SIGNING_KEY }}
+            MONGODB_DB=${{ vars.MONGODB_DB || 'ngo_profiles' }}
+            CORS_ORIGIN=${{ vars.SCHOLAR_CORS_ORIGIN }}
+            AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || 'ngo_session' }}
+            AUTH_COOKIE_DOMAIN=${{ vars.AUTH_COOKIE_DOMAIN }}
             LLM_PROVIDER=vertex
             STORY_LLM_MODEL=${{ vars.STORY_LLM_MODEL || 'gemini-2.5-flash' }}
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
             GCP_LOCATION=${{ secrets.GCP_REGION }}
-            GCS_EDITORIAL_IMAGES_BUCKET=${{ secrets.GCS_EDITORIAL_IMAGES_BUCKET }}
+            GCS_EDITORIAL_IMAGES_BUCKET=${{ vars.GCS_EDITORIAL_IMAGES_BUCKET }}
             DRAFTING_ENABLED=${{ vars.DRAFTING_ENABLED || '1' }}
             DRAFTING_WORKER=${{ vars.DRAFTING_WORKER || '1' }}
 
@@ -274,11 +333,12 @@ jobs:
             --max-instances=10
             --timeout=120s
           # Read by the server at request time, so set here rather than baked
-          # into the image.
+          # into the image. None of these is a credential: the UI holds no
+          # secret of its own and mounts nothing from Secret Manager.
           env_vars: |
             NODE_ENV=production
             AUTH_API_URL=${{ vars.SCHOLAR_API_PUBLIC_URL || needs.api.outputs.url }}
-            AUTH_COOKIE_NAME=${{ secrets.AUTH_COOKIE_NAME }}
+            AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || 'ngo_session' }}
             SITE_URL=${{ vars.SCHOLAR_SITE_URL }}
 
       - name: 'Show sd-ui URL'
