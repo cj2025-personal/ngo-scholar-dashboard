@@ -70,6 +70,27 @@
   --ark-shadow-md: 0 2px 4px rgba(23, 37, 84, 0.06), 0 14px 34px -18px rgba(23, 37, 84, 0.25);
   --ark-shadow-lg: 0 4px 8px rgba(23, 37, 84, 0.07), 0 28px 60px -24px rgba(23, 37, 84, 0.35);
 
+  /* Card surface (2026-09) — the refreshed treatment.
+   *
+   * A hairline doing the work a shadow used to: ink at low opacity rather than
+   * a blue-grey swatch, so it sits under the content instead of drawing a frame
+   * around it, and holds its weight on both white and the tinted page. The lift
+   * is shallow enough to read as contact with the page rather than float above
+   * it, and `--ark-card-wash` is the hover tint for a row inside a card.
+   *
+   * `--ark-radius-card` (12px) is the older value and is deliberately left
+   * alone: an app adopts this group whole or not at all, and a 12px corner with
+   * this border reads as neither. scholar-dashboard/sd-ui uses these today; the
+   * others keep the previous treatment until they move.
+   */
+  --ark-card-radius: 16px;
+  --ark-card-line: rgba(23, 37, 84, 0.09);
+  --ark-card-line-strong: rgba(23, 37, 84, 0.16);
+  --ark-card-line-soft: rgba(23, 37, 84, 0.07);
+  --ark-card-wash: #fbfcfe;
+  --ark-card-lift: 0 1px 2px rgba(23, 37, 84, 0.04), 0 14px 32px -24px rgba(23, 37, 84, 0.45);
+  --ark-card-lift-hover: 0 1px 2px rgba(23, 37, 84, 0.05), 0 18px 38px -22px rgba(23, 37, 84, 0.5);
+
   /* Type — Plus Jakarta Sans for UI and reading, Fraunces for editorial headlines.
    *
    * Plus Jakarta Sans fits the product between classroom and AI workspace:

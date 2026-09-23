@@ -1894,8 +1894,13 @@ select {
 
 .nb-identity { grid-column: 1; justify-self: start; display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
 .nb-brand { display: inline-flex; align-items: center; width: max-content; }
-/* One drawn image, sized by height. 48px in a 64px row, as the reference. */
-.nb-lockup { display: block; height: 48px; width: auto; max-width: none; flex: 0 0 auto; object-fit: contain; }
+/* One drawn image, sized by height. 36px in a 64px row: the lockup is wide —
+   mark, wordmark and tagline, near 4:1 — so height understates how much of
+   the bar it takes. At 48px it ran 180px across and was the heaviest thing on
+   any page, the eye's first stop on a screen whose first stop should be the
+   work. 36px leaves the wordmark at a comfortable reading size and the bar
+   with air above and below it. */
+.nb-lockup { display: block; height: 36px; width: auto; max-width: none; flex: 0 0 auto; object-fit: contain; }
 
 .nb-search { grid-column: 2; justify-self: center; width: min(100%, 680px); }
 /* A trigger, not an input — it opens a palette, as the reference's does. */
@@ -2029,7 +2034,7 @@ select {
   .nb-utility__inner { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 0 16px; }
   .nb-search { display: none; }
   .nb-actions { grid-column: 2; }
-  .nb-lockup { height: 40px; }
+  .nb-lockup { height: 30px; }
 }
 
 .sc-me { border-radius: 50%; color: #fff; display: grid; place-items: center; font-weight: 800; font-family: var(--sd-display);
@@ -2927,6 +2932,8 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 /* The author's own context: theirs, with a list to verify. */
 .block-chip.is-context { color: #14532d; background: #e6f4ea; }
 .block-chip.is-context::before { content: "✎"; }
+.block-chip.is-own { color: #14532d; background: #e6f4ea; }
+.block-chip.is-own::before { content: "✎"; }
 .ch-beat-kind.is-context { background: #e6f4ea; color: #14532d; }
 /* The reading-age bar, folded until a level exists. One quiet line instead
    of two rows of controls above the article the scholar came to read. */
@@ -2961,7 +2968,9 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .st-h2 { font-family: var(--sd-display); font-weight: 700; font-size: 18px; color: var(--sd-heading); margin: 0; }
 .st-sub { margin: 4px 0 0; font-size: 13px; line-height: 1.6; color: var(--sd-muted); max-width: 72ch; }
 .st-muted { font-size: 13px; color: var(--sd-faint); margin: 0; }
-.st-card { background: var(--sd-surface); border: 1px solid var(--sd-line); border-radius: var(--ark-radius-card); padding: 16px; box-shadow: var(--sd-sh-sm); }
+/* The same hairline the studio uses, so the papers page and the studio are
+   plainly one product rather than two that happen to share a bar. */
+.st-card { background: var(--sd-surface); border: 1px solid var(--ark-card-line); border-radius: var(--ark-card-radius); padding: 18px; box-shadow: var(--ark-card-lift); }
 .st-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .st-link { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--navy); background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
 .st-todos { display: flex; flex-direction: column; gap: 10px; }
@@ -2973,17 +2982,32 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .st-dot.is-warn { background: var(--ark-warning); } .st-dot.is-navy { background: var(--navy); } .st-dot.is-ok { background: var(--ark-success); } .st-dot.is-bad { background: var(--ark-red); } .st-dot.is-faint { background: var(--sd-faint); }
 .st-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; font-size: 12.5px; text-decoration: none; white-space: nowrap; }
 .st-btn-primary { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; font-size: 12.5px; background: var(--navy); border-color: var(--navy); color: #fff; text-decoration: none; white-space: nowrap; border-radius: 10px; font-weight: 700; }
+/* The rows bleed into the card's padding so the hover tint reads as a band
+   across the card rather than a floating strip with margins. The separator
+   is the softest line in the sheet — between rows of the same kind, a rule
+   that announces itself is a rule doing too much. */
 .st-story { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--sd-line-soft); }
+.st-page .st-story {
+  margin-inline: -24px; padding-inline: 24px;
+  border-bottom-color: var(--ark-card-line-soft); transition: background 140ms ease;
+}
+.st-page .st-story:hover { background: var(--st-wash); }
+.st-page .st-story-title:hover { color: var(--ark-navy); }
 .st-story:last-child { border-bottom: 0; }
 .st-story-title { font-weight: 600; color: var(--sd-heading); }
 .st-stat-label { font-size: 11px; color: var(--sd-faint); }
 .st-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
 
 /* ══ Studio ═══════════════════════════════════════════════════════════════
-   The card recipe is the learner dashboard's, taken from the running product
-   rather than from its repository — the file that looked canonical there was
-   a theme variant nothing renders. A hairline, a soft lift, an 18px corner, a
-   short navy-to-red stripe in the top-left, and padding with room in it.
+   The card recipe: a hairline that does the work a shadow used to, a 16px
+   corner, a lift shallow enough to read as contact with the page rather than
+   float above it, and padding with room in it.
+
+   The navy-to-red stripe that used to sit in every card's top-left corner is
+   gone. One of them is a mark; eight on a screen is a rash, and it was the
+   first thing the eye found on a page whose point is the one sentence saying
+   what to do next. The brand is carried by the bar above and by the navy the
+   headings are set in — it does not need repeating once per box.
 
    Three bands: the one thing to do, the shape of the work, then the detail.
    See components/scholar/StudioHome.js.
@@ -2996,78 +3020,110 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 /* No page-width cap: the gutter is the same 24px the bar above uses, so a
    card's edge lands on the brand's edge. A cap here left a wide screen with
    more margin than rail. */
-.st-page { padding: 20px 24px 44px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 18px; align-items: start; }
+/* The card tokens live on the page rather than in the global sheet, so a
+   change made for this screen does not move every other one. The line is ink
+   at low opacity, not a blue-grey swatch: it sits under the content instead
+   of drawing a frame around it, and it holds its weight against both the
+   white card and the tinted page behind it. */
+.st-page {
+  padding: 20px 24px 44px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 18px; align-items: start;
+  /* Aliases, not values. The recipe lives in archivyn-tokens.css, which every
+     Archivyn app ships a copy of; these short names keep the rules below
+     readable without giving this page its own definition of a card. */
+  --st-line: var(--ark-card-line);
+  --st-line-strong: var(--ark-card-line-strong);
+  --st-wash: var(--ark-card-wash);
+  --st-lift: var(--ark-card-lift);
+  --st-lift-hover: var(--ark-card-lift-hover);
+}
 .st-main { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
 .st-rail { display: flex; flex-direction: column; gap: 18px; }
 .st-rail__big { margin: 10px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ark-text-muted); }
 .st-rail__big b { font-family: var(--sd-display); font-size: 24px; font-weight: 700; color: var(--ark-navy); }
 
-.st-page .st-card, .st-next, .st-shape {
+.st-page .st-card, .st-shape {
   position: relative; overflow: hidden;
-  background: var(--ark-surface); border: 1px solid var(--ark-border-soft);
-  border-radius: 18px; box-shadow: 0 7px 22px rgba(20, 33, 61, 0.05);
+  background: var(--ark-surface); border: 1px solid var(--st-line);
+  border-radius: var(--ark-card-radius); box-shadow: var(--st-lift);
 }
-.st-page .st-card { padding: 20px 22px; }
-/* The mark every card on the learner dashboard wears. Short, in the corner,
-   the brand's two colours meeting. */
-.st-next::before, .st-shape::before, .st-page .st-card::before {
-  content: ""; position: absolute; top: 0; left: 0; width: 48px; height: 4px;
-  background: linear-gradient(90deg, var(--ark-navy) 0 50%, var(--ark-red) 50% 100%);
-}
+.st-page .st-card { padding: 22px 24px; }
+/* The head is a label, not a title bar: the space under it does the dividing
+   a rule used to, and the card stays quiet. */
+.st-page .st-card-head { margin-bottom: 14px; }
+/* The kicker is the first thing in a rail card now that nothing sits above
+   it, so it gets the room the stripe was taking. */
+.st-page .st-card > .sc-kicker { display: block; margin-bottom: 2px; }
 
-/* ── 1 · What to do now ───────────────────────────────────────────────── */
-
-.st-next { display: flex; flex-direction: column; padding: 26px 30px 24px; }
-.st-next__main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
-.st-next__copy { flex: 1 1 22rem; min-width: 0; display: flex; flex-direction: column; }
-
-/* Where the work stands. The reference puts a progress ring here; a scholar
-   has no percentage worth showing, but the same question — how is the work
-   moving — is answered by the three states it moves through. */
-.st-pipe { flex: 0 0 auto; align-self: center; display: flex; flex-direction: column; gap: 2px; min-width: 190px; }
-.st-pipe__step {
-  position: relative; display: flex; align-items: baseline; gap: 10px; padding: 9px 12px;
-  border-radius: 10px; transition: background 140ms ease;
-}
-.st-pipe__step:hover { background: var(--ark-surface-2); }
-/* The line that makes them one pipeline rather than three numbers. */
-.st-pipe__step:not(.is-last)::after {
-  content: ""; position: absolute; left: 25px; bottom: -2px; width: 1px; height: 6px; background: var(--ark-border);
-}
-.st-pipe__n { font-family: var(--sd-display); font-size: 25px; font-weight: 700; line-height: 1; color: var(--ark-navy); min-width: 26px; }
-.st-pipe__label { font-size: 12.5px; line-height: 1.35; color: var(--ark-text-muted); }
-.st-pipe__step.is-warn .st-pipe__n { color: var(--ark-warning); }
-.st-next__date { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--ark-text-faint); }
-.st-next__greet {
-  margin: 4px 0 0; font-family: var(--sd-display); font-size: 20px; font-weight: 700;
+/* ── 1 · Who and when ─────────────────────────────────────────────────────
+   A heading on the page, not a card on it. Unboxed is the point: the first
+   boxed thing the eye meets should be the first thing that wants doing. */
+.st-hello { padding: 4px 2px 0; }
+.st-hello__date { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--ark-text-faint); }
+.st-hello__greet {
+  margin: 3px 0 0; font-family: var(--sd-display); font-size: 22px; font-weight: 700;
   line-height: 1.2; letter-spacing: -0.02em; color: var(--ark-navy);
 }
-/* The rule under the greeting: above it is who and when, below it is the work.
-   The learner dashboard draws the same line in the same place. */
-.st-next__tagrow {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
-  margin-top: 14px; padding-top: 15px; border-top: 1px solid var(--ark-border-soft);
+
+/* ── 2 · What is waiting ─────────────────────────────────────────────────
+   The all-clear. It replaces the queue rather than sitting above an empty
+   one, and it is quiet: nothing waiting is not an achievement to be
+   announced, it is just the state of the desk. */
+.st-clear { padding: 6px 0 4px; }
+.st-clear__lead { margin: 0; font-family: var(--sd-display); font-size: 17px; font-weight: 700; color: var(--ark-navy); }
+.st-clear .st-muted { margin-top: 6px; max-width: 58ch; line-height: 1.55; }
+
+/* The rest of the queue, on request. Full width so it reads as the end of the
+   list rather than a control floating beside it, and quiet enough that it is
+   plainly not one of the things waiting. */
+.st-more {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; margin-top: 10px; padding: 9px 0;
+  font: inherit; font-size: 12.5px; font-weight: 650; color: var(--ark-text-muted);
+  background: none; border: 0; border-top: 1px solid var(--ark-card-line-soft);
+  cursor: pointer; transition: color 140ms ease;
 }
-.st-next__eyebrow {
-  display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
-  letter-spacing: 0.07em; text-transform: uppercase; color: var(--ark-navy);
+.st-more:hover { color: var(--ark-navy); }
+.st-more:focus-visible { outline: 2px solid var(--ark-navy); outline-offset: -2px; border-radius: 8px; }
+
+/* ── A fold: several of one kind, said once ───────────────────────────────
+   The head is an ordinary row, so a fold and a single thing sit at the same
+   weight in the list — which is the point, because one pile of nine drafts
+   is one thing to deal with, not nine. */
+.st-fold { display: flex; flex-direction: column; }
+.st-fold__head { border-radius: 12px; }
+.st-fold.is-open .st-fold__head { border-end-start-radius: 0; border-end-end-radius: 0; border-bottom-color: transparent; }
+/* The members, indented under the line that counted them and sharing its
+   leading edge, so the group reads as one block rather than as the list it
+   was before. */
+.st-fold__items {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 6px 10px 10px 26px; margin-top: -6px;
+  border: 1px solid var(--st-line); border-top: 0;
+  border-end-start-radius: 12px; border-end-end-radius: 12px;
+  border-inline-start-width: 3px; border-inline-start-color: inherit;
+  background: var(--st-wash);
 }
-.st-next__eyebrow.is-grave { color: var(--ark-red); }
-.st-next__chip {
-  padding: 3px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 700;
-  letter-spacing: 0.05em; text-transform: uppercase; background: var(--ark-navy-soft); color: var(--ark-navy);
+.st-fold.is-grave .st-fold__items { border-inline-start-color: var(--ark-red); }
+.st-fold.is-warn .st-fold__items { border-inline-start-color: var(--ark-warning); }
+.st-fold.is-info .st-fold__items { border-inline-start-color: var(--ark-navy); }
+.st-fold.is-faint .st-fold__items { border-inline-start-color: var(--ark-border); }
+/* A member is quieter than the line that counted it: no tone bar of its own —
+   the fold already carries one, and two coloured edges side by side say the
+   same thing twice. Specific enough to beat the tone rules further down the
+   sheet, which is the only reason for the extra class in the selector. */
+.st-page .st-fold__items .st-todo.is-child {
+  border-inline-start-width: 1px; border-inline-start-color: var(--st-line);
+  background: var(--ark-surface); padding: 10px 12px;
 }
-.st-next__chip.is-grave { background: var(--ark-danger-soft); color: var(--ark-red); }
-.st-next__chip.is-warn { background: var(--ark-warning-soft); color: var(--ark-warning); }
-.st-next__title {
-  margin: 12px 0 0; font-family: var(--sd-display); font-weight: 700; font-size: 29px;
-  line-height: 1.16; letter-spacing: -0.03em; color: var(--ark-navy); max-width: 28ch; text-wrap: balance;
+.st-todo.is-child .st-todo-lead { font-weight: 600; font-size: 13.5px; }
+.st-fold__toggle {
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
+  font: inherit; font-size: 12px; font-weight: 650; color: var(--ark-text-muted);
+  background: none; border: 0; padding: 4px 2px; cursor: pointer; white-space: nowrap;
+  transition: color 140ms ease;
 }
-.st-next__detail { margin: 9px 0 0; font-size: 14px; line-height: 1.55; color: var(--ark-text-muted); max-width: 66ch; }
-.st-next__meta { margin: 9px 0 0; font-size: 12.5px; color: var(--ark-text-faint); }
-.st-next__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
-.st-next__note { margin: 16px 0 0; font-size: 12.5px; color: var(--ark-text-faint); }
-.st-next__note:last-child { margin-top: auto; padding-top: 16px; }
+.st-fold__toggle:hover { color: var(--ark-navy); }
+.st-fold__toggle:focus-visible { outline: 2px solid var(--ark-navy); outline-offset: 2px; border-radius: 6px; }
 
 /* Outlined, both of them. The learner dashboard puts no filled button on this
    card: the card is already the loudest thing on the page, and a navy slab
@@ -3106,11 +3162,29 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 
 /* ── 3 · The detail ───────────────────────────────────────────────────── */
 .st-story-main { min-width: 0; }
-.st-todo { border-inline-start-width: 3px; }
-.st-todo.is-grave { border-inline-start-color: var(--ark-red); }
-.st-todo.is-warn { border-inline-start-color: var(--ark-warning); }
-.st-todo.is-info { border-inline-start-color: var(--ark-navy); }
-.st-todo.is-faint { border-inline-start-color: var(--ark-border); }
+/* A waiting item is a thing you act on, so it answers the pointer. The border
+   darkens and the surface tints; nothing moves, because a row that jumps
+   under the cursor makes a list of six feel like a trampoline. */
+.st-page .st-todo {
+  border: 1px solid var(--st-line); border-radius: 12px;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+/* Everything but the leading edge: that one belongs to the tone, and a
+   `border-color` here would grey it out for as long as the pointer sits on
+   the row. */
+.st-page .st-todo:hover {
+  border-block-color: var(--st-line-strong); border-inline-end-color: var(--st-line-strong);
+  background: var(--st-wash); box-shadow: var(--st-lift);
+}
+/* The tone rides the leading edge. It stays 3px through the hover, so the
+   only thing that changes under the cursor is the row's weight, not its
+   shape. These carry the page's specificity because the rule above resets
+   the border shorthand. */
+.st-page .st-todo, .st-todo { border-inline-start-width: 3px; }
+.st-page .st-todo.is-grave, .st-todo.is-grave { border-inline-start-color: var(--ark-red); }
+.st-page .st-todo.is-warn, .st-todo.is-warn { border-inline-start-color: var(--ark-warning); }
+.st-page .st-todo.is-info, .st-todo.is-info { border-inline-start-color: var(--ark-navy); }
+.st-page .st-todo.is-faint, .st-todo.is-faint { border-inline-start-color: var(--ark-border); }
 .st-dot.is-grave { background: var(--ark-red); }
 .st-dot.is-info { background: var(--ark-navy); }
 
@@ -3118,16 +3192,12 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
   .st-page { grid-template-columns: minmax(0, 1fr); }
   .st-rail { order: 2; }
 }
-@media (max-width: 760px) {
-  .st-next__main { gap: 14px; }
-  .st-pipe { align-self: stretch; flex-direction: row; min-width: 0; }
-  .st-pipe__step { flex: 1; flex-direction: column; gap: 2px; padding: 8px; }
-  .st-pipe__step:not(.is-last)::after { display: none; }
-}
 @media (max-width: 620px) {
   .st-page { padding: 16px 14px 32px; }
-  .st-next { padding: 20px 18px 18px; }
-  .st-next__title { font-size: 23px; }
+  /* The card's own padding shrinks, so the row bleed that matches it must
+     shrink with it, or the hover band runs past the card's edge. */
+  .st-page .st-card { padding: 18px 16px; }
+  .st-page .st-story { margin-inline: -16px; padding-inline: 16px; }
   .st-shape__row { grid-template-columns: 1fr 1fr; }
 }
 .st-profile-name { font-weight: 700; margin-top: 8px; color: var(--sd-heading); }
@@ -3331,6 +3401,72 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
      viewport rather than scrolling. `auto` stretches. */
   align-self: auto;
 }
+/* ── The outline stage ─────────────────────────────────────────────────────
+   While an outline waits for approval there is nothing in the page to edit:
+   the machine has not written yet and the editor is empty. The only decision
+   on the screen is whether this plan is the article that will carry the
+   scholar's name — so the plan gets the canvas, at reading width, with every
+   section visible at once. It used to be read in a 380px rail beside a
+   thousand pixels of "Start writing…".
+
+   The thread and the composer come along, because "reply with what to
+   change" is how the plan is argued with; only the pane around them changes. */
+.ws-plan { display: block; padding: 0 24px 40px; }
+.ws-plan__inner { max-width: 860px; margin: 0 auto; }
+/* The rail body is a scroll pane in the rail. On the canvas it must not be,
+   or a long outline scrolls inside a box instead of moving the page. */
+.ws-plan .ws-rail-body { overflow: visible; }
+.ws-plan .ch-wrap { height: auto; min-height: calc(100dvh - 210px); max-width: none; padding: 0; }
+/* The page scrolls here, not the thread. Left as its own scroller the thread
+   swallows `scrollIntoView` — it is the nearest scrollable ancestor but, at
+   `height: auto`, it has nothing to scroll — so an arriving outline never
+   moved and sat below the fold. `safe flex-end` and the top fade belong to a
+   pane that holds a conversation against its bottom edge; on the canvas the
+   thread is just page content and reads from the top. */
+.ws-plan .ch-thread {
+  flex: 0 0 auto; overflow: visible; justify-content: flex-start;
+  mask-image: none; padding: 10px 0 8px; gap: 22px;
+}
+/* Static, not stuck to the bottom of the viewport. Sticky was the obvious
+   choice — a reply box always to hand — and it put the composer on top of the
+   outline it replies to: the last section under the text area, and "Approve
+   and draft" under the reading-ages pill, so the plan could be read but not
+   accepted. In the rail the composer is a chat dock and pinning is right; on
+   the canvas the outline is a document, and nothing may cover the control
+   that approves it. */
+.ws-plan .ch-composer { position: static; padding: 18px 0 24px; background: none; }
+/* The outline is the page here, not a message in a thread: no avatar beside
+   it, and a card of its own rather than a bubble. */
+/* Clear of the bar it scrolls under. */
+.ws-plan .ch-msg.is-outline { display: block; scroll-margin-top: 88px; }
+.ws-plan .ch-msg.is-outline > .ag-avatar { display: none; }
+.ws-plan .ch-msg.is-outline .ch-bubble {
+  padding: 26px 30px 24px; border-radius: 18px;
+  border: 1px solid var(--ark-border-soft); background: var(--ark-surface);
+  box-shadow: 0 7px 22px rgba(20, 33, 61, 0.05);
+}
+.ws-plan .ch-outline-title { font-size: 27px; line-height: 1.25; margin-top: 16px; }
+.ws-plan .ch-beats { gap: 10px; margin-top: 20px; }
+.ws-plan .ch-beat { padding: 15px 18px; }
+.ws-plan .ch-beat-heading { font-size: 15.5px; line-height: 1.4; }
+.ws-plan .ch-beat-body > .st-todo-detail { font-size: 14px; line-height: 1.55; }
+/* Approve, argue, abandon — in that order, and each looking like what it is.
+   Discard used to be a red text link pushed to the far right of the row,
+   which gave a destructive action the weight of a footnote and put it where
+   a "next" control usually sits. */
+.ws-plan .ch-actions { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--ark-border-soft); gap: 14px; }
+.ws-plan .ch-actions .sc-write-publish { padding: 11px 20px; font-size: 15px; }
+.ws-plan .ch-discard {
+  margin-left: auto; padding: 8px 14px; border: 1px solid var(--ark-border);
+  border-radius: var(--ark-radius-control); background: var(--ark-surface);
+}
+.ws-plan .ch-discard:hover { border-color: var(--ark-danger); background: var(--ark-danger-soft); }
+@media (max-width: 760px) {
+  .ws-plan { padding: 0 14px 28px; }
+  .ws-plan .ch-msg.is-outline .ch-bubble { padding: 18px 16px 16px; }
+  .ws-plan .ch-outline-title { font-size: 22px; }
+}
+
 .ag-rail-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 10px; border-bottom: 1px solid var(--sd-line-soft); }
 .ag-rail-close {
   width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 999px;
@@ -3603,9 +3739,82 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .del-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--sd-faint); background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
 .del-btn:hover { color: var(--burgundy); }
 .del-btn.is-compact { padding: 4px; }
-.del-confirm { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--sd-heading); background: rgba(178, 34, 52, 0.06); border: 1px solid rgba(178, 34, 52, 0.25); border-radius: 10px; padding: 6px 10px; }
-.del-yes { font: inherit; font-size: 12px; font-weight: 700; color: #fff; background: var(--burgundy); border: 0; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
-.del-error { color: var(--burgundy); }
+/* ── The confirmation ─────────────────────────────────────────────────────
+   A native <dialog>, so it paints in the top layer: no ancestor's overflow,
+   transform or z-index can clip it, which the old inline strip could not say
+   — it lived inside a card with `overflow: hidden`.
+
+   The scrim is dark and slightly blurred rather than the flat black wash a
+   dialog usually gets. Blur is what makes the page behind it read as paused
+   instead of dimmed, and it puts the panel's own hairline back in play as the
+   thing that defines the edge. */
+/* Sized to the panel and centred by the browser's own `inset: 0; margin:
+   auto`, rather than stretched over the viewport with the panel centred
+   inside it. The stretched version drew correctly and could not be clicked:
+   the full-bleed dialog won the hit test at every point, so the button under
+   the pointer was never the element the pointer found. */
+.cf-dialog {
+  /* Centred here rather than by the browser. A modal <dialog> is centred by
+     the UA with `inset: 0; margin: auto`, and the reset at the top of this
+     sheet — `* { margin: 0 }` — takes the `auto` away, which drops the panel
+     into the top-left corner. Nothing about the dialog says it depends on a
+     default that another rule has already deleted, so it says it here. */
+  position: fixed; inset: 0; margin: auto;
+  width: min(420px, calc(100vw - 32px));
+  height: fit-content; max-width: none; max-height: calc(100dvh - 32px);
+  padding: 0; border: 0; background: none; color: var(--ink);
+  overscroll-behavior: contain;
+}
+.cf-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.cf-panel {
+  padding: 22px 24px 18px;
+  background: var(--ark-surface);
+  border: 1px solid var(--ark-card-line);
+  border-radius: var(--ark-card-radius);
+  /* A halo rather than a drop shadow: the panel is floating, and the only
+     place in this product where a deep shadow is the honest signal. */
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 32px 64px -24px rgba(15, 23, 42, 0.45);
+  text-align: left;
+}
+.cf-title {
+  margin: 0; font-family: var(--sd-display); font-size: 18px; font-weight: 700;
+  letter-spacing: -0.01em; line-height: 1.25; color: var(--ark-navy);
+}
+.cf-body { margin-top: 8px; font-size: 13.5px; line-height: 1.6; color: var(--ark-text-muted); }
+.cf-body b { font-weight: 650; color: var(--sd-heading); }
+.cf-error { margin: 12px 0 0; font-size: 12.5px; font-weight: 600; color: var(--burgundy); }
+.cf-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+/* Two buttons of the same size. The destructive one is filled and the way out
+   is not, which is the only thing saying which is which — a Cancel shrunk to
+   a text link is a Cancel that is hard to hit in a hurry. */
+.cf-btn {
+  font: inherit; font-size: 13px; font-weight: 650; height: 36px; padding: 0 16px;
+  border-radius: 10px; border: 1px solid rgba(23, 37, 84, 0.14);
+  background: var(--ark-surface); color: var(--sd-heading); cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, opacity 140ms ease;
+}
+.cf-btn:hover:not(:disabled) { background: var(--ark-surface-2); border-color: rgba(23, 37, 84, 0.22); }
+.cf-btn.is-danger { background: var(--burgundy); border-color: var(--burgundy); color: #fff; }
+.cf-btn.is-danger:hover:not(:disabled) { background: var(--ark-red); border-color: var(--ark-red); }
+.cf-btn:disabled { opacity: 0.6; cursor: default; }
+.cf-btn:focus-visible { outline: 2px solid var(--ark-navy); outline-offset: 2px; }
+/* The same button standing in a line of prose rather than in a dialog's
+   footer: shorter, so it does not set the line's height on its own. */
+.cf-btn.is-inline { height: 28px; padding: 0 10px; font-size: 12px; vertical-align: middle; }
+
+/* It arrives rather than appears. `@starting-style` is the only way to
+   animate a top-layer element in, and where it is not supported the dialog
+   simply shows — which is the behaviour it had before. */
+@media (prefers-reduced-motion: no-preference) {
+  .cf-panel { animation: cf-rise 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes cf-rise {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+}
 .sc-elist-actions .del-btn { margin-left: 4px; }
 .st-story-actions { display: flex; align-items: center; gap: 10px; }
 
@@ -3682,6 +3891,15 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .sr-claim-ev { color: var(--sd-muted); font-size: 12px; margin-top: 2px; }
 .sr-claim-ev.is-bad { color: var(--burgundy); }
 
+/* The way past a paragraph the judge will not pass. Set apart from the
+   claims above it, because it changes what the paragraph is. */
+.sr-resolve { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--sd-line-soft); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.sr-resolve__btn { font: inherit; font-size: 12px; font-weight: 600; color: var(--navy); background: var(--sd-surface-2); border: 1px solid var(--sd-line-soft); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+.sr-resolve__btn:hover { background: var(--navy-soft, var(--sd-surface-2)); border-color: var(--navy); }
+.sr-resolve__btn:disabled { opacity: 0.5; cursor: default; }
+.sr-resolve__row { display: flex; flex-wrap: wrap; gap: 8px; }
+.sr-resolve__lead { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sd-faint); }
+
 .lv-wrap { margin: 8px 0 12px; }
 .lv-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--sd-line-soft); border-radius: 12px; background: var(--sd-surface); }
 .lv-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sd-faint); margin-right: 4px; font-family: var(--sd-sans); }
@@ -3731,3 +3949,146 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .reader-pop-claims li.is-bad { color: var(--burgundy); }
 .reader-evidence { margin: 28px 0 0; padding: 14px 16px; border-radius: 12px; background: #eef3fb; font-size: 13px; line-height: 1.55; color: #2b3a55; }
 .reader-evidence a { color: var(--navy, #1e3a8a); font-weight: 600; }
+
+/* ══ Podcasts ═════════════════════════════════════════════════════════════
+   The conversations a scholar is in. Same hairline, corner and lift as the
+   studio's cards — these are the same product and one page inventing its own
+   card would say otherwise.
+
+   The one thing these carry that no other card does is a grounding line: how
+   many turns are spoken as the scholar and how many cite nothing of theirs.
+   It is set as plain text rather than a chip because it is a sentence with a
+   number in it, not a status.
+   ═══════════════════════════════════════════════════════════════════════ */
+.pod-sect { margin-top: 28px; }
+.pod-sect__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+
+.pod-grid { display: grid; gap: 14px; }
+.pod-card {
+  position: relative; display: flex; flex-direction: column;
+  padding: 20px 22px; background: var(--ark-surface);
+  border: 1px solid var(--ark-card-line); border-radius: var(--ark-card-radius);
+  box-shadow: var(--ark-card-lift);
+}
+/* Unreleased is the state a scholar can still act on, so it is the one that
+   carries a leading edge. Published and finished do not need marking. */
+.pod-card.is-pending { border-inline-start: 3px solid var(--ark-warning); }
+.pod-card__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pod-card__title { margin: 10px 0 0; font-family: var(--sd-display); font-size: 18px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; }
+.pod-card__title a { color: var(--ark-navy); }
+.pod-card__title a:hover { text-decoration: underline; }
+.pod-card__summary { margin: 8px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--ark-text-muted); max-width: 70ch; }
+.pod-card__grounding { margin: 12px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ark-text-faint); }
+.pod-card__grounding b { font-weight: 700; color: var(--ark-navy); }
+/* A turn attributed to them with nothing behind it is the one number on this
+   page that should not be read past. */
+.pod-card__grounding.is-warn { color: var(--ark-red); font-weight: 600; }
+.pod-card__grounding.is-warn b { color: var(--ark-red); }
+.pod-card__audio { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.pod-card__audio audio { height: 34px; max-width: 100%; }
+.pod-card__draft { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ark-warning); }
+.pod-card__len { font-size: 12px; color: var(--ark-text-faint); }
+.pod-card__foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--ark-card-line-soft); }
+.pod-card__levels { font-size: 12px; color: var(--ark-text-faint); }
+
+/* ── One conversation, read by the person it speaks as ──────────────────── */
+.pod-read { max-width: 820px; }
+.pod-read__back { margin-bottom: 14px; }
+.pod-read__head { padding-bottom: 20px; border-bottom: 1px solid var(--ark-card-line); }
+.pod-read__head h1 { margin: 6px 0 0; font-family: var(--sd-display); font-size: 28px; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; color: var(--ark-navy); }
+.pod-read__summary { margin: 10px 0 0; font-size: 15px; line-height: 1.6; color: var(--ark-text-muted); }
+.pod-read__counts { margin: 14px 0 0; font-size: 13px; line-height: 1.6; color: var(--ark-text-muted); }
+.pod-read__counts b { font-family: var(--sd-display); font-size: 17px; color: var(--ark-navy); }
+.pod-read__flag {
+  margin: 12px 0 0; padding: 10px 14px; border-radius: 10px;
+  background: var(--ark-danger-soft); color: var(--ark-red);
+  font-size: 13px; font-weight: 600; line-height: 1.55;
+}
+.pod-read__audio { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.pod-read__audio audio { height: 36px; max-width: 100%; }
+.pod-read__note { margin: 20px 0 0; font-size: 13px; font-style: italic; color: var(--ark-text-faint); }
+
+.pod-turns { display: flex; flex-direction: column; gap: 4px; margin-top: 24px; }
+/* The scholar's own turns are the ones they are here to check, so they carry
+   the surface and the edge; the other speaker's recede. */
+.pod-turn { padding: 14px 16px; border-radius: 12px; border-inline-start: 3px solid transparent; }
+.pod-turn.is-mine { background: var(--ark-surface); border-inline-start-color: var(--ark-navy); box-shadow: 0 1px 2px rgba(23, 37, 84, 0.04); }
+.pod-turn.is-unsourced { border-inline-start-color: var(--ark-red); background: var(--ark-danger-soft); }
+.pod-turn__who { display: flex; align-items: center; gap: 8px; }
+.pod-turn__name { font-size: 12px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ark-text-faint); }
+.pod-turn__badge { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: var(--ark-navy-soft); color: var(--ark-navy); }
+.pod-turn__text { margin: 6px 0 0; font-size: 15px; line-height: 1.7; color: var(--ark-text); }
+.pod-turn__ev { margin-top: 8px; font-size: 12.5px; }
+.pod-turn__ev summary { cursor: pointer; color: var(--ark-text-faint); font-weight: 600; }
+.pod-turn__ev summary:hover { color: var(--ark-navy); }
+.pod-turn__ev ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pod-turn__ev li { padding: 8px 12px; border-radius: 8px; background: var(--ark-surface-2); }
+.pod-turn__ev-from { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ark-text-faint); }
+.pod-turn__ev q { display: block; margin-top: 4px; font-size: 13px; line-height: 1.6; color: var(--ark-text-muted); }
+.pod-turn__ev-none { margin: 8px 0 0; font-size: 12.5px; font-weight: 600; color: var(--ark-red); }
+
+.pod-read__standing { margin-top: 32px; padding: 18px 20px; border-radius: 14px; background: var(--ark-surface-2); }
+.pod-read__standing p { margin: 8px 0 0; font-size: 13px; line-height: 1.65; color: var(--ark-text-muted); max-width: 68ch; }
+
+@media (max-width: 620px) {
+  .pod-card { padding: 18px 16px; }
+  .pod-read__head h1 { font-size: 23px; }
+}
+
+/* ══ Where you stand ══════════════════════════════════════════════════════
+   The Legacy benchmark, made legible. The one rule this page follows is that
+   nothing on it is a score: no bar, no percentage, no comparison with anyone
+   else. Marks are met or not met, and an unmet mark carries the sentence that
+   would move it. A progress bar would invite a scholar to read a number where
+   the useful thing is a noun.
+   ═══════════════════════════════════════════════════════════════════════ */
+.sd-stand { max-width: 860px; }
+.sd-stand__now {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+  margin-top: 24px; padding: 22px 24px;
+  background: var(--ark-surface); border: 1px solid var(--ark-card-line); border-radius: var(--ark-card-radius);
+  box-shadow: var(--ark-card-lift);
+}
+/* Held is the only state that gets colour, and it is the brand navy rather
+   than a success green: this is a benchmark, not a task completed. */
+.sd-stand__now.is-legacy { border-inline-start: 3px solid var(--ark-navy); }
+.sd-stand__now.is-approaching { border-inline-start: 3px solid var(--ark-warning); }
+.sd-stand__label { margin: 4px 0 0; font-family: var(--sd-display); font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: var(--ark-navy); }
+.sd-stand__count { margin: 2px 0 0; font-size: 13px; color: var(--ark-text-faint); }
+.sd-stand__note { flex: 1 1 22rem; margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--ark-text-muted); max-width: 56ch; }
+.sd-stand__note b { color: var(--sd-heading); font-weight: 650; }
+
+.sd-gates { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.sd-gate {
+  padding: 18px 20px; background: var(--ark-surface);
+  border: 1px solid var(--ark-card-line); border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(23, 37, 84, 0.04);
+}
+.sd-gate.is-met { background: var(--ark-card-wash); }
+.sd-gate__head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.sd-gate__state {
+  display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ark-text-faint);
+}
+.sd-gate.is-met .sd-gate__state { color: var(--ark-success); }
+.sd-gate__summary { margin: 8px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--ark-text-muted); max-width: 70ch; }
+/* What is actually missing, as counts. This is the part a scholar acts on. */
+.sd-gate__blockers { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sd-gate__blockers li {
+  position: relative; padding-inline-start: 18px;
+  font-size: 13px; line-height: 1.5; color: var(--sd-heading);
+}
+.sd-gate__blockers li::before {
+  content: ""; position: absolute; inset-inline-start: 4px; top: 8px;
+  width: 5px; height: 5px; border-radius: 999px; background: var(--ark-warning);
+}
+
+.sd-stand__foot { margin-top: 28px; padding: 20px 22px; border-radius: 14px; background: var(--ark-surface-2); }
+.sd-stand__foot p { margin: 8px 0 0; font-size: 13px; line-height: 1.65; color: var(--ark-text-muted); max-width: 72ch; }
+.sd-stand__foot-links { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+
+@media (max-width: 620px) {
+  .sd-stand__now { padding: 18px 16px; }
+  .sd-gate { padding: 16px; }
+}
