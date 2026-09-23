@@ -64,6 +64,19 @@ export function chipFor(block, sourceLabel) {
       unsupportedClaims: [],
     };
   }
+  /* A paragraph the author has taken on as their own: no passage behind it by
+     design, and the chip says so rather than leaving it bare. */
+  if (block.ownView) {
+    return {
+      ownView: true,
+      traceable: true,
+      overlap: 1,
+      label: "your own view",
+      title: "Yours, not the paper's. It carries no citation, and readers see it marked as the author's own.",
+      partial: false,
+      unsupportedClaims: [],
+    };
+  }
   if (!Array.isArray(block.sourceRefs) || block.sourceRefs.length === 0) return null;
   const ids = block.sourceRefs.map((r) => r.passageId).join(", ");
   const live = overlap(block.draftedText || "", block.html || "");

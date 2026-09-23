@@ -106,7 +106,14 @@ export default function ReadingLevels({ story, viewLevel, onView, onChanged, dir
   }
 
   const writeLabel = busy === "write" ? "Writing…" : everyBand ? "Write for every age" : selected.length ? `Write ${selected.length} selected` : "Write selected";
-  const writeTitle = dirty ? "Save your edits first" : "Write the article for the ticked reading ages, each from the passages it already cites and judged on its own";
+  /* A story with no paper behind it is rewritten from its own paragraphs, so
+     the tooltip must not promise passages that do not exist. */
+  const selfGrounded = !story.provenance;
+  const writeTitle = dirty
+    ? "Save your edits first"
+    : selfGrounded
+    ? "Write the article for the ticked reading ages, each from your own paragraphs and judged against them"
+    : "Write the article for the ticked reading ages, each from the passages it already cites and judged on its own";
 
   /* Before any level exists this bar is two rows of controls the scholar will
      use once, at the end, sitting above the cover image and the title — about
@@ -167,7 +174,8 @@ export default function ReadingLevels({ story, viewLevel, onView, onChanged, dir
             <div>
               <span className="sc-kicker">{DRAFT_AUDIENCES.find((a) => a.value === current.audience)?.label || current.label} · target grade {current.grade}</span>
               <div className="st-todo-detail">
-                Reads at grade {current.readability?.fkGrade ?? "?"} · {current.fidelity?.supported ?? 0} of {current.fidelity?.paragraphs ?? 0} rewritten paragraphs supported by the paper
+                Reads at grade {current.readability?.fkGrade ?? "?"} · {current.fidelity?.supported ?? 0} of {current.fidelity?.paragraphs ?? 0} rewritten paragraphs{" "}
+                {current.grounding === "self" ? "kept to what you wrote" : "supported by the paper"}
                 {current.reach?.paragraphs ? ` · ${current.reach.follows} of ${current.reach.paragraphs} beyond the paper follow${current.reach.follows === 1 ? "s" : ""} from it` : ""}
                 {current.stale ? ` · out of date: ${current.staleReason}` : current.approved ? ` · live since ${current.approvedAt ? new Date(current.approvedAt).toLocaleDateString() : "now"}` : " · not yet shown to readers"}
               </div>

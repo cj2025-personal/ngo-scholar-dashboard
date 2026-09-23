@@ -29,12 +29,20 @@ import HistoryRail from "@/components/editorial/HistoryRail";
 import EvidenceRail from "@/components/editorial/EvidenceRail";
 import ReadingLevels from "@/components/editorial/ReadingLevels";
 import RecordBanner from "@/components/editorial/RecordBanner";
-import { acceptAiTerms, generateStoryLevels, getStoryPassages } from "@/lib/drafting";
+import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { AUDIENCE_TARGETS, assessForAudience, normaliseAudience } from "@/lib/readability";
 
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000";
+
+/* A judge's verdict in the sentence the scholar is told it in. Both judges
+   have a "partial", and it does not mean the same thing in each. */
+const VERDICT_WORDS = {
+  fidelity: { supported: "supported by its passages", partial: "only partly supported", unsupported: "not supported by its passages" },
+  reach: { follows: "following from the paper", partial: "only partly following from the paper", overreach: "going beyond what the paper supports" },
+};
+const verdictWord = (kind, verdict) => VERDICT_WORDS[kind]?.[verdict] || verdict || "unjudged";
 
 function toDateTimeLocalValue(value) {
   if (!value) return "";
@@ -154,7 +162,7 @@ function collectInlineImagePayload(bodyBlocks) {
       serializedBlocks.push({
         type: block.type,
         html: block.html || "",
-        ...(block.sourceRefs ? { sourceRefs: block.sourceRefs, draftedText: block.draftedText || "", fidelity: block.fidelity || null } : {}),
+        ...(block.sourceRefs ? { sourceRefs: block.sourceRefs, draftedText: block.draftedText || "", fidelity: block.fidelity || null, ...(block.recheckedAt ? { recheckedAt: block.recheckedAt } : {}) } : {}),
         ...(block.sourceRefs && block.extension ? { extension: true, reach: block.reach || null } : {}),
         ...(block.ownView ? { ownView: true, ...(block.context ? { context: block.context } : {}) } : {}),
       });
@@ -218,13 +226,16 @@ function sectionsOf(blocks) {
  * @param {{version: string, current: boolean}|null} aiTerms   as the profile reports them
  * @param {string|null} initialSource   a paper to start from, `origin:id`
  * @param {string|null} resumeJobId     a paused draft job to pick up
+ * @param {boolean} autoPropose         ask the agent for an angle on the paper
+ *                                      in `initialSource`, once the terms allow it
  */
-export default function StoryWorkspace({ initialStory = null, me = null, aiTerms = null, initialSource = null, resumeJobId = null }) {
+export default function StoryWorkspace({ initialStory = null, me = null, aiTerms = null, initialSource = null, resumeJobId = null, autoPropose = false }) {
   const router = useRouter();
   const [form, setForm] = useState(() => (initialStory ? storyToForm(initialStory) : createEmptyForm()));
   const [activeBlockId, setActiveBlockId] = useState(() => (initialStory?.id ? `story-${initialStory.id}-0` : "draft-0"));
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
+  const [recheckingId, setRecheckingId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [draftProgress, setDraftProgress] = useState("");
   const [pendingDraftJob, setPendingDraftJob] = useState(null);
@@ -334,6 +345,33 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const assessment = useMemo(() => (reviewMode ? assessForAudience(prose, audience) : null), [reviewMode, prose, audience]);
   const summary = useMemo(() => summariseBlocks(form.bodyBlocks), [form.bodyBlocks]);
   const sections = useMemo(() => (reviewMode ? sectionsOf(form.bodyBlocks) : []), [reviewMode, form.bodyBlocks]);
+
+  /* What the agent is asking for, and whether the page should rearrange for
+     it. An outline waiting for approval takes the canvas — but only while
+     there is nothing in the page to lose sight of. A scholar who has already
+     written something keeps their words on screen and reads the outline in
+     the rail, because taking their draft away to show a plan is worse than a
+     narrow plan. */
+  const [agentStage, setAgentStage] = useState(null);
+  const handleStageChange = useCallback((stage) => setAgentStage(stage), []);
+  const outlineStage = !reviewMode && agentStage === "outline" && totalWords === 0;
+  const planRef = useRef(null);
+
+  /* Put the outline on screen the moment the page has rearranged around it.
+     This belongs here, not in the rail: the rail's own effect runs before
+     this component has switched layouts, so it scrolled the fixed-position
+     pane the outline was about to leave. One frame after the canvas is
+     committed, the outline is where it can be read. */
+  useEffect(() => {
+    if (!outlineStage) return undefined;
+    const id = requestAnimationFrame(() => {
+      const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      planRef.current
+        ?.querySelector(".ch-msg.is-outline")
+        ?.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [outlineStage]);
   const signature = useMemo(() => JSON.stringify({
     title: form.title,
     subtitle: form.subtitle,
@@ -434,6 +472,48 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
       ...current,
       bodyBlocks: current.bodyBlocks.map((b) => (b.id === blockId && b.context
         ? { ...b, context: { ...b.context, toVerify: (b.context.toVerify || []).map((v, k) => (k === itemIndex ? { ...v, verified } : v)) } }
+        : b)),
+    }));
+  }, []);
+
+  /* The author rewrote a flagged paragraph and asks for a fresh verdict.
+   *
+   * The judge reads the saved article, so this is offered only once the edit
+   * has landed; the rail says so rather than silently judging stale text. */
+  const recheckBlock = useCallback(async (blockId) => {
+    const index = form.bodyBlocks.findIndex((b) => b.id === blockId);
+    if (index < 0 || !form.id) return;
+    setRecheckingId(blockId);
+    setError("");
+    const r = await recheckStoryBlock(form.id, index, { baseVersion: form.version });
+    setRecheckingId(null);
+    if (!r.ok) { setError(r.error); return; }
+    handleStoryChanged(
+      r.data.story,
+      r.data.changed
+        ? `Checked again: this paragraph is now ${verdictWord(r.data.kind, r.data.verdict)}.`
+        : `Checked again against what it says now; the verdict is unchanged (${verdictWord(r.data.kind, r.data.verdict)}).`,
+    );
+  }, [form.bodyBlocks, form.id, form.version, handleStoryChanged]);
+
+  /* The author takes a flagged paragraph on as their own.
+   *
+   * The publish check has always offered this as one of three ways past a
+   * paragraph the judge would not pass, and for a while it was the only one
+   * with no control behind it: rewriting left the old verdict in place and
+   * deleting was the only exit, so a scholar who fixed the paragraph properly
+   * stayed blocked. Owning it means it is no longer a claim about the paper,
+   * so the citation and the verdict go with it — `normalizeRawBodyBlocks`
+   * refuses `ownView` on a block that still carries provenance. The words
+   * stay; the reader sees them as the author's. Recoverable from History.
+   */
+  const markAsOwnView = useCallback((blockId) => {
+    setForm((current) => ({
+      ...current,
+      bodyBlocks: current.bodyBlocks.map((b) => (b.id === blockId
+        /* Null, not []: an empty array is truthy, and the save payload spreads
+           provenance in on `block.sourceRefs` being set at all. */
+        ? { ...b, ownView: true, sourceRefs: null, draftedText: "", fidelity: null, extension: false, reach: null, traceable: null }
         : b)),
     }));
   }, []);
@@ -651,7 +731,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   );
 
   return (
-    <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}${!reviewMode && railOpen ? " has-rail" : ""}`}>
+    <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}${!reviewMode && railOpen && !outlineStage ? " has-rail" : ""}`}>
       <div ref={barRef} className={stuck ? "sc-write-bar is-stuck" : "sc-write-bar"}>
         <div className="sc-write-bar-left">
           <Link href="/editorial" className="sc-write-back"><FaArrowLeft size={12} aria-hidden /> Stories</Link>
@@ -665,7 +745,9 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               be read once and folded away. It used to fill the bar with a
               paper title long enough to push the buttons off the edge. */}
           <span className="sc-write-metatext">
-            {totalWords.toLocaleString()} {totalWords === 1 ? "word" : "words"} &middot; {readingTime} min
+            {outlineStage
+              ? "Nothing written yet — the outline is waiting for you"
+              : `${totalWords.toLocaleString()} ${totalWords === 1 ? "word" : "words"} · ${readingTime} min`}
           </span>
         </div>
         <div className="sc-write-bar-right">
@@ -678,18 +760,27 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
             <button
               type="button"
               className="sc-write-attention"
-              onClick={() => { const i = form.bodyBlocks.findIndex(needsAttention); if (i >= 0) goToBlock(i, "checks"); }}
+              onClick={() => { const i = form.bodyBlocks.findIndex(needsAttention); if (i >= 0) goToBlock(i, "source"); }}
               title="Go to the first paragraph that needs a look"
             >
               {summary.attention} paragraph{summary.attention === 1 ? "" : "s"} need{summary.attention === 1 ? "s" : ""} your attention
             </button>
           ) : null}
-          <button type="button" className="sc-write-ghost" onClick={() => setMode(mode === "write" ? "preview" : "write")}>{mode === "write" ? "Preview" : "Keep writing"}</button>
-          <button type="button" className="sc-write-secondary" onClick={() => submitStory("draft")} disabled={isSaving || proposalPending}>{isSaving ? "Saving…" : "Save draft"}</button>
-          {reviewMode ? (
-            <button type="button" className="sc-write-publish" onClick={() => setShowPublishCheck(true)} disabled={isSaving || proposalPending || dirty}>Publish check</button>
-          ) : (
-            <button type="button" className="sc-write-publish" onClick={() => submitStory("published")} disabled={isSaving}>Publish</button>
+          {/* Nothing has been written, so there is nothing to preview, save or
+              publish. The bar used to offer all three — Publish loudest of
+              all — over an empty document, which is an invitation to publish
+              a blank page and a distraction from the only decision on the
+              screen. */}
+          {outlineStage ? null : (
+            <>
+              <button type="button" className="sc-write-ghost" onClick={() => setMode(mode === "write" ? "preview" : "write")}>{mode === "write" ? "Preview" : "Keep writing"}</button>
+              <button type="button" className="sc-write-secondary" onClick={() => submitStory("draft")} disabled={isSaving || proposalPending}>{isSaving ? "Saving…" : "Save draft"}</button>
+              {reviewMode ? (
+                <button type="button" className="sc-write-publish" onClick={() => setShowPublishCheck(true)} disabled={isSaving || proposalPending || dirty}>Publish check</button>
+              ) : (
+                <button type="button" className="sc-write-publish" onClick={() => submitStory("published")} disabled={isSaving}>Publish</button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -697,7 +788,9 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
       {conflict ? (
         <p className="sc-write-msg is-error">
           {conflict}{" "}
-          <button type="button" className="del-yes" onClick={() => window.location.reload()}>Reload the current version</button>
+          {/* Recovery, not destruction — it wore the delete confirmation's red
+              button until that component grew a dialog of its own. */}
+          <button type="button" className="cf-btn is-inline" onClick={() => window.location.reload()}>Reload the current version</button>
         </p>
       ) : null}
       {error ? <p className="sc-write-msg is-error">{error}</p> : null}
@@ -715,15 +808,39 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
         </div>
       ) : !reviewMode ? (
         railOpen ? (
-          <div className="ws-grid is-two">
-            <div className="ws-center">{editorColumn}</div>
-            <aside className="ws-right is-agent" aria-label="Agent">
-              <div className="ag-rail-head">
-                <span className="sc-kicker">Agent</span>
-                <button type="button" className="ag-rail-close" aria-label="Close the agent" onClick={() => setRailOpen(false)}><FaXmark size={13} aria-hidden /></button>
-              </div>
+          /* ── The outline has the canvas ──────────────────────────────────
+             Approving an outline is the decision this whole surface exists
+             to serve: it settles what the article is before a word of it is
+             written under the scholar's name. It used to be made in a 380px
+             rail while 1,000px of the screen showed an empty editor saying
+             "Start writing…" — the smallest space on the page for the
+             largest decision on it, next to an invitation that contradicted
+             the one being answered. So while an outline waits and the page
+             is still empty, the plan is the page. */
+          /* One mount, two shapes. The agent holds the job, the thread and
+             the watcher on the running draft, so it must not be torn down
+             and rebuilt when the page rearranges around it: it keeps its
+             position in the tree and only the wrappers change. The two
+             `null`s below hold their slots so the element after them stays
+             at the same index. */
+          <div className={outlineStage ? "ws-plan" : "ws-grid is-two"} ref={planRef}>
+            {outlineStage ? null : <div className="ws-center">{editorColumn}</div>}
+            <aside
+              className={outlineStage ? "ws-plan__inner" : "ws-right is-agent"}
+              role={outlineStage ? "region" : undefined}
+              aria-label={outlineStage ? "The outline, waiting for your approval" : "Agent"}
+            >
+              {outlineStage ? null : (
+                <div className="ag-rail-head">
+                  <span className="sc-kicker">Agent</span>
+                  <button type="button" className="ag-rail-close" aria-label="Close the agent" onClick={() => setRailOpen(false)}><FaXmark size={13} aria-hidden /></button>
+                </div>
+              )}
               <div className="ws-rail-body">
-                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} />
+                {/* The agent is asked for an angle only once the terms are
+                    settled — `terms`, which the consent sheet updates, not the
+                    `aiTerms` this page was rendered with. */}
+                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} />
               </div>
             </aside>
           </div>
@@ -792,7 +909,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               ))}
             </div>
             <div className="ws-rail-body">
-              {railTab === "source" ? <SourceRail block={activeBlock} passages={passages} provenance={form.provenance} onVerify={verifySpecific} /> : null}
+              {railTab === "source" ? <SourceRail block={activeBlock} passages={passages} provenance={form.provenance} onVerify={verifySpecific} onOwnView={markAsOwnView} onRecheck={form.id ? recheckBlock : null} rechecking={recheckingId === activeBlockId} dirty={dirty} /> : null}
               {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} onVerify={verifySpecific} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => setRailTab("evidence")} /> : null}
               {railTab === "evidence" ? <EvidenceRail storyId={form.id} version={form.version} status={form.status} slug={initialStory?.slug} onGoTo={(i) => goToBlock(i, "source")} /> : null}
               {railTab === "history" ? <HistoryRail storyId={form.id} version={form.version} dirty={dirty} onRestored={() => window.location.reload()} /> : null}

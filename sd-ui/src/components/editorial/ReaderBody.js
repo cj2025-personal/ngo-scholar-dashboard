@@ -138,7 +138,11 @@ export default function ReaderBody({ story }) {
       </div>
       {story?.evidence?.signed || story?.evidence?.totals ? (
         <footer className="reader-evidence">
-          <b>On the record.</b> {story.evidence.totals?.claims ? `${story.evidence.totals.claims} claim${story.evidence.totals.claims === 1 ? "" : "s"} in this article ${story.evidence.totals.claims === 1 ? "was" : "were"} checked against the paper, ${story.evidence.totals.supported} supported.` : "Every paragraph drawn from the paper was checked against it."}{" "}
+          {/* The sentence comes from the ledger, which knows that a claim
+              beyond the paper is judged "follows" and can never be counted
+              "supported". Counting it as neither made the footer report
+              failures the article did not have. */}
+          <b>On the record.</b> {story.evidence.summary || "Every paragraph drawn from the paper was checked against it."}{" "}
           {story.evidence.signed ? "The full record is signed by the publisher and approved by the author." : "The full record is published with the article."}{" "}
           {story?.slug ? <a href={publicEvidenceUrl(story.slug)} target="_blank" rel="noreferrer noopener">Verify it</a> : null}
         </footer>

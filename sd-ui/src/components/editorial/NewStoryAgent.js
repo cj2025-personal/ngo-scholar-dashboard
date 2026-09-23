@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 import { HiChevronDown, HiOutlineAcademicCap, HiOutlineDocumentText, HiOutlinePencilSquare, HiOutlinePlusSmall, HiOutlineUsers } from "react-icons/hi2";
 
-import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
+import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 
 /**
  * The agent, in the rail of a story that has no paper behind it yet.
@@ -92,8 +92,11 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard }) {
  * @param {boolean} p.hasText             whether the page beside the rail already has writing in it
  * @param {(job: object, source: object, opts: {levels: string[]}) => void} p.onDraftReady   the draft is done; the page takes it
  * @param {(storyId: string) => void} p.onStoryReady   a job from before that made its own story; the page goes to it
+ * @param {boolean} [p.autoPropose]   the scholar asked the agent for an angle on
+ *                                    `initialSource` rather than describing one
+ * @param {(stage: "outline"|null) => void} [p.onStageChange]   what the rail is asking for, so the page can give it the room it needs
  */
-export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, hasText = false, onDraftReady, onStoryReady }) {
+export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange }) {
   const [inventory, setInventory] = useState(null);
   const [paper, setPaper] = useState(initialSource);
   const [audience, setAudience] = useState(DEFAULT_AUDIENCE);
@@ -134,6 +137,17 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   const ready = Boolean(inventory);
   const extraBands = levelBands.filter((v) => v !== audience);
 
+  /* An outline waiting for approval is the only thing the scholar is here to
+     read: the page beside us is still empty, and nothing has been written to
+     edit. Tell the page, so it can hand the outline the canvas instead of
+     leaving it in a rail beside a blank editor inviting them to start
+     writing the article the machine is about to write. */
+  useEffect(() => {
+    onStageChange?.(outlineWaiting ? "outline" : null);
+  }, [outlineWaiting, onStageChange]);
+  /* Closing the rail, or leaving, puts the page back the way it was. */
+  useEffect(() => () => onStageChange?.(null), [onStageChange]);
+
   const push = useCallback((m) => setMessages((cur) => [...cur, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...m }]), []);
   const setProgress = useCallback((textValue) => setMessages((cur) => {
     const i = cur.findIndex((m) => m.role === "progress");
@@ -146,7 +160,11 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
 
   /* The opening line, once we know what the scholar holds. */
   const greet = useCallback((inv) => {
-    if (resumeJobId) return;
+    /* Nothing to ask when the scholar has already said what they want: a job
+       to pick up, or a paper they asked for an angle on. Greeting them with
+       "tell me what the article should be" in either case answers a question
+       they did not ask and contradicts what happens next. */
+    if (resumeJobId || autoPropose) return;
     const first = (me?.name || "").split(/\s+/)[0];
     if (!inv.eligible) {
       push({ role: "agent", text: `${first ? `${first}, ` : ""}drafting is not open to you yet. ${inv.gateReason || ""}`.trim() });
@@ -216,6 +234,39 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       onError: (message) => { stopRef.current = null; setBusy(false); clearProgress(); push({ role: "error", text: message }); },
     });
   }
+
+  /* "Suggest an angle": the scholar asked the agent what this paper could
+     become instead of telling it. Fires once, after the inventory has
+     resolved the paper — before that the agent does not yet know the scholar
+     holds it — and never when a job is already in hand, so a reload of a
+     proposal that exists picks it up rather than paying for a second one. */
+  const proposedRef = useRef(false);
+  useEffect(() => {
+    if (!autoPropose || proposedRef.current) return;
+    if (!ready || resumeJobId || job || !selectedPaper) return;
+    proposedRef.current = true;
+    (async () => {
+      push({ role: "user", text: "What could this paper become?" });
+      setBusy(true);
+      setProgress("Reading the paper…");
+      const r = await proposeFromPaper({ origin: selectedPaper.origin, sourceId: selectedPaper.id });
+      if (!r.ok) {
+        setBusy(false);
+        clearProgress();
+        /* The day's allowance, a provider that is down, a paper that turned
+           out not to be draftable. Said here, where the composer still works,
+           so the scholar can describe an article themselves instead. */
+        push({ role: "error", text: `${r.error} You can still tell me what to write below.` });
+        return;
+      }
+      const j = r.data.job;
+      setJob(j);
+      if (j.status === "awaiting_outline") { setBusy(false); showOutline(j, { replans: j.replans || 0 }); return; }
+      if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That did not complete." }); return; }
+      watch(j);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPropose, ready, resumeJobId, job, selectedPaper]);
 
   /* Coming back to a job from Studio. */
   useEffect(() => {

@@ -110,7 +110,7 @@ function ProvenanceChip({ block, sourceLabel }) {
   return (
     <div className="block-chip-row">
       <span
-        className={chip.context ? "block-chip is-context" : chip.traceable ? (chip.partial ? "block-chip is-partial" : "block-chip") : "block-chip is-lost"}
+        className={chip.context ? "block-chip is-context" : chip.ownView ? "block-chip is-own" : chip.traceable ? (chip.partial ? "block-chip is-partial" : "block-chip") : "block-chip is-lost"}
         title={chip.title}
       >
         {chip.label}

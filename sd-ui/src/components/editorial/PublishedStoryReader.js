@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ReadBeacon from "@/components/editorial/ReadBeacon";
 import ReaderBody from "@/components/editorial/ReaderBody";
 
 function buildPublicImageUrl(url) {
@@ -85,6 +86,8 @@ export default function PublishedStoryReader({ story }) {
           __html: JSON.stringify(structuredData),
         }}
       />
+      {/* Renders nothing. Tells the scholar someone read it. */}
+      <ReadBeacon slug={story?.slug} />
       <article className="public-story-article">
         <header className="public-story-header">
           <div className="public-story-brand">

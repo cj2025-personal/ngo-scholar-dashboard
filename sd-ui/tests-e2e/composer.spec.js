@@ -243,7 +243,23 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(dialog.locator(".pc-item").first()).toContainText("Every drafted paragraph is supported, or is yours");
   await expect(dialog.locator(".pc-prov")).toContainText("Drawn from the author's research");
   await dialog.getByRole("button", { name: "Publish now" }).click();
-  await expect(page.locator(".sc-write-msg.is-ok")).toContainText("published", { timeout: 30_000 });
+  /* Wait for whatever the workspace says, not only for the happy one.
+     Publishing can come back as a version conflict or a refusal, and both
+     render as `.sc-write-msg.is-error`; waiting on `.is-ok` alone spent thirty
+     seconds and then reported "element(s) not found", which says nothing about
+     why. Now the failure carries the sentence the scholar would have seen. */
+  const published = page.locator(".sc-write-msg.is-ok", { hasText: "published" });
+  const refused = page.locator(".sc-write-msg.is-error");
+  /* 60s, like every other server-driven wait in this file. Publishing is the
+     heaviest of them — the publish check, the signed evidence ledger, the
+     mirror and a fresh revision — and it was the only step here still on 30s.
+     Both observed failures reported "element(s) not found" rather than the
+     wrong text, which is what a request still in flight looks like. */
+  await expect(published.or(refused).first()).toBeVisible({ timeout: 60_000 });
+  if (await refused.count()) {
+    throw new Error(`publishing was refused: ${(await refused.first().innerText()).replace(/\s+/g, " ")}`);
+  }
+  await expect(published).toBeVisible();
   const live = page.locator("a.sc-write-live");
   await expect(live).toBeVisible();
   const publicPath = await live.getAttribute("href");
@@ -272,7 +288,15 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(reader.locator(".reader-level")).toHaveCount(2);
   await reader.locator(".reader-level", { hasText: "Ages 12–14" }).click();
   await expect(reader.locator(".reader-paragraph").first()).toBeVisible();
-  await expect(reader.locator(".reader-evidence")).toContainText("checked against the paper");
+  /* The footer names every claim by the check it passed, and the parts add up
+     to the total. It used to report "N checked, M supported", counting claims
+     that go beyond the paper in the total but never in M — so a reader could
+     only read the difference as failures the article did not have. */
+  const record = await reader.locator(".reader-evidence").innerText();
+  expect(record).toMatch(/\d+ claims? in this article (?:was|were) checked:/);
+  const total = Number(record.match(/(\d+) claims? in this article/)[1]);
+  const parts = [...record.matchAll(/(\d+) (?:traced|following|the author)/g)].reduce((n, m) => n + Number(m[1]), 0);
+  expect(parts, `the parts must account for every claim counted: ${record}`).toBe(total);
   const verifyHref = await reader.locator(".reader-evidence a").getAttribute("href");
   expect(verifyHref).toMatch(/\/public\/slug\/.+\/evidence$/);
   const ledger = await reader.request.get(verifyHref);
@@ -283,16 +307,23 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* Delete it from the list: gone for the scholar, and the public link dies. */
   await page.goto("/editorial");
-  const row = page.locator(".el-row", { hasText: "What the paper found" }).first();
+  /* Located by its own public link rather than by title. The fake model gives
+     every draft from a given paper the same headline, so any other spec that
+     drafts leaves a row this filter would also match — and "the title is gone
+     from the list" then fails for a story this spec never created. */
+  const row = page.locator(".el-row").filter({ has: page.locator(`a[href="${publicPath}"]`) });
   await expect(row).toBeVisible();
   /* A row keeps Edit, View live and Delete to itself until it is pointed at,
      so a list of twelve stories is not a list of thirty-six links. */
   await row.hover();
   await expect(row.getByRole("button", { name: "Delete" })).toBeVisible();
   await row.getByRole("button", { name: "Delete" }).click();
-  await expect(row.getByRole("alertdialog")).toContainText("cannot be undone");
-  await row.locator(".del-yes").click();
-  await expect(page.locator(".el-row", { hasText: "What the paper found" })).toHaveCount(0, { timeout: 20_000 });
+  /* The confirmation is a modal dialog in the top layer, so it is the page's,
+     not the row's. */
+  const confirm = page.getByRole("alertdialog");
+  await expect(confirm).toContainText("gone for good");
+  await confirm.getByRole("button", { name: "Delete" }).click();
+  await expect(page.locator(".el-row").filter({ has: page.locator(`a[href="${publicPath}"]`) })).toHaveCount(0, { timeout: 20_000 });
   const dead = await reader.goto(publicPath);
   expect(dead.status()).toBe(404);
   await anonymous.close();

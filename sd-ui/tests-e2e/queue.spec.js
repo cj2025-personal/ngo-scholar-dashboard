@@ -16,8 +16,8 @@ const { test, expect } = require("@playwright/test");
 const { openAgent } = require("./agent");
 const { readState } = require("./stack");
 
-/** The queue row whose lead line contains `text`, hero card included. */
-const row = (page, text) => page.locator(".st-todo, .st-next").filter({ hasText: text }).first();
+/** The queue row whose lead line contains `text`. */
+const row = (page, text) => page.locator(".st-todo").filter({ hasText: text }).first();
 
 test.beforeEach(async ({ context }) => {
   const state = readState();
@@ -68,8 +68,8 @@ test("a draft in review and reading levels waiting can each be removed from the 
   /* Discarding the levels asks once, says the article is untouched, and
      clears the row. The story stays. */
   await levelsRow.locator(".del-btn").click();
-  await expect(page.locator(".del-confirm")).toContainText("The article itself is not touched");
-  await page.locator(".del-confirm").getByRole("button", { name: "Discard" }).click();
+  await expect(page.locator(".cf-dialog")).toContainText("The article itself is not touched");
+  await page.locator(".cf-dialog").getByRole("button", { name: "Discard" }).click();
   await expect(row(page, "waiting for your approval")).toHaveCount(0, { timeout: 30_000 });
   const after = await page.request.get(`${apiUrl}/api/editorial-stories/${storyId}`);
   expect(after.status()).toBe(200);
@@ -78,8 +78,13 @@ test("a draft in review and reading levels waiting can each be removed from the 
   /* Deleting the draft asks by name and takes the story with it. */
   const draft = row(page, "A draft is waiting for your review");
   await draft.locator(".del-btn").click();
-  await expect(page.locator(".del-confirm")).toContainText("cannot be undone");
-  await page.locator(".del-confirm").getByRole("button", { name: "Delete" }).click();
-  await expect(page.locator(".st-todo, .st-next").filter({ hasText: "A draft is waiting for your review" })).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.locator(".cf-dialog")).toContainText("gone for good");
+  await page.locator(".cf-dialog").getByRole("button", { name: "Delete" }).click();
+  /* This story's row, not every row that shares its wording: drafts made by
+     other specs in this suite carry the same lead line, and asserting on the
+     text made this spec fail for their rows rather than its own. */
+  await expect(
+    page.locator(".st-todo").filter({ has: page.locator(`a[href="/editorial/${storyId}"]`) }),
+  ).toHaveCount(0, { timeout: 30_000 });
   expect((await page.request.get(`${apiUrl}/api/editorial-stories/${storyId}`)).status()).toBe(404);
 });

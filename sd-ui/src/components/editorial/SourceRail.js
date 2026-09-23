@@ -9,6 +9,8 @@
  * shares with them marked.
  */
 
+import { needsAttention } from "@/components/editorial/ChecksRail";
+
 /* Why an implication went too far, in the reviewer's words. */
 const REACH_REASONS = {
   outside_fact: "Brings in a fact the paper does not state.",
@@ -65,7 +67,7 @@ function ContextRail({ block, passages, onVerify }) {
   );
 }
 
-export default function SourceRail({ block, passages, provenance, onVerify = null }) {
+export default function SourceRail({ block, passages, provenance, onVerify = null, onOwnView = null, onRecheck = null, rechecking = false, dirty = false }) {
   if (!passages) return <p className="st-muted">Loading the paper&rsquo;s passages…</p>;
   if (passages.length === 0) return <p className="st-muted">This story has no source paper on record, so there is nothing to show behind its paragraphs.</p>;
   if (!block || block.type === "image") return <p className="st-muted">Select a paragraph to see the passages it came from.</p>;
@@ -102,7 +104,7 @@ export default function SourceRail({ block, passages, provenance, onVerify = nul
                   {c.verdict === "follows" ? (
                     <div className="sr-claim-ev">Follows from {c.anchorIds?.join(", ")}.</div>
                   ) : (
-                    <div className="sr-claim-ev is-bad">{REACH_REASONS[c.reason] || "Does not follow from the passages this paragraph builds on."} Say what follows from the paper, remove it, or mark the paragraph as your own view.</div>
+                    <div className="sr-claim-ev is-bad">{REACH_REASONS[c.reason] || "Does not follow from the passages this paragraph builds on."} Say what follows from the paper, have it checked again, take the paragraph on as your own, or remove it — the choices are below.</div>
                   )}
                 </div>
               </li>
@@ -122,7 +124,7 @@ export default function SourceRail({ block, passages, provenance, onVerify = nul
                   {c.verdict === "supported" ? (
                     <div className="sr-claim-ev">{c.passageIds?.join(", ")}: <i>{c.evidence}</i></div>
                   ) : (
-                    <div className="sr-claim-ev is-bad">Not in the passages this paragraph cites. Rewrite it from the paper, remove it, or mark the paragraph as your own view.</div>
+                    <div className="sr-claim-ev is-bad">Not in the passages this paragraph cites. Rewrite it from the paper and check it again, take the paragraph on as your own, or remove it — the choices are below.</div>
                   )}
                 </div>
               </li>
@@ -130,7 +132,40 @@ export default function SourceRail({ block, passages, provenance, onVerify = nul
           </ol>
         </>
       ) : block.fidelity ? <p className="st-muted">Checked as a whole: {block.fidelity.verdict}.</p> : null}
-      {block.traceable === false ? <p className="st-muted">You have edited this paragraph beyond its source; the passages above are what it was drafted from.</p> : null}
+      {block.traceable === false ? (
+        <p className="st-muted">
+          You have edited this paragraph beyond its source; the passages above are what it was drafted from.
+          {block.recheckedAt ? " The check above was made on the paragraph as you rewrote it." : " The check above was made on the paragraph as it was drafted, not as it reads now."}
+        </p>
+      ) : null}
+      {/* The way past a paragraph the judge will not pass. The publish check
+          has always named this as an option; until now nothing carried it
+          out, and the scholar's only exit was to delete their paragraph. */}
+      {needsAttention(block) && (onOwnView || onRecheck) ? (
+        <div className="sr-resolve">
+          <p className="sr-resolve__lead">Three ways past this</p>
+          {onRecheck ? (
+            <p className="st-muted">
+              <b>Rewrite it above, then check it again.</b> The verdict here was reached on the paragraph as it was drafted; once you have put it right, the judge will read what it says now.
+              {dirty ? " Save the draft first — the judge reads the article, not the editor." : ""}
+            </p>
+          ) : null}
+          {onOwnView ? (
+            <p className="st-muted">
+              <b>Or take it on as your own.</b> It stops being a claim about the paper: the citation and the check above go with it, the words stay as you wrote them, and readers see it marked as yours. History keeps the citation if you want it back.
+            </p>
+          ) : null}
+          <p className="st-muted"><b>Or delete the paragraph</b> from the article.</p>
+          <div className="sr-resolve__row">
+            {onRecheck ? (
+              <button type="button" className="sr-resolve__btn" onClick={() => onRecheck(block.id)} disabled={rechecking || dirty}>
+                {rechecking ? "Checking…" : "Check it again"}
+              </button>
+            ) : null}
+            {onOwnView ? <button type="button" className="sr-resolve__btn" onClick={() => onOwnView(block.id)}>Mark as my own view</button> : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

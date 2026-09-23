@@ -98,6 +98,22 @@ export async function createDraftJob({ origin, sourceId, audience, voice = DEFAU
   });
 }
 
+/**
+ * Ask the agent what a paper could become.
+ *
+ * No brief: the point is that the scholar does not have to arrive with the
+ * angle already in their head. Comes back as an ordinary job that stops at
+ * the outline, so everything downstream — watching, replanning, approving,
+ * discarding — is the same as for a draft they asked for themselves.
+ */
+export async function proposeFromPaper({ origin, sourceId, audience }) {
+  return request("/api/drafting/proposals", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ origin, sourceId, audience }),
+  });
+}
+
 /** Approve the outline, edited or not. Drafting resumes from it. */
 export async function approveDraftOutline(jobId, outline) {
   return request(`/api/drafting/jobs/${encodeURIComponent(jobId)}/outline`, {
@@ -164,6 +180,21 @@ export function publicEvidenceUrl(slug) {
 export async function generateStoryLevels(storyId, { audiences = null, baseVersion = null } = {}) {
   return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/levels`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiences, baseVersion }),
+  });
+}
+
+/**
+ * Judge one paragraph again, against the words it says now.
+ *
+ * The verdict stored on a block is about the text the drafter wrote. A
+ * scholar who rewrites that paragraph — which is what the publish check asks
+ * of them when it will not pass — was left carrying the old verdict, with no
+ * way to earn a new one. This asks for one. The story must be saved first:
+ * the judge reads the article, not the editor.
+ */
+export async function recheckStoryBlock(storyId, index, { baseVersion = null } = {}) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/blocks/${encodeURIComponent(index)}/recheck`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ baseVersion }),
   });
 }
 

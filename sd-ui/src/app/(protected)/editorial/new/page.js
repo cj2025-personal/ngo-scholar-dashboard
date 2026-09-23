@@ -20,12 +20,16 @@ export default async function NewEditorialStoryPage({ searchParams }) {
   };
   const initialSource = typeof params?.source === "string" ? params.source : null;
   const resumeJobId = typeof params?.job === "string" ? params.job : null;
+  /* `?propose=1` is the studio's "Suggest an angle": ask the agent what this
+     paper could become, without the scholar writing a brief. Carried as
+     intent rather than as a job, so the terms are settled here first. */
+  const autoPropose = params?.propose === "1" && Boolean(initialSource);
 
   return (
     <div className="sc-shell">
       <Topbar activeHref="/editorial" me={me} />
       <div className="sc-editorial">
-        <StoryWorkspace me={me} aiTerms={profile.aiTerms || null} initialSource={initialSource} resumeJobId={resumeJobId} />
+        <StoryWorkspace me={me} aiTerms={profile.aiTerms || null} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose} />
       </div>
     </div>
   );

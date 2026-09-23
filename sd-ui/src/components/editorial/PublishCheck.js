@@ -53,7 +53,10 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
       title: s.attention === 0 ? (s.extension ? "Every drafted paragraph is supported, follows from the paper, or is yours" : "Every drafted paragraph is supported, or is yours") : `${s.attention} paragraph${s.attention === 1 ? "" : "s"} still ${s.attention === 1 ? "needs" : "need"} a look`,
       detail: s.attention === 0
         ? `${s.supported} supported by their passages${s.extension ? `, ${s.follows} beyond the paper and following from it` : ""}${s.edited ? `, ${s.edited} rewritten by you` : ""}${s.ownView ? `, ${s.ownView} marked as your view` : ""}.`
-        : `${troubles}. Rewrite them, remove them, or mark them as your own view.`,
+        /* Each of these is a control in the Source rail for the paragraph, and
+           "Go to it" opens it there. For a while this named three ways out and
+           only one of them existed. */
+        : `${troubles}. Go to it and you can rewrite it and have it checked again, take it on as your own view, or delete it.`,
       action: s.attention ? { label: "Go to it", onClick: () => onGoTo?.(firstAttention) } : null,
     },
     ...(pronouns && pronouns.ok === false ? [{
