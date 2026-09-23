@@ -106,6 +106,15 @@ const env = {
     enabled: String(process.env.DRAFTING_ENABLED ?? "true").toLowerCase() !== "false",
     worker: String(process.env.DRAFTING_WORKER ?? "true").toLowerCase() !== "false",
     dailyCap: getNumberEnv("DRAFT_DAILY_CAP", 10),
+    /* Proposals — the agent reading a paper and offering an angle, rather
+       than waiting to be told one — are planning only: they stop at the
+       outline and cost one model call, not a draft. They get their own small
+       allowance so that asking "what could this become?" can never eat a
+       slot the scholar needed to write the thing they came to write.
+       Worth stating plainly: a proposal the scholar then approves does go on
+       to draft, so the worst case per scholar per day is dailyCap +
+       proposalDailyCap full drafts, not dailyCap. */
+    proposalDailyCap: getNumberEnv("PROPOSAL_DAILY_CAP", 3),
     pollMs: getNumberEnv("DRAFTING_POLL_MS", 2000),
     /* Staged rollout: "pilot" opens the drafter to DRAFTING_PILOT_PROFILES
        only; "all" (the default) to every eligible scholar. See lib/rollout.js. */

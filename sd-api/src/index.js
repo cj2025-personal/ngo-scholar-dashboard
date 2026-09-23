@@ -16,6 +16,8 @@ const dashboardRoutes = require("./routes/dashboard.routes");
 const editorialRoutes = require("./routes/editorial.routes");
 const imageRoutes = require("./routes/images");
 const inviteRoutes = require("./routes/invite.routes");
+const podcastRoutes = require("./routes/podcasts.routes");
+const standingRoutes = require("./routes/standing.routes");
 const reviewRoutes = require("./routes/review.routes");
 const { ensureInviteIndexes } = require("./services/invite.service");
 const { startDraftWorker, stopDraftWorker } = require("./services/draftJob.service");
@@ -95,6 +97,8 @@ app.use("/api/drafting", draftingRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/editorial-stories", editorialRoutes);
 app.use("/api/images", imageRoutes);
+app.use("/api/podcasts", podcastRoutes);
+app.use("/api/standing", standingRoutes);
 /* Mounted at /api so the public claim path is /api/invites/:token and the
    service path is /api/internal/invites — one prefix, two auth models. */
 app.use("/api", inviteRoutes);

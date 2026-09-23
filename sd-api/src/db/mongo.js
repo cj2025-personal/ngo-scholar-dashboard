@@ -26,6 +26,12 @@ const COLLECTIONS = {
      when, and every agreement before it. Private to this service, like the
      draft runs; the scholar record itself is not ours to write. */
   agentTerms: "scholar_agent_terms",
+  /* One row per published story per day: how many times it was read, and
+     nothing else. No reader, no address, no agent string, no identifier that
+     could be joined back to a person — a counter per story per day is all
+     the scholar is owed an answer about and all this is allowed to know.
+     Private to this service, like the turns and the terms above. */
+  storyReads: "scholar_story_reads",
 };
 
 let clientPromise;
@@ -139,11 +145,24 @@ async function ensureIndexes() {
       const draftRuns = db.collection(COLLECTIONS.draftRuns);
       const draftJobs = db.collection(COLLECTIONS.draftJobs);
       const agentTerms = db.collection(COLLECTIONS.agentTerms);
+      const storyReads = db.collection(COLLECTIONS.storyReads);
 
       /* One row per scholar; the upsert relies on it. */
       await agentTerms.createIndex(
         { profile_id: 1 },
         { unique: true, name: "idx_scholar_agent_terms_profile_unique" },
+      );
+
+      /* One row per story per day; the `$inc` upsert relies on it being
+         unique, or a burst of concurrent reads would each insert a row. */
+      await storyReads.createIndex(
+        { story_id: 1, day: 1 },
+        { unique: true, name: "idx_scholar_story_reads_story_day_unique" },
+      );
+      /* The scholar's own totals, read per story on every dashboard load. */
+      await storyReads.createIndex(
+        { profile_id: 1, day: 1 },
+        { name: "idx_scholar_story_reads_profile_day" },
       );
 
       // Enforce credential uniqueness idempotently, tolerating indexes that
