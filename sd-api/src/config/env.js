@@ -40,6 +40,11 @@ const env = {
   /* Unset in development. At deploy, the shared parent domain — e.g.
      ".archivyn.example" — so sibling subdomains share one scholar session. */
   authCookieDomain: process.env.AUTH_COOKIE_DOMAIN || null,
+  /* `lax` unless the portal and this API are on genuinely different sites, as
+     they are on Cloud Run, where each service has its own *.run.app hostname.
+     Validated below rather than here so a typo names itself instead of quietly
+     becoming the default. */
+  authCookieSameSite: String(process.env.AUTH_COOKIE_SAMESITE || "lax").toLowerCase(),
   authSessionTtlDays: getNumberEnv("AUTH_SESSION_TTL_DAYS", 14),
   authLockoutAttempts: getNumberEnv("AUTH_LOCKOUT_ATTEMPTS", 5),
   authLockoutMinutes: getNumberEnv("AUTH_LOCKOUT_MINUTES", 15),
@@ -132,6 +137,24 @@ if (!env.mongodbUri) {
 
 if (!env.mongodbDb) {
   throw new Error("MONGODB_DB is required.");
+}
+
+/* A misspelled SameSite is worse than a rejected one: Express passes the
+   string through, the browser does not recognise it, and the cookie silently
+   falls back to the browser's own default. Named here instead. */
+if (!["lax", "strict", "none"].includes(env.authCookieSameSite)) {
+  throw new Error(
+    `AUTH_COOKIE_SAMESITE must be lax, strict or none (got "${env.authCookieSameSite}").`,
+  );
+}
+
+/* Every browser refuses SameSite=None without Secure, and refusing it means
+   dropping the cookie — so the failure is a scholar who cannot stay signed in,
+   with nothing in the response saying why. */
+if (env.authCookieSameSite === "none" && !env.isProduction) {
+  throw new Error(
+    "AUTH_COOKIE_SAMESITE=none requires production mode, which is what sets Secure on the cookie.",
+  );
 }
 
 env.authSessionTtlMs = env.authSessionTtlDays * ONE_DAY_MS;

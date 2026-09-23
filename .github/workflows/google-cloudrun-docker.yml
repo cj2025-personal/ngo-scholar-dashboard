@@ -247,6 +247,7 @@ jobs:
             CORS_ORIGIN=${{ vars.SCHOLAR_CORS_ORIGIN || secrets.SCHOLAR_CORS_ORIGIN }}
             AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || secrets.AUTH_COOKIE_NAME || 'sd_session' }}
             AUTH_COOKIE_DOMAIN=${{ vars.AUTH_COOKIE_DOMAIN || secrets.AUTH_COOKIE_DOMAIN }}
+            AUTH_COOKIE_SAMESITE=${{ vars.AUTH_COOKIE_SAMESITE || 'none' }}
             LLM_PROVIDER=vertex
             STORY_LLM_MODEL=${{ vars.STORY_LLM_MODEL || 'gemini-2.5-flash' }}
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
