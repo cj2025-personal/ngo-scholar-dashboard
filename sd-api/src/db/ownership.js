@@ -28,7 +28,7 @@
  */
 
 /** Bump when ownership changes. Both repos assert this value. */
-const MANIFEST_VERSION = "2026-09-13.1";
+const MANIFEST_VERSION = "2026-09-22.1";
 
 const OWNER = {
   SD_API: "sd-api",
@@ -72,6 +72,12 @@ const COLLECTION_OWNERSHIP = {
      itself is; listed so a second writer cannot appear without this manifest
      changing, which is the whole point of the file. */
   scholar_editorial_revisions: OWNER.SD_API,
+  /* Where a scholar stands against the Legacy benchmark, recomputed from live
+     signals and cached here. Owned by this service rather than written onto
+     the curated record, because `scholars` belongs to the curation pipeline
+     and a computed field in someone else's collection is this file's whole
+     subject. Listed so a second writer cannot appear quietly. */
+  scholar_standing: OWNER.SD_API,
 
   /* Student-facing content. Authored through the existing editor. */
   scholarstories: OWNER.USER_DASHBOARD_API,
@@ -79,6 +85,21 @@ const COLLECTION_OWNERSHIP = {
   storymedias: OWNER.USER_DASHBOARD_API,
   reading_passages: OWNER.USER_DASHBOARD_API,
   media_assets: OWNER.USER_DASHBOARD_API,
+
+  /* Agent output. Two services write these — the learner app's `runAgent` and
+     paris-service's `runStudentParisAgent` — which is why they are named here
+     rather than left unlisted.
+
+     The hazard they are listed against is not a rogue write. It is that
+     paris-service declared its own model of these collections and queried
+     `agentdecisions` by `schoolId` and `agentmessages` by `sourceType`, fields
+     no writer sets. Both teacher panels matched nothing and reported it as an
+     empty list. A collection with two writers and a third party's schema over
+     the top is exactly the shape this manifest exists to make visible. */
+  agentruns: OWNER.USER_DASHBOARD_API,
+  agentdecisions: OWNER.USER_DASHBOARD_API,
+  agentmessages: OWNER.USER_DASHBOARD_API,
+  agentactions: OWNER.USER_DASHBOARD_API,
 
   /* Read-only for every application service. */
   scholars: OWNER.CURATION,

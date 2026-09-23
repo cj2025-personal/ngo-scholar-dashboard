@@ -22,7 +22,7 @@ const {
 /* Asserted in BOTH repos. Changing ownership in one without the other breaks a
    test rather than surfacing as corrupt data months later. */
 test("manifest version is pinned across both repos", () => {
-  assert.equal(MANIFEST_VERSION, "2026-09-13.1");
+  assert.equal(MANIFEST_VERSION, "2026-09-22.1");
 });
 
 test("this service may write what it owns", () => {
