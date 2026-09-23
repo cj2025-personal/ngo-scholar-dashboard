@@ -56,17 +56,58 @@ function targetsFor(storyAudience, requested = null) {
   return all.filter((a) => wanted.has(a));
 }
 
-/** Which blocks a level rewrites, and which of those go beyond the paper; the rest are carried. */
-function levelPlan(blocks) {
+/**
+ * Which blocks a level rewrites, and which of those go beyond the paper; the
+ * rest are carried.
+ *
+ * ── Self-grounded stories ──────────────────────────────────────────────────
+ * A story written by hand in the portal has no paper behind it: no passages,
+ * no `sourceRefs`, and every paragraph is the scholar's own view. Under the
+ * ordinary rules that makes nothing rewritable, so a hand-written article
+ * could not be offered to a younger reader at all — which is the one thing
+ * this product exists to do.
+ *
+ * So when the story is its own source, every paragraph with words in it is
+ * rewritable, own view included. The scholar wrote the sentence; rewriting it
+ * for a twelve-year-old does not change whose claim it is.
+ */
+function levelPlan(blocks, { selfGrounded = false } = {}) {
   return (blocks || []).map((b, i) => ({
     index: i,
-    rewrite:
-      b.type === "paragraph" &&
-      !b.ownView &&
-      Array.isArray(b.sourceRefs) && b.sourceRefs.length > 0 &&
-      b.traceable !== false,
+    rewrite: selfGrounded
+      ? b.type === "paragraph" && plain(b.html).trim().length > 0
+      : b.type === "paragraph" &&
+        !b.ownView &&
+        Array.isArray(b.sourceRefs) && b.sourceRefs.length > 0 &&
+        b.traceable !== false,
     extension: Boolean(b.extension),
   }));
+}
+
+/**
+ * The story standing in for the paper it does not have.
+ *
+ * Each paragraph becomes the passage behind its own rewrite. That is not a
+ * trick to satisfy a signature: it is what the fidelity judge should be
+ * checking for a hand-written article. The question "did the rewrite keep
+ * what the original said" has an answer here, and the original is the
+ * scholar's own paragraph. What it cannot answer is "is the original true of
+ * some paper", because there is no paper — which is why a level built this
+ * way is marked `self` and never claims otherwise.
+ */
+function selfPassages(blocks) {
+  return (blocks || [])
+    .map((b, i) => ({ id: `self-${i}`, text: b.type === "paragraph" ? plain(b.html).trim() : "" }))
+    .filter((p) => p.text.length > 0);
+}
+
+/** Point each paragraph at itself, so the prompt and the judge both see a source. */
+function groundInSelf(blocks) {
+  return (blocks || []).map((b, i) =>
+    b.type === "paragraph" && plain(b.html).trim().length > 0
+      ? { ...b, sourceRefs: [{ passageId: `self-${i}` }] }
+      : b,
+  );
 }
 
 /**
@@ -79,7 +120,7 @@ function levelPlan(blocks) {
  * @param {string} p.sourceAudience   the band the article was written for
  * @param {boolean} [p.strictVoice]
  */
-function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sourceAudience, strictVoice = false, voice = composer.DEFAULT_VOICE }) {
+function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sourceAudience, strictVoice = false, voice = composer.DEFAULT_VOICE, selfGrounded = false }) {
   const to = AUDIENCES[normaliseAudience(audience)];
   const from = AUDIENCES[normaliseAudience(sourceAudience)];
   const name = scholar.name || "the scholar";
@@ -87,7 +128,12 @@ function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sour
   const ids = (block.sourceRefs || []).map((r) => r.passageId);
   const cited = (passages || []).filter((p) => ids.includes(p.id));
   const lines = [
-    authorVoice
+    /* A hand-written article is not "about a paper" and saying so would invite
+       the writer to invent one. It is the scholar's own article, and the only
+       thing the rewrite may keep is what the paragraph already says. */
+    selfGrounded
+      ? `Rewrite one paragraph of an article written by ${name}. There is no separate source paper: the paragraph below is the whole of what may be said. The article was written for ${from.brief}`
+      : authorVoice
       ? `Rewrite one paragraph of an article. It is the author's own account of their own paper, and was written for ${from.brief}`
       : `Rewrite one paragraph of an article about a paper by ${name}. The article was written for ${from.brief}`,
     `Rewrite this paragraph for ${to.brief}`,
@@ -102,6 +148,8 @@ function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sour
           "  say implications as implications, never as findings.",
           ...(to.young ? ["- The reader is a child: nothing frightening, and nothing that assumes a world beyond theirs."] : []),
         ]
+      : selfGrounded
+      ? ["- Keep every fact the paragraph states and add none. You have no other source: say nothing the paragraph does not already say."]
       : ["- Keep every fact the paragraph states and add none. Say nothing the passages below do not say."]),
     "- Same meaning, different reader: shorter sentences and plainer words for a younger reader. Do not talk down.",
     authorVoice
@@ -228,6 +276,8 @@ module.exports = {
   plain,
   targetsFor,
   levelPlan,
+  selfPassages,
+  groundInSelf,
   buildLevelPrompt,
   parseLevelResponse,
   assembleLevel,

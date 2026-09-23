@@ -64,13 +64,32 @@ test("the editorial routes still expose create, update and public read", () => {
 
 test("the collection ownership manifest agrees with user-dashboard-api's copy when that repo is present", (t) => {
   const ours = require("../src/db/ownership");
-  const theirs = path.resolve(__dirname, "..", "..", "..", "user-dashboard-api", "backend", "src", "db", "ownership.js");
-  if (!fs.existsSync(theirs)) {
+  const theirsPath = path.resolve(__dirname, "..", "..", "..", "user-dashboard-api", "backend", "src", "db", "ownership.js");
+  if (!fs.existsSync(theirsPath)) {
     t.skip("user-dashboard-api is not checked out beside this repo");
     return;
   }
-  const text = fs.readFileSync(theirs, "utf8");
-  const m = text.match(/MANIFEST_VERSION\s*=\s*"([^"]+)"/);
-  assert.ok(m, "could not find MANIFEST_VERSION in the other repo");
-  assert.equal(ours.MANIFEST_VERSION, m[1], "ownership manifest versions have drifted between repos");
+
+  /* Required rather than pattern-matched. This used to read the file as text
+     and compare only `MANIFEST_VERSION`, which meant a collection could be
+     added on one side and the version left alone — and the test would pass.
+     That is exactly what happened when `scholar_standing` was added here. The
+     version is a label; the table is the contract, so the table is what is
+     compared. */
+  const theirs = require(theirsPath);
+
+  assert.equal(ours.MANIFEST_VERSION, theirs.MANIFEST_VERSION, "ownership manifest versions have drifted between repos");
+  assert.deepEqual(ours.OWNER, theirs.OWNER, "the two repos name different owners");
+
+  /* Both directions, named. One-directional checks let an entry that exists
+     only in the other repo pass unnoticed, which is half a contract. */
+  const missingThere = Object.keys(ours.COLLECTION_OWNERSHIP).filter((c) => !(c in theirs.COLLECTION_OWNERSHIP));
+  const missingHere = Object.keys(theirs.COLLECTION_OWNERSHIP).filter((c) => !(c in ours.COLLECTION_OWNERSHIP));
+  assert.deepEqual(missingThere, [], `user-dashboard-api's manifest is missing: ${missingThere.join(", ")}`);
+  assert.deepEqual(missingHere, [], `this manifest is missing: ${missingHere.join(", ")}`);
+
+  const disagree = Object.entries(ours.COLLECTION_OWNERSHIP)
+    .filter(([c, owner]) => theirs.COLLECTION_OWNERSHIP[c] !== owner)
+    .map(([c, owner]) => `${c}: ours says ${owner}, theirs says ${theirs.COLLECTION_OWNERSHIP[c]}`);
+  assert.deepEqual(disagree, [], `owners disagree — ${disagree.join("; ")}`);
 });

@@ -148,7 +148,7 @@ function normalizeFidelity(f) {
  * measured here, on the server, against the text being saved — the client's
  * live chip is a preview of the same function.
  */
-function normalizeBlockProvenance({ sourceRefs, draftedText, fidelity, currentHtml, extension = false, reach = null }) {
+function normalizeBlockProvenance({ sourceRefs, draftedText, fidelity, currentHtml, extension = false, reach = null, recheckedAt = null }) {
   const refs = normalizeSourceRefs(sourceRefs);
   if (refs.length === 0) return null;
   const drafted = normaliseText(draftedText).slice(0, 4000);
@@ -165,6 +165,10 @@ function normalizeBlockProvenance({ sourceRefs, draftedText, fidelity, currentHt
     traceable: trace.traceable,
     overlap: trace.overlap,
     trace_reason: trace.reason,
+    /* A verdict the author asked for again, on the paragraph as they rewrote
+       it. Carried through saves so the rail keeps saying which text the
+       check above is about. */
+    ...(recheckedAt ? { rechecked_at: new Date(recheckedAt) } : {}),
     version: PROVENANCE_VERSION,
   };
 }
@@ -180,6 +184,10 @@ function presentBlockProvenance(p) {
     traceable: Boolean(p.traceable),
     overlap: typeof p.overlap === "number" ? p.overlap : null,
     traceReason: p.trace_reason || null,
+    /* Set when the author rewrote the paragraph and asked for a fresh
+       verdict, so the rail can say the check above is about what it says
+       now rather than about the words the drafter wrote. */
+    recheckedAt: p.rechecked_at || null,
   };
 }
 

@@ -23,6 +23,7 @@ const {
   parseDraftResponse,
   firstPersonSentences,
   isVerbatim,
+  clampToSentence,
 } = require("../src/lib/draftComposer");
 
 const PAPER =
@@ -258,4 +259,41 @@ test("too many blocks are cut, a short draft is flagged, and the title is bounde
   assert.ok(d.warnings.some((w) => /cut to/.test(w)));
   assert.ok(d.warnings.some((w) => /short/.test(w)));
   assert.equal(d.title.length, LIMITS.MAX_TITLE_CHARS);
+});
+
+/*
+ * A deck reached readers as "…offers a more accurate an" under the headline of
+ * a published story, because the cap was a blind slice. Prose is cut on a
+ * sentence now, and on a whole word when one sentence already overruns.
+ */
+test("a line too long for its budget is cut on a sentence, never mid-word", () => {
+  const deck =
+    "A new method improves the ability to detect the direction of weak radio signals even when strong signals are present, a common challenge in many real-world applications. " +
+    "This approach, called Spectral Domain Sparse Representation (SDSR) with Apodization, offers a more accurate and reliable way to separate them.";
+  const out = clampToSentence(deck, LIMITS.MAX_DECK_CHARS);
+  assert.ok(out.length <= LIMITS.MAX_DECK_CHARS);
+  assert.ok(out.endsWith("applications."), `cut mid-sentence: ${JSON.stringify(out.slice(-40))}`);
+  assert.ok(!/\ban$/.test(out), "the old blind slice left a half-written word");
+});
+
+test("a single sentence over the budget keeps whole words and says it was cut", () => {
+  const out = clampToSentence(`${"word ".repeat(80)}end.`, 60);
+  assert.ok(out.length <= 60);
+  assert.ok(out.endsWith("…"));
+  assert.ok(!/\bwor…$/.test(out), "a word was split");
+  assert.equal(out.replace("…", "").trim().split(" ").every((w) => w === "word"), true);
+});
+
+test("a stop inside a number or an abbreviation is not mistaken for a sentence", () => {
+  /* "0.6" and "e.g." must not become the end of the line. */
+  const a = clampToSentence("The array gained 0.6 dB in the field, e.g. over water, which the team had not expected at all.", 44);
+  assert.ok(!a.endsWith("0.") && !a.endsWith("e.g."), `cut at a false boundary: ${JSON.stringify(a)}`);
+  const b = clampToSentence("Work by J. Smith came first. Later results disagreed with it entirely and were withdrawn.", 40);
+  assert.ok(!b.includes("J.…") && !b.endsWith("J."), `cut at an initial: ${JSON.stringify(b)}`);
+});
+
+test("a line inside its budget is returned whole", () => {
+  assert.equal(clampToSentence("  Short enough.  ", 280), "Short enough.");
+  assert.equal(clampToSentence("", 280), "");
+  assert.equal(clampToSentence(null, 280), "");
 });

@@ -280,7 +280,7 @@ function applyTool(state, call, ctx) {
       for (const f of ["title", "subtitle", "excerpt"]) {
         if (typeof args[f] === "string" && args[f].trim()) {
           if (FIRST_PERSON.test(args[f])) return { state, result: `refused: ${f} uses first-person wording` };
-          next[f] = args[f].trim().slice(0, f === "title" ? 140 : 280);
+          next[f] = composer.clampToSentence(args[f], f === "title" ? composer.LIMITS.MAX_TITLE_CHARS : composer.LIMITS.MAX_DECK_CHARS);
           changed.push(f);
         }
       }

@@ -10,6 +10,7 @@ const { createDraftJob, approveOutline, replanOutline, getDraftJob, listDraftJob
 const { STATUS, TERMINAL } = require("../lib/draftJob");
 const { isAudience } = require("../lib/audiences");
 const { VOICE } = require("../lib/draftComposer");
+const { getAiTerms } = require("../services/aiTerms.service");
 
 const router = express.Router();
 
@@ -128,6 +129,53 @@ router.post(
       approveOutline: Boolean(wantsOutline),
       createStory: createStory === undefined ? true : Boolean(createStory),
       levels: Array.isArray(levels) ? levels : Boolean(levels),
+    });
+    res.status(result.reused ? 200 : 202).json(result);
+  }),
+);
+
+/**
+ * Ask the agent what a paper could become.
+ *
+ * Its own route rather than a flag on `/jobs`, because it is a different
+ * request with a different budget: no brief, no story, stop at the outline.
+ * A separate path also means the proposal allowance cannot be reached by
+ * passing a parameter to the drafting one.
+ *
+ * Returns 202 with the job; the composer watches it exactly as it watches a
+ * draft, and the scholar meets it at the outline they approve or argue with.
+ */
+router.post(
+  "/proposals",
+  requireAuth,
+  draftLimiter,
+  asyncHandler(async (req, res) => {
+    const profileId = requireProfile(req);
+    const { origin, sourceId, audience } = req.body || {};
+    if (origin !== "harvested" && origin !== "contributed") {
+      throw new ApiError(400, "Source origin must be harvested or contributed.");
+    }
+    if (typeof sourceId !== "string" || !sourceId || sourceId.length > 200) {
+      throw new ApiError(400, "Source id is invalid.");
+    }
+    /* Checked here and not only in the browser. The terms this asks about are
+       precisely that the paper's text is sent to a model provider, and this
+       route's whole job is to send it without the scholar having written
+       anything — so it is the one place where doing the work first and asking
+       afterwards is easiest to arrive at by accident. The UI settles the
+       terms before it links here; this makes it so no client can not. */
+    const terms = await getAiTerms({ profileId });
+    if (!terms.current) {
+      throw new ApiError(403, "The agent's terms have to be agreed before it reads your paper.");
+    }
+    const result = await createDraftJob({
+      profileId, origin, sourceId,
+      audience: typeof audience === "string" ? audience : undefined,
+      /* The scholar asked what this could be, not for it to be written. */
+      approveOutline: true,
+      createStory: false,
+      levels: false,
+      kind: "proposal",
     });
     res.status(result.reused ? 200 : 202).json(result);
   }),

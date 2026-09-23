@@ -330,8 +330,8 @@ function parseOutline(raw, passages, { allowExtension = true } = {}) {
     coverage = { met: COVERAGE.PART, note: `Not planned: ${unmet.map((m) => m.ask).join("; ")}.` };
   }
   return {
-    title: clean(data.title).slice(0, composer.LIMITS.MAX_TITLE_CHARS),
-    deck: clean(data.deck).slice(0, composer.LIMITS.MAX_DECK_CHARS),
+    title: composer.clampToSentence(clean(data.title), composer.LIMITS.MAX_TITLE_CHARS),
+    deck: composer.clampToSentence(clean(data.deck), composer.LIMITS.MAX_DECK_CHARS),
     beats,
     coverage,
     briefMap: briefMap.length ? briefMap : null,

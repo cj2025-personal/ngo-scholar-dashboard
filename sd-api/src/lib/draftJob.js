@@ -117,11 +117,14 @@ function corpusHash(text) {
  * model calls, and a scholar who hits the cap by retrying is exactly who the
  * cap is for.
  */
-function withinDailyCap({ startedToday, cap }) {
+function withinDailyCap({ startedToday, cap, noun = "draft" }) {
   const limit = Number.isFinite(cap) && cap > 0 ? cap : 0;
   if (limit === 0) return { ok: false, reason: "drafting is switched off" };
   if (startedToday >= limit) {
-    return { ok: false, reason: `you've started ${startedToday} drafts today; the daily limit is ${limit}` };
+    /* Named, because the two budgets are counted apart and a scholar told
+       they have "started 3 drafts today" while looking at an empty draft
+       list would reasonably think the number was wrong. */
+    return { ok: false, reason: `you've asked for ${startedToday} ${noun}${startedToday === 1 ? "" : "s"} today; the daily limit is ${limit}` };
   }
   return { ok: true, remaining: limit - startedToday };
 }

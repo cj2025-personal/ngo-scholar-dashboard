@@ -141,3 +141,35 @@ test("a verifier can confirm the passages they fetched are the ones the claims w
   assert.deepEqual(ledger.checkPassages(m, []), { matched: 0, mismatched: [], missing: ["p1"] });
   assert.deepEqual(ledger.checkPassages(m, [{ id: "p1", text: "  The array   improved the signal-to-noise ratio by eleven decibels with one interferer. " }]).mismatched, [], "whitespace is not a difference");
 });
+
+/*
+ * A published story's footer read "49 claims in this article were checked
+ * against the paper, 36 supported", and a reader could only conclude that 13
+ * had failed. All 13 were implications, which pass by following from the
+ * paper and are never labelled "supported". Every claim is now accounted for
+ * by name, and the parts add up to the total.
+ */
+test("the reader's footer accounts for every claim it counts", () => {
+  const line = ledger.readerSentence({ claims: 49, supported: 36, follows: 13, unsupported: 0, overreach: 0 });
+  assert.match(line, /49 claims in this article were checked/);
+  assert.match(line, /36 traced to a passage in the paper/);
+  assert.match(line, /13 following from it/);
+  const counted = [...line.matchAll(/(\d+) (?:traced|following|the author)/g)].reduce((n, m) => n + Number(m[1]), 0);
+  assert.equal(counted, 49, `the parts must add up to the total: ${line}`);
+});
+
+test("the footer names a claim the author kept, and stays singular for one", () => {
+  const kept = ledger.readerSentence({ claims: 4, supported: 2, follows: 1, unsupported: 1, overreach: 0 });
+  assert.match(kept, /1 the author reviewed and kept/);
+  assert.equal([...kept.matchAll(/(\d+) (?:traced|following|the author)/g)].reduce((n, m) => n + Number(m[1]), 0), 4);
+
+  assert.match(ledger.readerSentence({ claims: 1, supported: 1 }), /^1 claim in this article was checked/);
+  assert.equal(ledger.readerSentence({ claims: 0 }), "Every paragraph drawn from the paper was checked against it.");
+  assert.equal(ledger.readerSentence(null), "Every paragraph drawn from the paper was checked against it.");
+});
+
+test("an article that is all implication does not claim anything was traced", () => {
+  const line = ledger.readerSentence({ claims: 3, supported: 0, follows: 3 });
+  assert.ok(!/traced/.test(line), line);
+  assert.match(line, /3 following from it/);
+});

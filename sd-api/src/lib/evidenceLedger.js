@@ -286,6 +286,27 @@ function summarySentence(manifest) {
   return `${claims} claim${claims === 1 ? "" : "s"} checked against the paper, ${t.supported} supported` + (t.unsupported ? `, ${t.unsupported} not` : "") + `${beyond}. Approved by ${manifest.approval?.by || "the author"} as version ${manifest.story?.version}.`;
 }
 
+/**
+ * What the footer under a published article tells its reader.
+ *
+ * `claims` counts both ledgers, but a claim that goes beyond the paper can
+ * only ever be judged `follows`, never `supported`. Reporting "49 checked, 36
+ * supported" therefore invited the reader to subtract thirteen failures that
+ * had in fact passed a different check. Each kind is named and counted here,
+ * so the numbers add up to the total on the page.
+ */
+function readerSentence(totals) {
+  const t = totals || {};
+  const claims = t.claims || 0;
+  if (!claims) return "Every paragraph drawn from the paper was checked against it.";
+  const parts = [];
+  if (t.supported) parts.push(`${t.supported} traced to a passage in the paper`);
+  if (t.follows) parts.push(`${t.follows} following from it`);
+  const kept = (t.unsupported || 0) + (t.overreach || 0);
+  if (kept) parts.push(`${kept} the author reviewed and kept`);
+  return `${claims} claim${claims === 1 ? "" : "s"} in this article ${claims === 1 ? "was" : "were"} checked: ${parts.join(", ")}.`;
+}
+
 module.exports = {
   LEDGER_VERSION,
   canonicalJson,
@@ -298,4 +319,5 @@ module.exports = {
   verify,
   checkPassages,
   summarySentence,
+  readerSentence,
 };

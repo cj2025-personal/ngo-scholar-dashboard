@@ -20,6 +20,7 @@ const crypto = require("crypto");
 const { COLLECTIONS, getCollections } = require("../db/mongo");
 const { ApiError } = require("../lib/api-error");
 const { ORIGIN, USE, summarise } = require("../lib/draftEligibility");
+const { assessScholar } = require("./standing.service");
 const { rolloutAllows } = require("../lib/rollout");
 const { env } = require("../config/env");
 const composer = require("../lib/draftComposer");
@@ -131,6 +132,25 @@ async function listDraftSources({ profileId }) {
 
   const summary = summarise({ scholar, sources });
 
+  /* ── Legacy, as a benchmark rather than a flag ───────────────────────────
+     `summarise` still reads `status: "legacy"` off the curated record, which
+     is the 65 scholars the curation pipeline named. Standing is computed from
+     what the scholar has actually done — their papers on record, a licence we
+     can build on, and the work they have done here — and it is seeded from
+     that same flag, so nobody who could draft yesterday cannot draft today.
+
+     Assessed on every inventory read rather than nightly, so a scholar who
+     approves a reading level and comes back to this page sees it counted. */
+  const standing = await assessScholar({
+    profileId,
+    inventory: summary,
+    recordSaysLegacy: scholar.status === "legacy",
+  });
+  if (!summary.eligible && standing.mayDraft) {
+    summary.eligible = true;
+    summary.gateReason = "You have met the Legacy benchmark.";
+  }
+
   /* The rollout sits behind the Legacy gate: a scholar outside the pilot
      still sees everything we hold and why, with the button withheld. */
   const rollout = rolloutAllows({ mode: env.drafting.rollout, pilotProfiles: env.drafting.pilotProfiles, profileId });
@@ -142,6 +162,13 @@ async function listDraftSources({ profileId }) {
   return {
     profileId,
     rollout: rollout.mode,
+    /* The whole assessment, not a summary of it. The rail needs two numbers
+       and the standing page needs every gate, and computing it twice was how
+       the two disagreed: the second pass had no access to the curated
+       record's flag, so it reported a scholar as not grandfathered while
+       reconciliation was quietly keeping their Legacy for exactly that
+       reason. One computation, one answer. */
+    standing,
     scholarName: scholar.name?.display || scholar.name?.full || null,
     /* Stated so a scholar with no harvested rows knows whether that is "we
        found nothing" or "we never looked" — an empty slug means the latter. */

@@ -394,7 +394,7 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
           calls.push({ step: "repair_heading", usage: r.usage || null, model: r.modelVersion || null });
           const text = String(JSON.parse(String(r.text).replace(/^```(?:json)?|```$/g, "").trim())?.heading || "").replace(/\s+/g, " ").trim();
           if (text && checks.headingSupport({ blocks, passages: s.passages, title: text }).unsupported.every((u) => u.kind !== "title")) {
-            replacement = text.slice(0, 140);
+            replacement = composer.clampToSentence(text, 140);
           }
         } catch { /* a repair that fails is a heading that goes */ }
       }
@@ -601,7 +601,7 @@ function normaliseApprovedOutline(proposed, approved, passages) {
   const beats = (Array.isArray(approved?.beats) ? approved.beats : proposed.beats)
     .map((b, i) => ({
       index: i + 1,
-      heading: String(b.heading || "").replace(/\s+/g, " ").trim().slice(0, 140) || `Section ${i + 1}`,
+      heading: composer.clampToSentence(b.heading, 140) || `Section ${i + 1}`,
       goal: String(b.goal || "").replace(/\s+/g, " ").trim().slice(0, 300),
       kind: b.kind && b.kind !== plan.BEAT_KIND.PAPER && (proposedKind.get(b.heading) === b.kind || proposedKind.get(String(b.proposedHeading || "")) === b.kind) ? b.kind : plan.BEAT_KIND.PAPER,
       headingEdited: !proposedHeadings.has(String(b.heading || "").replace(/\s+/g, " ").trim()),
@@ -610,8 +610,8 @@ function normaliseApprovedOutline(proposed, approved, passages) {
     .filter((b) => b.passageIds.length > 0);
   if (beats.length < 1) throw new Error("An approved outline needs at least one section that cites a passage.");
   return {
-    title: String(approved?.title || proposed.title || "").trim().slice(0, 140),
-    deck: String(approved?.deck || proposed.deck || "").trim().slice(0, 280),
+    title: composer.clampToSentence(approved?.title || proposed.title, composer.LIMITS.MAX_TITLE_CHARS),
+    deck: composer.clampToSentence(approved?.deck || proposed.deck, composer.LIMITS.MAX_DECK_CHARS),
     beats,
     coverage: proposed.coverage || null,
     briefMap: proposed.briefMap || null,

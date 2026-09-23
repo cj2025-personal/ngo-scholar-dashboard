@@ -40,21 +40,40 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
   const editorial = require("./editorial.service");
   const gen = generate || traced("levels.generateContent", (req) => vertex.generateContent(req), { metadata: { storyId: String(storyDoc._id) } });
 
-  const [author, provenance, passages] = await Promise.all([
+  const [author, provenance, sourcePassages] = await Promise.all([
     editorial.resolveStoryAuthor(db, storyDoc.profile_id),
     editorial.resolveStoryProvenance(db, storyDoc.provenance),
     passagesFor(db, storyDoc),
   ]);
-  if (!passages.length) throw new ApiError(409, "This story has no source paper on record, so it cannot be written for other readers.");
 
   const mapped = editorial.mapStoryDocument(storyDoc, author, provenance);
+
+  /* ── A story that is its own source ──────────────────────────────────────
+     This used to refuse: "no source paper on record, so it cannot be written
+     for other readers." A hand-written article has no paper, so it could
+     never be offered to a younger reader — and offering research to younger
+     readers is the whole point of the product. The refusal was protecting a
+     guarantee (that a level stays faithful to the paper) at the cost of the
+     mission.
+
+     The guarantee survives in the form it can take here: the scholar's own
+     paragraph becomes the passage behind its rewrite, so the fidelity judge
+     still asks "did this keep what the original said". What it cannot ask is
+     whether the original is faithful to a paper, because there is none. The
+     level records `grounding: "self"` and never claims otherwise. */
+  const selfGrounded = sourcePassages.length === 0;
+  const passages = selfGrounded ? levels.selfPassages(mapped.bodyBlocks) : sourcePassages;
+  if (!passages.length) {
+    throw new ApiError(409, "This story has no paragraphs yet, so there is nothing to write for other readers.");
+  }
+  if (selfGrounded) mapped.bodyBlocks = levels.groundInSelf(mapped.bodyBlocks);
   const sourceAudience = normaliseAudience(storyDoc.provenance?.audience);
   /* A level is the same article for another reader, so it keeps the voice the
      article was written in. Stories drafted before voices existed are "about". */
   const voice = composer.normaliseVoice(storyDoc.provenance?.voice || composer.VOICE.ABOUT);
   const targets = levels.targetsFor(sourceAudience, audiences);
   if (!targets.length) throw new ApiError(400, "No reading level to write: every band asked for is the one the story is already written for.");
-  const toRewrite = levels.levelPlan(mapped.bodyBlocks).filter((p) => p.rewrite);
+  const toRewrite = levels.levelPlan(mapped.bodyBlocks, { selfGrounded }).filter((p) => p.rewrite);
   if (!toRewrite.length) throw new ApiError(409, "Nothing in this story is still drawn from the paper, so there is nothing to rewrite for another reader.");
 
   const system = composer.buildSystemInstruction({ voice, scholarName: author?.name || null });
@@ -72,7 +91,7 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
       const block = mapped.bodyBlocks[index];
       let parsed = null;
       for (let attempt = 0; attempt <= VOICE_RETRIES; attempt += 1) {
-        const prompt = levels.buildLevelPrompt({ scholar: { name: author?.name }, title: mapped.title, block, passages, audience, sourceAudience, voice, strictVoice: attempt > 0 });
+        const prompt = levels.buildLevelPrompt({ scholar: { name: author?.name }, title: mapped.title, block, passages, audience, sourceAudience, voice, strictVoice: attempt > 0, selfGrounded });
         const r = await gen({ prompt, systemInstruction: system, responseSchema: levels.LEVEL_SCHEMA, temperature: attempt ? 0.2 : 0.4, maxOutputTokens: 1024 });
         calls.push({ step: "draft_levels", audience, block: index + 1, usage: r.usage || null, model: r.modelVersion || null });
         parsed = levels.parseLevelResponse(r.text);
@@ -113,11 +132,27 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
 
     /* Stored: rewritten paragraphs normalised like any saved block; carried
        blocks copied from the story as stored, so pictures keep their shape. */
-    const blocks = draft.map((b, i) => (rewrites.has(i) ? editorial.normalizeRawBodyBlocks([b])[0] : storyDoc.body_blocks[i]));
+    let blocks = draft.map((b, i) => (rewrites.has(i) ? editorial.normalizeRawBodyBlocks([b])[0] : storyDoc.body_blocks[i]));
+    /* The `self-N` ids were scaffolding for the prompt and the judge. They are
+       not passages anyone can look up, so they must not reach storage, where
+       the evidence rail would offer a reader a citation that resolves to
+       nothing.
+
+       Stripped from `provenance`, which is where a stored block keeps them —
+       `sourceRefs` is the presented name and does not exist on the way in.
+       Targeting the presented name is exactly the bug the e2e test caught: the
+       strip ran, matched nothing, and the scaffolding was stored anyway. The
+       level's own fidelity summary is unaffected; it is computed before this
+       and lives on the level, not the block. */
+    if (selfGrounded) blocks = blocks.map((b) => (b && b.provenance ? { ...b, provenance: null } : b));
 
     made[audience] = {
       audience,
       blocks,
+      /* What this level was checked against: the paper, or the scholar's own
+         paragraphs. Every surface that reports fidelity has to be able to say
+         which, because they are not the same claim. */
+      grounding: selfGrounded ? "self" : "source",
       readability: { verdict: readability.verdict, fkGrade: readability.fkGrade, targetGrade: readability.targetGrade, drift: readability.drift },
       fidelity: {
         paragraphs: verdicts.length,

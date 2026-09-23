@@ -124,3 +124,59 @@ test("a paragraph that goes beyond the paper is rewritten for the reader too, wi
   assert.equal(carried[6].reach.verdict, "follows");
   assert.ok(!("extension" in carried[1]));
 });
+
+/**
+ * A story with no paper behind it.
+ *
+ * The portal let a scholar write an article by hand and then refused to write
+ * it for a younger reader, because nothing in it was drawn from a source
+ * paper. Offering research to younger readers is the product's whole purpose,
+ * so the refusal was the bug, not the missing paper.
+ */
+const handWritten = [
+  { type: "subheading", html: "What I found" },
+  { type: "paragraph", html: "Adaptive arrays steer <b>nulls</b> toward unwanted sources." },
+  { type: "paragraph", html: "This is my own reading of what that means.", ownView: true },
+  { type: "image", imageId: "img1", caption: "An array", alt: "an array", width: "body" },
+  { type: "paragraph", html: "   " },
+];
+
+test("a hand-written story rewrites every paragraph it has, own view included", () => {
+  const plan = levels.levelPlan(handWritten, { selfGrounded: true });
+  assert.deepEqual(plan.map((p) => p.rewrite), [false, true, true, false, false]);
+  /* An empty paragraph has nothing to rewrite, and a picture is carried. */
+
+  /* Without the flag the same story yields nothing, which is the old refusal. */
+  assert.deepEqual(levels.levelPlan(handWritten).map((p) => p.rewrite), [false, false, false, false, false]);
+});
+
+test("each paragraph becomes the passage behind its own rewrite", () => {
+  const self = levels.selfPassages(handWritten);
+  assert.deepEqual(self.map((p) => p.id), ["self-1", "self-2"]);
+  assert.equal(self[0].text, "Adaptive arrays steer nulls toward unwanted sources.");
+  /* Blank paragraphs, headings and images contribute no passage. */
+  assert.equal(self.length, 2);
+
+  const grounded = levels.groundInSelf(handWritten);
+  assert.deepEqual(grounded[1].sourceRefs, [{ passageId: "self-1" }]);
+  assert.equal(grounded[0].sourceRefs, undefined, "a heading is left alone");
+  assert.equal(grounded[4].sourceRefs, undefined, "an empty paragraph is left alone");
+});
+
+test("the self-grounded prompt promises no paper and forbids inventing one", () => {
+  const grounded = levels.groundInSelf(handWritten);
+  const prompt = levels.buildLevelPrompt({
+    scholar: { name: "Test Scholar" },
+    title: "T",
+    block: grounded[1],
+    passages: levels.selfPassages(handWritten),
+    audience: "ages_8_11",
+    sourceAudience: "adults",
+    selfGrounded: true,
+  });
+  assert.match(prompt, /There is no separate source paper/);
+  assert.match(prompt, /You have no other source/);
+  assert.ok(!prompt.includes("about a paper by"), "it must not imply a paper exists");
+  /* The paragraph itself is shown as the passage it is grounded in. */
+  assert.ok(prompt.includes("[self-1]"));
+});

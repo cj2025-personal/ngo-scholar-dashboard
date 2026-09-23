@@ -79,6 +79,49 @@ const LIMITS = {
   MAX_DECK_CHARS: 280,
 };
 
+/* Words that end in a full stop without ending a sentence. */
+const ABBREVIATIONS = new Set([
+  "e.g", "i.e", "etc", "vs", "cf", "al", "fig", "eq", "no", "approx",
+  "dr", "prof", "mr", "mrs", "ms", "st", "jr", "sr",
+]);
+
+/** Whether the stop at `i` closes a sentence, rather than an abbreviation or an initial. */
+function closesSentence(text, i) {
+  if (text[i] !== ".") return true; /* ! and ? never abbreviate */
+  const word = (text.slice(0, i).match(/[A-Za-z.]+$/) || [""])[0].toLowerCase().replace(/^\.+/, "");
+  if (ABBREVIATIONS.has(word)) return false;
+  return !/^[a-z]$/.test(word); /* an initial: "J. Smith" */
+}
+
+/**
+ * Cut a line of prose to a budget without cutting a word or a sentence in half.
+ *
+ * A deck was being stored as `.slice(0, 280)`, which left readers the phrase
+ * "offers a more accurate an" under the headline of a published story. Prefer
+ * the last sentence that closes inside the budget; when a single sentence
+ * already overruns it, keep whole words and mark the cut.
+ */
+function clampToSentence(text, max) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  const window = s.slice(0, max);
+  let cut = -1;
+  for (let i = 0; i < window.length; i += 1) {
+    if (!".!?".includes(window[i])) continue;
+    let end = i + 1;
+    while (end < window.length && "\"'’”)]".includes(window[end])) end += 1;
+    /* Followed by a space or the end of the window; otherwise it sits inside
+       a token, as the stop in "0.6" does. */
+    if (end < window.length && !/\s/.test(window[end])) continue;
+    if (!closesSentence(window, i)) continue;
+    cut = end;
+  }
+  /* A boundary so early that most of the line would go is worse than an
+     ellipsis, so fall back rather than return a fragment of the meaning. */
+  if (cut >= max * 0.4) return window.slice(0, cut).trim();
+  return `${window.slice(0, max - 1).replace(/\s+\S*$/, "").replace(/[,;:([]$/, "").trim()}…`;
+}
+
 /** What the model must return. Vertex enforces this on generation. */
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -462,8 +505,8 @@ function parseDraftResponse(raw, sourceText) {
     warnings.push(`The draft is long (${words.toLocaleString()} words) and will need cutting.`);
   }
 
-  const title = String(data.title || "").replace(/\s+/g, " ").trim().slice(0, LIMITS.MAX_TITLE_CHARS);
-  const deck = String(data.deck || "").replace(/\s+/g, " ").trim().slice(0, LIMITS.MAX_DECK_CHARS);
+  const title = clampToSentence(data.title, LIMITS.MAX_TITLE_CHARS);
+  const deck = clampToSentence(data.deck, LIMITS.MAX_DECK_CHARS);
   violations.push(...firstPersonSentences(deck));
 
   return { title, deck, bodyBlocks, words, warnings, violations, prose: prose.join("\n\n") };
@@ -477,6 +520,7 @@ module.exports = {
   DEFAULT_VOICE,
   LIMITS,
   RESPONSE_SCHEMA,
+  clampToSentence,
   normaliseAudience,
   normaliseVoice,
   prepareSourceText,

@@ -377,6 +377,54 @@ test("editing a block past its source drops the chip; a light edit keeps it", as
   if (blocks[i + 1]?.sourceRefs) assert.equal(after[i + 1].traceable, true);
 });
 
+/*
+ * The verdict on a block is about the words the drafter wrote. Rewrite the
+ * paragraph and it describes sentences that are no longer there — which left
+ * a scholar flagged for a paragraph they had already put right, with no way
+ * to earn a fresh verdict and only deletion as a way past the publish gate.
+ */
+test("a rewritten paragraph can be judged again, against what it says now", async () => {
+  const read = await call("GET", `/api/editorial-stories/${state.storyId}`);
+  const blocks = read.data.story.bodyBlocks;
+  const i = blocks.findIndex((b) => b.sourceRefs && b.traceable === false);
+  assert.ok(i >= 0, "the previous test left one block edited past its source");
+  const before = blocks[i].fidelity?.verdict || null;
+
+  const done = await call("POST", `/api/editorial-stories/${state.storyId}/blocks/${i}/recheck`, { body: {} });
+  assert.equal(done.status, 200, JSON.stringify(done.data));
+  assert.equal(done.data.kind, "fidelity");
+  assert.equal(done.data.before, before);
+
+  const after = done.data.story.bodyBlocks[i];
+  /* Judged on the paragraph as it now reads, which shares nothing with the
+     passages it cites, so the judge cannot support it. */
+  assert.equal(after.fidelity.verdict, "unsupported");
+  assert.equal(done.data.verdict, "unsupported");
+  /* What the drafter wrote stays on the record. A re-check moves the verdict
+     and nothing else: the ledger must not come to claim the machine drafted
+     the sentences the author put there. */
+  assert.equal(after.traceable, false, "the paragraph is still the author's own rewrite");
+  assert.equal(after.draftedText, blocks[i].draftedText, "the drafted text is untouched");
+  assert.ok(done.data.version > read.data.story.version, "a re-check is a version like any other write");
+
+  const history = await call("GET", `/api/editorial-stories/${state.storyId}/revisions`);
+  assert.match(JSON.stringify(history.data), /checked again/i, "the history says what happened");
+});
+
+test("a re-check is refused for a paragraph that has nothing to check against", async () => {
+  const read = await call("GET", `/api/editorial-stories/${state.storyId}`);
+  const blocks = read.data.story.bodyBlocks;
+  const bare = blocks.findIndex((b) => b.type === "paragraph" && !b.sourceRefs);
+  if (bare >= 0) {
+    const r = await call("POST", `/api/editorial-stories/${state.storyId}/blocks/${bare}/recheck`, { body: {} });
+    assert.equal(r.status, 409);
+    assert.match(r.data.error, /cites no passage/);
+  }
+  const off = await call("POST", `/api/editorial-stories/${state.storyId}/blocks/999/recheck`, { body: {} });
+  assert.equal(off.status, 400);
+  assert.match(off.data.error, /not in this story/);
+});
+
 test("a machine identity cannot publish; a person can, and is recorded", async () => {
   const form = () => { const f = new FormData(); f.set("status", "published"); f.set("inlineImageKeys", "[]"); f.set("retainImageIds", "[]"); return f; };
 
@@ -975,5 +1023,111 @@ test("in pilot mode a scholar outside the list sees the inventory but cannot dra
   } finally {
     base = prev;
     pilot.child.kill();
+  }
+});
+
+/**
+ * A story with no paper behind it, written for younger readers.
+ *
+ * ── What this covers ───────────────────────────────────────────────────────
+ * Levels used to be refused outright for a hand-written article: no source
+ * passages meant nothing was rewritable, and the endpoint answered 409 "This
+ * story has no source paper on record, so it cannot be written for other
+ * readers." Putting research in front of younger readers is the product's
+ * purpose, so refusing it for the articles a scholar writes directly was the
+ * bug, not the missing paper.
+ *
+ * The guarantee survives in the form it can take: each paragraph becomes the
+ * passage behind its own rewrite, so the fidelity judge still asks whether the
+ * level kept what the original said. What it cannot ask is whether the
+ * original is faithful to a paper, because there is none — so the level says
+ * `grounding: "self"` and never claims otherwise.
+ */
+test("a story written by hand can still be written for younger readers", async () => {
+  /* Blocks, not a blob: `content` arrives as a single paragraph, and this
+     article needs several — including one marked as the scholar's own view,
+     which the old rules excluded from rewriting even when a paper existed. */
+  const handWritten = [
+    { type: "subheading", html: "What the measurements leave out" },
+    { type: "paragraph", html: "Adaptive arrays steer nulls toward the sources a receiver is not interested in." },
+    { type: "paragraph", html: "The part nobody writes down is how long that takes when the interferer is moving." },
+    { type: "paragraph", html: "My own reading is that the moving case is the only one that matters outdoors.", ownView: true },
+  ];
+
+  const form = new FormData();
+  form.set("title", "What I think the measurements mean");
+  form.set("subtitle", "Written in the portal, with no paper behind it");
+  form.set(
+    "content",
+    handWritten.filter((b) => b.type === "paragraph").map((b) => b.html).join("\n\n"),
+  );
+  form.set("bodyBlocks", JSON.stringify(handWritten));
+  form.set("status", "draft");
+  form.set("inlineImageKeys", "[]");
+  form.set("retainImageIds", "[]");
+
+  const saved = await call("POST", "/api/editorial-stories", { form });
+  assert.equal(saved.status, 201, JSON.stringify(saved.data));
+  const story = saved.data.story;
+  assert.equal(story.provenance, null, "nothing was drafted from a paper");
+  assert.ok(
+    story.bodyBlocks.every((b) => !b.sourceRefs?.length),
+    "and no block cites one",
+  );
+
+  const made = await call("POST", `/api/editorial-stories/${story.id}/levels`, {
+    body: { audiences: ["ages_8_11"], baseVersion: story.version },
+  });
+  /* The refusal this test exists for. */
+  assert.equal(made.status, 200, JSON.stringify(made.data));
+  assert.deepEqual(made.data.written, ["ages_8_11"]);
+
+  const levelled = made.data.story;
+  const level = levelled.levels.find((l) => l.audience === "ages_8_11");
+  assert.ok(level, JSON.stringify(levelled.levels.map((l) => l.audience)));
+
+  /* Said plainly, because it is a weaker claim than the usual one. */
+  assert.equal(level.grounding, "self");
+  assert.equal(level.blocks.length, levelled.bodyBlocks.length, "it lines up block for block");
+  assert.equal(level.approved, false, "and reaches no reader until approved");
+  assert.ok(level.readability && typeof level.readability.fkGrade === "number", JSON.stringify(level.readability));
+
+  /* Every paragraph was rewritten, own view included: the whole article is the
+     scholar's writing, and a younger reader needs all of it. */
+  const paragraphs = levelled.bodyBlocks.filter((b) => b.type === "paragraph");
+  assert.equal(paragraphs.length, 3, JSON.stringify(levelled.bodyBlocks.map((b) => b.type)));
+  /* Under the old rules an own-view paragraph was never rewritten, which for a
+     hand-written article would have meant rewriting nothing at all. */
+  assert.ok(paragraphs.some((b) => b.ownView), "one of them is the scholar's own view");
+  assert.equal(level.fidelity.paragraphs, paragraphs.length, JSON.stringify(level.fidelity));
+
+  /* A heading is carried untouched, as it is for any other level. */
+  const headingIndex = levelled.bodyBlocks.findIndex((b) => b.type === "subheading");
+  assert.equal(level.blocks[headingIndex].html, levelled.bodyBlocks[headingIndex].html);
+
+  /* The `self-N` ids were scaffolding for the prompt and the judge. A reader
+     following a citation must never be handed one that resolves to nothing. */
+  for (const block of level.blocks) {
+    assert.ok(
+      !(block.sourceRefs || []).some((ref) => String(ref.passageId || "").startsWith("self-")),
+      `a stored block still carries scaffolding: ${JSON.stringify(block.sourceRefs)}`,
+    );
+  }
+
+  /* And a story with nothing in it is still refused, with the reason it has
+     rather than the one about a missing paper. */
+  const emptyForm = new FormData();
+  emptyForm.set("title", "Nothing written yet");
+  emptyForm.set("content", "");
+  emptyForm.set("status", "draft");
+  emptyForm.set("inlineImageKeys", "[]");
+  emptyForm.set("retainImageIds", "[]");
+  const empty = await call("POST", "/api/editorial-stories", { form: emptyForm });
+  if (empty.status === 201) {
+    const refused = await call("POST", `/api/editorial-stories/${empty.data.story.id}/levels`, {
+      body: { baseVersion: empty.data.story.version },
+    });
+    assert.equal(refused.status, 409);
+    assert.match(refused.data.error, /no paragraphs/i);
   }
 });
