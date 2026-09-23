@@ -44,3 +44,12 @@ next-env.d.ts
 tests-e2e/.state.json
 tests-e2e/results/
 tests-e2e/report/
+
+# playwright: run output and generated screenshots, never inputs
+/test-results/
+/tests-e2e/results/
+/tests-e2e/screens/
+/tests-e2e/screens-*/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
