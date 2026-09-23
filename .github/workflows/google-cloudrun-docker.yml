@@ -183,6 +183,8 @@ jobs:
 
       - name: 'Build and Push Container'
         id: 'build'
+        env:
+          CORS_OVERRIDE: '${{ vars.SCHOLAR_CORS_ORIGIN || secrets.SCHOLAR_CORS_ORIGIN }}'
         run: |-
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${API_SERVICE}:${GITHUB_SHA}"
           docker build -f sd-api/Dockerfile \
@@ -190,6 +192,21 @@ jobs:
             -t "${IMAGE}" sd-api
           docker push "${IMAGE}"
           echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+
+          # Which origin the browser will call this API from.
+          #
+          # Read back from Cloud Run rather than configured, for the same reason
+          # the UI reads the API's URL. Set by hand with `gcloud run services
+          # update`, it survives exactly until the next deploy overwrites it
+          # from the env_vars block below — which is what happened, silently,
+          # leaving the API allowing only http://localhost:3000 while looking
+          # perfectly healthy and rejecting every call the UI made.
+          CORS="${CORS_OVERRIDE}"
+          if [ -z "${CORS}" ]; then
+            CORS="$(gcloud run services describe "${UI_SERVICE}"               --project="${PROJECT_ID}" --region="${REGION}"               --format='value(status.url)' 2>/dev/null || true)"
+          fi
+          echo "cors_origin=${CORS}" >> "${GITHUB_OUTPUT}"
+          echo "CORS origin: ${CORS:-(none yet - the UI has not been deployed)}"
 
       # ── Secrets come from Secret Manager, not from GitHub ──────────────────
       #
@@ -244,7 +261,7 @@ jobs:
           env_vars: |
             NODE_ENV=production
             MONGODB_DB=${{ vars.MONGODB_DB || secrets.MONGODB_DB || 'ngo_profiles' }}
-            CORS_ORIGIN=${{ vars.SCHOLAR_CORS_ORIGIN || secrets.SCHOLAR_CORS_ORIGIN }}
+            CORS_ORIGIN=${{ steps.build.outputs.cors_origin }}
             AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || secrets.AUTH_COOKIE_NAME || 'sd_session' }}
             AUTH_COOKIE_DOMAIN=${{ vars.AUTH_COOKIE_DOMAIN || secrets.AUTH_COOKIE_DOMAIN }}
             AUTH_COOKIE_SAMESITE=${{ vars.AUTH_COOKIE_SAMESITE || 'none' }}
