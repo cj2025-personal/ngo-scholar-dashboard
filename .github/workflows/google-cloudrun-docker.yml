@@ -265,7 +265,7 @@ jobs:
   ui:
     name: 'Build and Deploy sd-ui'
     needs: ['test', 'api']
-    if: ${{ always() && needs.api.result == 'success' && (github.event_name == 'push' || inputs.deploy_ui) }}
+    if: ${{ always() && needs.api.result != 'failure' && needs.test.result == 'success' && (github.event_name == 'push' || inputs.deploy_ui) }}
     runs-on: 'ubuntu-latest'
     environment: 'dev'
     permissions:
@@ -290,24 +290,39 @@ jobs:
           password: '${{ steps.auth.outputs.access_token }}'
           registry: '${{ env.REGION }}-docker.pkg.dev'
 
+      - uses: 'google-github-actions/setup-gcloud@v2'
+
       # NEXT_PUBLIC_AUTH_API_URL is SD-API, not ngo-auth-api, whatever the name
       # says — its default in the source is http://localhost:4000, the port
-      # sd-api listens on. Taken from the API job's own deploy output so the two
-      # cannot drift, with the repository variable as an override for a custom
-      # domain. Pointing it at the auth service instead would 404 every
-      # editorial and story call, and a 404 on a content fetch renders as an
-      # empty page rather than as an error anyone would notice.
+      # sd-api listens on. Pointing it at the auth service instead would 404
+      # every editorial and story call, and a 404 on a content fetch renders as
+      # an empty page rather than as an error anyone would notice.
+      #
+      # The URL is READ BACK FROM CLOUD RUN rather than passed between jobs.
+      # `needs.api.outputs.url` came back empty on the first run even though the
+      # API had deployed and was serving — the deploy action's output did not
+      # survive the hop — and a build arg that silently becomes empty is the
+      # exact failure this whole comment is about. Asking the platform what the
+      # service's URL is cannot go stale, and it also lets this job run on its
+      # own with deploy_api unticked.
       - name: 'Build and Push Container'
         id: 'build'
         env:
-          API_URL: '${{ vars.SCHOLAR_API_PUBLIC_URL || secrets.SCHOLAR_API_PUBLIC_URL || needs.api.outputs.url }}'
+          API_URL_OVERRIDE: '${{ vars.SCHOLAR_API_PUBLIC_URL || secrets.SCHOLAR_API_PUBLIC_URL }}'
           SITE_URL: '${{ vars.SCHOLAR_SITE_URL || secrets.SCHOLAR_SITE_URL }}'
           DOCS_PORTAL_URL: '${{ vars.DOCS_PORTAL_URL || secrets.DOCS_PORTAL_URL }}'
         run: |-
+          API_URL="${API_URL_OVERRIDE}"
           if [ -z "${API_URL}" ]; then
-            echo "::error::No sd-api URL. The api job publishes one; set vars.SCHOLAR_API_PUBLIC_URL to override." >&2
+            API_URL="$(gcloud run services describe "${API_SERVICE}" \
+              --project="${PROJECT_ID}" --region="${REGION}" \
+              --format='value(status.url)' 2>/dev/null || true)"
+          fi
+          if [ -z "${API_URL}" ]; then
+            echo "::error::Could not resolve the sd-api URL. Deploy ${API_SERVICE} first, or set vars.SCHOLAR_API_PUBLIC_URL." >&2
             exit 1
           fi
+          echo "sd-api resolved to ${API_URL}"
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${UI_SERVICE}:${GITHUB_SHA}"
           docker build -f sd-ui/Dockerfile \
             --build-arg NEXT_PUBLIC_AUTH_API_URL="${API_URL}" \
@@ -316,6 +331,7 @@ jobs:
             -t "${IMAGE}" sd-ui
           docker push "${IMAGE}"
           echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+          echo "api_url=${API_URL}" >> "${GITHUB_OUTPUT}"
 
       - id: 'deploy'
         name: 'Deploy to Cloud Run'
@@ -337,7 +353,7 @@ jobs:
           # secret of its own and mounts nothing from Secret Manager.
           env_vars: |
             NODE_ENV=production
-            AUTH_API_URL=${{ vars.SCHOLAR_API_PUBLIC_URL || secrets.SCHOLAR_API_PUBLIC_URL || needs.api.outputs.url }}
+            AUTH_API_URL=${{ steps.build.outputs.api_url }}
             AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || secrets.AUTH_COOKIE_NAME || 'sd_session' }}
             SITE_URL=${{ vars.SCHOLAR_SITE_URL || secrets.SCHOLAR_SITE_URL }}
 
