@@ -1,0 +1,285 @@
+# Build and deploy sd-api and sd-ui to Cloud Run on a push to main.
+#
+# Matches the rest of the estate (ngo-auth-api, ngo-profile-app, ngo-admin-app,
+# user-dashboard, user-dashboard-api, paris-service): a service account key in
+# secrets.GCP_SA_KEY, an image in Artifact Registry at
+# REGION-docker.pkg.dev/PROJECT/REPOSITORY/SERVICE:SHA, and
+# google-github-actions/deploy-cloudrun. Workload Identity Federation is better
+# — it removes the stored long-lived key — and the swap is two lines; see the
+# comment above the auth step.
+#
+# Two services from two images, in one repo:
+#
+#   archivyn-scholar-api  <- sd-api
+#   archivyn-scholar-ui   <- sd-ui
+#
+# The UI deploys after the API so a fresh UI never points at a revision that
+# does not exist yet. Neither deploys unless the tests pass: sd-api.yml already
+# runs the full suite on every push, and the gate here is deliberately a second
+# run rather than a cross-workflow dependency, because a deploy that trusts
+# another workflow's result is a deploy that ships when that workflow is
+# skipped.
+
+name: 'Build and Deploy to Cloud Run'
+
+on:
+  push:
+    branches:
+      - 'main'
+    paths:
+      - 'sd-api/**'
+      - 'sd-ui/**'
+      - '.github/workflows/google-cloudrun-docker.yml'
+  workflow_dispatch:
+    inputs:
+      deploy_api:
+        description: 'Deploy sd-api'
+        type: boolean
+        default: true
+      deploy_ui:
+        description: 'Deploy sd-ui'
+        type: boolean
+        default: true
+
+env:
+  PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
+  REGION: '${{ secrets.GCP_REGION }}'
+  REPOSITORY: '${{ secrets.GCP_ARTIFACT_REPOSITORY }}'
+  API_SERVICE: 'archivyn-scholar-api'
+  UI_SERVICE: 'archivyn-scholar-ui'
+
+concurrency:
+  # Two overlapping runs would race on the same Cloud Run revision and the
+  # later push could lose.
+  group: 'cloudrun-${{ github.ref }}'
+  cancel-in-progress: false
+
+jobs:
+  # ── Gate: nothing deploys unless this passes ───────────────────────────────
+  test:
+    name: 'Tests'
+    runs-on: 'ubuntu-latest'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+
+      - uses: 'actions/setup-node@v4'
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            sd-api/package-lock.json
+            sd-ui/package-lock.json
+
+      - name: 'Install sd-api deps'
+        working-directory: 'sd-api'
+        run: 'npm ci'
+
+      - name: 'sd-api tests'
+        working-directory: 'sd-api'
+        run: 'npm test'
+
+      - name: 'Install sd-ui deps'
+        working-directory: 'sd-ui'
+        run: 'npm ci'
+
+      # Proves the image build will get past `npm run build`, which is where a
+      # broken page would otherwise surface — inside a docker build, with the
+      # error buried in build output.
+      - name: 'sd-ui build'
+        working-directory: 'sd-ui'
+        env:
+          NEXT_PUBLIC_AUTH_API_URL: 'https://example.invalid'
+          NEXT_PUBLIC_SITE_URL: 'https://example.invalid'
+        run: 'npm run build'
+
+  # ── sd-api ─────────────────────────────────────────────────────────────────
+  api:
+    name: 'Build and Deploy sd-api'
+    needs: 'test'
+    if: ${{ github.event_name == 'push' || inputs.deploy_api }}
+    runs-on: 'ubuntu-latest'
+    environment: 'dev'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    outputs:
+      url: '${{ steps.deploy.outputs.url }}'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+
+      # To switch to Workload Identity Federation, replace the credentials_json
+      # line with:
+      #   workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
+      #   service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}'
+      # Keep token_format — Docker Auth needs the access token either way.
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+          token_format: 'access_token'
+          access_token_scopes: 'https://www.googleapis.com/auth/cloud-platform'
+
+      - name: 'Docker Auth'
+        uses: 'docker/login-action@v3'
+        with:
+          username: 'oauth2accesstoken'
+          password: '${{ steps.auth.outputs.access_token }}'
+          registry: '${{ env.REGION }}-docker.pkg.dev'
+
+      - uses: 'google-github-actions/setup-gcloud@v2'
+
+      # Fails with a readable message instead of docker push's
+      # `name unknown: Repository "***" not found`, which is doubly opaque
+      # because Actions masks the repository name in the log.
+      - name: 'Preflight'
+        run: |-
+          for v in PROJECT_ID REGION REPOSITORY; do
+            if [ -z "${!v}" ]; then
+              echo "::error::secrets.GCP_${v} is not set on this repository." >&2
+              exit 1
+            fi
+          done
+          if ! gcloud artifacts repositories describe "${REPOSITORY}" \
+               --location="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+            echo "::error::Artifact Registry repository '${REPOSITORY}' does not exist in ${REGION}." >&2
+            exit 1
+          fi
+          echo "repository ${REPOSITORY} present in ${REGION}."
+
+      - name: 'Build and Push Container'
+        id: 'build'
+        run: |-
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${API_SERVICE}:${GITHUB_SHA}"
+          docker build -f sd-api/Dockerfile \
+            --build-arg COMMIT_SHA="${GITHUB_SHA}" \
+            -t "${IMAGE}" sd-api
+          docker push "${IMAGE}"
+          echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+
+      # Credentials come from the runtime service account through ADC — no key
+      # file in the image. `config/key.json` is a developer-machine convenience
+      # and is excluded by both .gitignore and .dockerignore.
+      - id: 'deploy'
+        name: 'Deploy to Cloud Run'
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: '${{ env.API_SERVICE }}'
+          region: '${{ env.REGION }}'
+          image: '${{ steps.build.outputs.image }}'
+          flags: >-
+            --allow-unauthenticated
+            --service-account=${{ secrets.SCHOLAR_API_RUNTIME_SERVICE_ACCOUNT }}
+            --port=8080
+            --cpu=1
+            --memory=1Gi
+            --min-instances=${{ vars.SCHOLAR_API_MIN_INSTANCES || '0' }}
+            --max-instances=10
+            --timeout=300s
+          env_vars: |
+            NODE_ENV=production
+            MONGODB_URI=${{ secrets.MONGODB_URI }}
+            MONGODB_DB=${{ secrets.MONGODB_DB }}
+            CORS_ORIGIN=${{ secrets.SCHOLAR_CORS_ORIGIN }}
+            AUTH_COOKIE_NAME=${{ secrets.AUTH_COOKIE_NAME }}
+            AUTH_COOKIE_DOMAIN=${{ secrets.AUTH_COOKIE_DOMAIN }}
+            SERVICE_TOKEN=${{ secrets.SERVICE_TOKEN }}
+            LEDGER_KEY_ID=${{ secrets.LEDGER_KEY_ID }}
+            LEDGER_SIGNING_KEY=${{ secrets.LEDGER_SIGNING_KEY }}
+            LLM_PROVIDER=vertex
+            STORY_LLM_MODEL=${{ vars.STORY_LLM_MODEL || 'gemini-2.5-flash' }}
+            GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+            GCP_LOCATION=${{ secrets.GCP_REGION }}
+            GCS_EDITORIAL_IMAGES_BUCKET=${{ secrets.GCS_EDITORIAL_IMAGES_BUCKET }}
+            DRAFTING_ENABLED=${{ vars.DRAFTING_ENABLED || '1' }}
+            DRAFTING_WORKER=${{ vars.DRAFTING_WORKER || '1' }}
+
+      - name: 'Show sd-api URL'
+        run: 'echo "sd-api: ${{ steps.deploy.outputs.url }}"'
+
+  # ── sd-ui ──────────────────────────────────────────────────────────────────
+  #
+  # After the API, because NEXT_PUBLIC_AUTH_API_URL is compiled into the client
+  # bundle and must name a service that exists.
+  ui:
+    name: 'Build and Deploy sd-ui'
+    needs: ['test', 'api']
+    if: ${{ always() && needs.api.result == 'success' && (github.event_name == 'push' || inputs.deploy_ui) }}
+    runs-on: 'ubuntu-latest'
+    environment: 'dev'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+          token_format: 'access_token'
+          access_token_scopes: 'https://www.googleapis.com/auth/cloud-platform'
+
+      - name: 'Docker Auth'
+        uses: 'docker/login-action@v3'
+        with:
+          username: 'oauth2accesstoken'
+          password: '${{ steps.auth.outputs.access_token }}'
+          registry: '${{ env.REGION }}-docker.pkg.dev'
+
+      # NEXT_PUBLIC_AUTH_API_URL is SD-API, not ngo-auth-api, whatever the name
+      # says — its default in the source is http://localhost:4000, the port
+      # sd-api listens on. Taken from the API job's own deploy output so the two
+      # cannot drift, with the repository variable as an override for a custom
+      # domain. Pointing it at the auth service instead would 404 every
+      # editorial and story call, and a 404 on a content fetch renders as an
+      # empty page rather than as an error anyone would notice.
+      - name: 'Build and Push Container'
+        id: 'build'
+        env:
+          API_URL: '${{ vars.SCHOLAR_API_PUBLIC_URL || needs.api.outputs.url }}'
+          SITE_URL: '${{ vars.SCHOLAR_SITE_URL }}'
+          DOCS_PORTAL_URL: '${{ vars.DOCS_PORTAL_URL }}'
+        run: |-
+          if [ -z "${API_URL}" ]; then
+            echo "::error::No sd-api URL. The api job publishes one; set vars.SCHOLAR_API_PUBLIC_URL to override." >&2
+            exit 1
+          fi
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${UI_SERVICE}:${GITHUB_SHA}"
+          docker build -f sd-ui/Dockerfile \
+            --build-arg NEXT_PUBLIC_AUTH_API_URL="${API_URL}" \
+            --build-arg NEXT_PUBLIC_SITE_URL="${SITE_URL}" \
+            --build-arg NEXT_PUBLIC_DOCS_PORTAL_URL="${DOCS_PORTAL_URL}" \
+            -t "${IMAGE}" sd-ui
+          docker push "${IMAGE}"
+          echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+
+      - id: 'deploy'
+        name: 'Deploy to Cloud Run'
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: '${{ env.UI_SERVICE }}'
+          region: '${{ env.REGION }}'
+          image: '${{ steps.build.outputs.image }}'
+          flags: >-
+            --allow-unauthenticated
+            --port=8080
+            --cpu=1
+            --memory=512Mi
+            --min-instances=${{ vars.SCHOLAR_UI_MIN_INSTANCES || '0' }}
+            --max-instances=10
+            --timeout=120s
+          # Read by the server at request time, so set here rather than baked
+          # into the image.
+          env_vars: |
+            NODE_ENV=production
+            AUTH_API_URL=${{ vars.SCHOLAR_API_PUBLIC_URL || needs.api.outputs.url }}
+            AUTH_COOKIE_NAME=${{ secrets.AUTH_COOKIE_NAME }}
+            SITE_URL=${{ vars.SCHOLAR_SITE_URL }}
+
+      - name: 'Show sd-ui URL'
+        run: 'echo "sd-ui: ${{ steps.deploy.outputs.url }}"'

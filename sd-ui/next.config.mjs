@@ -13,6 +13,15 @@
  * the document; that is a change worth making on its own, not a line here.
  */
 const nextConfig = {
+  /* Cloud Run runs the server Next emits, not `next start`.
+   *
+   * `standalone` writes .next/standalone with a server.js and only the
+   * node_modules that are actually reached, which is what the Dockerfile's
+   * runner stage copies. Without it that directory is never produced and the
+   * image build fails on the COPY — the whole repo would have to ship instead,
+   * dev dependencies and all, to run a server the image does not contain. */
+  output: "standalone",
+
   /* The framework and its version are not a visitor's business. */
   poweredByHeader: false,
 

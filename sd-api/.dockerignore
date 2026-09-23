@@ -1,0 +1,26 @@
+# The Dockerfile copies only package files and src/, so most of this is
+# belt-and-braces — except `config/`, which holds a service account key on a
+# developer's machine. Excluded here as well as gitignored, because a build
+# context is a second way a credential leaves the laptop.
+config/
+key.json
+*.pem
+
+node_modules
+npm-debug.log*
+
+tests
+tests-e2e
+evals
+scripts
+purge-generated-content.js
+purge-log.txt
+
+.env
+.env.*
+.git
+.github
+.nvmrc
+Dockerfile
+.dockerignore
+README.md

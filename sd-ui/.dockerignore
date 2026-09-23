@@ -1,0 +1,25 @@
+# The builder stage copies the whole directory, so this is what keeps the
+# context small and stops a stale local build leaking into the image.
+node_modules
+.next
+out
+build
+
+# Playwright run output — megabytes of PNGs that belong in no image.
+test-results
+tests-e2e/results
+tests-e2e/report
+tests-e2e/screens
+tests-e2e/screens-*
+tests-e2e/.state.json
+playwright-report
+blob-report
+
+.env
+.env.*
+*.pem
+.git
+.github
+Dockerfile
+.dockerignore
+README.md
