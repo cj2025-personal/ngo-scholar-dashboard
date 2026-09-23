@@ -55,7 +55,13 @@ test("a flagged paragraph can be taken on as the author's own or rewritten and j
      so the test is about the way out and not about the model. */
   const read = async () => (await (await page.request.get(`${apiUrl}/api/editorial-stories/${storyId}`)).json()).story;
   let story = await read();
-  const paper = story.bodyBlocks.map((b, i) => ({ b, i })).filter(({ b }) => b.sourceRefs?.length && !b.extension);
+  /* Paragraphs specifically. A quote drawn from the paper carries source refs
+     exactly as a paragraph does, so filtering on those alone picks quotes too —
+     and a quote is not checked against the paper, because its words are the
+     paper's rather than the scholar's. */
+  const paper = story.bodyBlocks
+    .map((b, i) => ({ b, i }))
+    .filter(({ b }) => b.type === "paragraph" && b.sourceRefs?.length && !b.extension);
   expect(paper.length, "the draft has at least two paragraphs drawn from the paper").toBeGreaterThanOrEqual(2);
   const [own, fix] = [paper[0].i, paper[1].i];
   const drafted = story.bodyBlocks[fix].draftedText;
@@ -75,7 +81,23 @@ test("a flagged paragraph can be taken on as the author's own or rewritten and j
     },
   });
   expect(saved.status()).toBe(200);
-  for (const at of [own, fix]) {
+
+  /* Find the two blocks again by what they now say, not by where they were.
+   *
+   * A block is addressed by its position in an array that both the save and
+   * the read can filter — an empty paragraph is not stored, and an image whose
+   * file is missing is not presented. Neither happens here, but re-deriving the
+   * positions after the save costs nothing and removes the assumption. */
+  story = await read();
+  const flagged = story.bodyBlocks
+    .map((b, i) => ({ b, i }))
+    .filter(({ b }) => (b.html || "").includes(OFF_TOPIC))
+    .map(({ i }) => i);
+  expect(flagged, "both rewritten paragraphs survived the save").toHaveLength(2);
+  /* Document order, so these line up with `own` and `fix` as chosen above. */
+  const [, fixAt] = flagged;
+
+  for (const at of flagged) {
     story = await read();
     const judged = await page.request.post(`${apiUrl}/api/editorial-stories/${storyId}/blocks/${at}/recheck`, {
       data: { baseVersion: story.version },
@@ -95,7 +117,11 @@ test("a flagged paragraph can be taken on as the author's own or rewritten and j
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("still need a look");
   await expect(dialog.getByRole("button", { name: "Publish now" })).toBeDisabled();
-  await dialog.getByRole("button", { name: "Go to it" }).click();
+  /* One "Go to it" per flagged paragraph, so this is two buttons while two
+     are flagged and one after the first is resolved. Taking the first is
+     what a scholar does; naming it keeps the locator unambiguous either
+     way rather than passing only while the count happens to be one. */
+  await dialog.getByRole("button", { name: "Go to it" }).first().click();
 
   /* One: the author takes it on. It stops being a claim about the paper. */
   const resolve = page.locator(".sr-resolve");
@@ -105,19 +131,29 @@ test("a flagged paragraph can be taken on as the author's own or rewritten and j
   await resolve.getByRole("button", { name: "Mark as my own view" }).click();
   await expect(page.locator(".block-row .block-chip.is-own")).toHaveCount(1);
   await expect(page.locator(".sc-write-attention")).toContainText("1 paragraph");
-  await expect(page.locator(".sc-write-saved")).toHaveText("Saved", { timeout: 30_000 });
+  /* "Saved" is the moment; a version number is that moment settled. Either
+     means the edit reached the server, and asserting only the first races
+     the indicator — the same tolerant form the first wait uses. */
+  await expect(page.locator(".sc-write-saved")).toHaveText(/^(Saved|v\d+)$/, { timeout: 30_000 });
 
   /* One is still flagged, so the gate is still shut. */
   await publishCheck.click();
   await expect(dialog.getByRole("button", { name: "Publish now" })).toBeDisabled();
-  await dialog.getByRole("button", { name: "Go to it" }).click();
+  /* One "Go to it" per flagged paragraph, so this is two buttons while two
+     are flagged and one after the first is resolved. Taking the first is
+     what a scholar does; naming it keeps the locator unambiguous either
+     way rather than passing only while the count happens to be one. */
+  await dialog.getByRole("button", { name: "Go to it" }).first().click();
 
   /* Two: the author puts the paragraph right and asks for a fresh verdict.
      The stored verdict is about the old words; this is what earns a new one. */
-  await page.locator(".block-row").nth(fix).locator("[contenteditable=true]").first().click();
+  await page.locator(".block-row").nth(fixAt).locator("[contenteditable=true]").first().click();
   await page.keyboard.press("Control+A");
   await page.keyboard.type(drafted);
-  await expect(page.locator(".sc-write-saved")).toHaveText("Saved", { timeout: 30_000 });
+  /* "Saved" is the moment; a version number is that moment settled. Either
+     means the edit reached the server, and asserting only the first races
+     the indicator — the same tolerant form the first wait uses. */
+  await expect(page.locator(".sc-write-saved")).toHaveText(/^(Saved|v\d+)$/, { timeout: 30_000 });
 
   const recheck = page.locator(".sr-resolve").getByRole("button", { name: "Check it again" });
   await expect(recheck).toBeEnabled({ timeout: 20_000 });

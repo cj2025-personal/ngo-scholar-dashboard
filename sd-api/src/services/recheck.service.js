@@ -46,7 +46,13 @@ async function recheckBlock({ storyId, scholarId, profileId, user, index, baseVe
   if (!Number.isInteger(at) || at < 0 || at >= blocks.length) throw new ApiError(400, "That paragraph is not in this story.");
 
   const raw = blocks[at];
-  if (raw?.type !== "paragraph") throw new ApiError(400, "Only a paragraph is checked against the paper.");
+  /* Names what it found. A quote carries source refs exactly as a paragraph
+     does, so "only a paragraph is checked" is a sentence a caller can read
+     while believing they sent one — the block's type is the fact that
+     resolves it. */
+  if (raw?.type !== "paragraph") {
+    throw new ApiError(400, `Only a paragraph is checked against the paper; block ${at} is a ${raw?.type || "block of unknown type"}.`);
+  }
   const provenance = raw.provenance || null;
   if (!provenance || !(provenance.source_refs || []).length) {
     throw new ApiError(409, "This paragraph cites no passage, so there is nothing to check it against.");
