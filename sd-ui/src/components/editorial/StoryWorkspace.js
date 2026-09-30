@@ -29,6 +29,7 @@ import HistoryRail from "@/components/editorial/HistoryRail";
 import EvidenceRail from "@/components/editorial/EvidenceRail";
 import ReadingLevels from "@/components/editorial/ReadingLevels";
 import RecordBanner from "@/components/editorial/RecordBanner";
+import { HiOutlineChatBubbleLeftRight, HiOutlineLightBulb } from "react-icons/hi2";
 import StudioAgentShell, { AgentAbout, AgentIdentity, AgentTabs, STUDIO_PERMISSIONS } from "@/components/editorial/StudioAgentShell";
 import AgentIdeas, { newStoryIdeas, reviewIdeas } from "@/components/editorial/AgentIdeas";
 import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
@@ -877,7 +878,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                 </div>
               ) : null}
               {outlineStage ? null : (
-                <AgentTabs tabs={[{ key: "chat", label: "Chat", icon: "💬" }, { key: "ideas", label: "Ideas", icon: "✦" }]} tab={newTab} onTab={(k) => { setNewTab(k); setNewAbout(false); }} />
+                <AgentTabs vertical tabs={[{ key: "chat", label: "Chat", icon: <HiOutlineChatBubbleLeftRight size={20} /> }, { key: "ideas", label: "Ideas", icon: <HiOutlineLightBulb size={20} /> }]} tab={newTab} onTab={(k) => { setNewTab(k); setNewAbout(false); }} />
               )}
             </aside>
           </div>

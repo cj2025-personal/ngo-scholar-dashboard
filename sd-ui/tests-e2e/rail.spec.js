@@ -34,7 +34,9 @@ test("the pane opens from the bottom-left nudge, moves the editor over, and clos
   const rail = page.locator(".ws-right.is-agent");
   await expect(rail).toBeVisible();
   await expect.poll(async () => (await rail.boundingBox()).x).toBe(0);
-  await expect.poll(async () => grid.evaluate((el) => getComputedStyle(el).paddingLeft)).toBe("400px");
+  /* The editor leaves exactly the pane's width free. */
+  const railWidth = await rail.evaluate((el) => getComputedStyle(el).width);
+  await expect.poll(async () => grid.evaluate((el) => getComputedStyle(el).paddingLeft)).toBe(railWidth);
   await expect(nudge).toHaveCount(0);
 
   /* Something said, then closed: the editor is back where it was. */

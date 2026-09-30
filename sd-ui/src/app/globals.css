@@ -4384,3 +4384,82 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .ch-composer .ag-box { align-items: flex-end; }
 .ch-composer .ag-send { flex: 0 0 34px; }
 .ws-plan .ch-context { margin: 0 0 10px; }
+
+/* ══ The agent's pane, shaped like a messaging app ═════════════════════════
+   An icon bar down the far left for the sections; beside it the chat column,
+   full height under the nav, edge to edge; the editor is the page to the
+   right. Agent messages are soft cards, the scholar's are bubbles on the
+   right, and the composer is a pill with "+" for the paper and an arrow to
+   send. The pieces keep their places in the tree; the grid puts them where
+   they go. ═══════════════════════════════════════════════════════════════ */
+.sc-writer { --ag-rail-w: 456px; --ag-iconbar-w: 56px; }
+
+.ws-right.is-agent.ws-agent-rail {
+  display: grid;
+  grid-template-columns: var(--ag-iconbar-w) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--sd-surface);
+}
+.ws-agent-rail > .ws-iconbar { grid-column: 1; grid-row: 1 / -1; }
+.ws-agent-rail > .ws-agent-head { grid-column: 2; grid-row: 1; }
+.ws-agent-rail > .ws-rail-body, .ws-agent-rail > .ws-agent-body, .ws-agent-rail > .rc-about { grid-column: 2; grid-row: 2; min-height: 0; }
+.sc-writer.has-rail .ws-right > .ws-rail-body { display: flex; flex-direction: column; min-height: 0; }
+.sc-writer.has-rail .ws-right > .ws-rail-body.is-hidden { display: none; }
+
+/* The icon bar. */
+.ws-iconbar { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; border-right: 1px solid var(--sd-line-soft); background: var(--sd-surface-2); }
+.ws-icon-tab { position: relative; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 12px; background: none; color: var(--sd-muted); cursor: pointer; transition: background 140ms ease, color 140ms ease; }
+.ws-icon-tab:hover { background: var(--sd-surface); color: var(--sd-heading); }
+.ws-icon-tab.on { background: var(--sd-surface); color: var(--navy); box-shadow: var(--sd-sh-sm); }
+.ws-icon-tab-ic { display: grid; place-items: center; line-height: 0; }
+.ws-tab-badge.is-corner { position: absolute; top: 4px; right: 4px; margin: 0; }
+
+/* The head: face, name, what it is doing. */
+.ws-agent-rail > .ws-agent-head { padding: 14px 14px 12px 18px; border-bottom: 1px solid var(--sd-line-soft); }
+.ws-agent-rail .rc-identity-text b { font-size: 15px; }
+.ws-agent-rail .rc-status { font-size: 12px; }
+
+/* The conversation. */
+.ws-agent-rail .ch-wrap { padding: 0; }
+.ws-agent-rail .ch-thread { padding: 18px 18px 10px; gap: 16px; mask-image: none; }
+.ws-agent-rail .ch-msg { gap: 10px; }
+.ws-agent-rail .ch-msg.is-agent .ch-bubble { background: var(--sd-surface-2); border-radius: 18px 18px 18px 6px; padding: 12px 14px; font-size: 14.5px; line-height: 1.6; max-width: 92%; }
+.ws-agent-rail .ch-msg.is-agent.is-outline .ch-bubble, .ws-agent-rail .ch-msg.is-agent.is-papers .ch-bubble, .ws-agent-rail .ch-msg.is-agent.is-audience .ch-bubble { max-width: 100%; }
+.ws-agent-rail .ch-msg.is-user { justify-content: flex-end; }
+.ws-agent-rail .ch-msg.is-user .ch-bubble { background: var(--navy); color: #fff; border-radius: 18px 18px 6px 18px; padding: 10px 14px; font-size: 14.5px; line-height: 1.55; max-width: 84%; }
+.ws-agent-rail .ch-wrap .ag-avatar { flex-basis: 24px; width: 24px; height: 24px; margin-top: 2px; font-size: 10px; }
+.ws-agent-rail .ch-wrap .ag-working { background: var(--sd-surface-2); border-radius: 18px 18px 18px 6px; padding: 10px 14px; }
+.ws-agent-rail .ch-papers { margin-top: 10px; }
+.ws-agent-rail .ch-paper { background: var(--sd-surface); }
+
+/* The composer: one pill. */
+.ws-agent-rail .ch-composer { position: static; padding: 8px 14px 12px; gap: 6px; background: var(--sd-surface); border-top: 1px solid var(--sd-line-soft); }
+.ws-agent-rail .ch-context { margin: 0 0 4px; padding: 6px 12px; font-size: 12px; }
+.ws-agent-rail .ch-dock { border: 1px solid var(--sd-line); border-radius: 999px; padding: 6px 6px 6px 8px; background: var(--sd-surface); box-shadow: var(--sd-sh-sm); }
+.ws-agent-rail .ch-dock:focus-within { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.10); }
+.ws-agent-rail .ch-composer .ag-box { align-items: center; gap: 6px; }
+.ws-agent-rail .ch-wrap .ag-input { min-height: 24px; max-height: 140px; padding: 6px 4px; font-size: 14.5px; }
+.ch-plus { flex: 0 0 34px; width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 999px; background: var(--sd-surface-2); color: var(--sd-muted); cursor: pointer; }
+.ch-plus:hover:not(:disabled) { background: var(--ark-navy-soft); color: var(--navy); }
+.ch-plus:disabled { opacity: 0.5; cursor: default; }
+.ws-agent-rail .ch-composer .ag-send { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 999px; }
+.ws-agent-rail .ch-wrap .ag-hint { display: flex; justify-content: space-between; padding: 0 8px; font-size: 11px; }
+/* A textarea taller than one line rounds the pill's corners less. */
+.ws-agent-rail .ch-dock:has(.ag-input[style*="height"]) { border-radius: 22px; }
+
+/* The sections beside the chat fit the column and scroll on their own. */
+.ws-agent-rail > .ws-agent-body { display: flex; flex-direction: column; overflow: auto; }
+.ws-agent-rail .ws-ideas { padding: 16px 18px 18px; }
+.ws-agent-rail .ws-ideas .ag-example { white-space: normal; line-height: 1.4; }
+
+@media (max-width: 1100px) {
+  .ws-right.is-agent.ws-agent-rail { grid-template-columns: var(--ag-iconbar-w) minmax(0, 1fr); }
+}
+
+/* The composer area is a rounded card, not a flat slab. */
+.ws-agent-rail .ch-composer { border-radius: 16px 16px 0 0; }
+
+
+/* Icon tabs are squares, not stretched strips: the foot-tab rule gave every .ws-tab flex: 1. */
+.ws-iconbar .ws-icon-tab { flex: 0 0 40px; padding: 0; border-bottom: 0; text-align: center; }
+.ws-iconbar .ws-icon-tab.on { border-bottom: 0; }

@@ -13,6 +13,10 @@
  * the document; that is a change worth making on its own, not a line here.
  */
 const nextConfig = {
+  /* No floating "N" badge in development. It sat in a corner the product
+     now uses — the agent's nudge bottom-left, the pane's tabs bottom-right —
+     and covered whatever was there, in the browser suite as well as by hand. */
+  devIndicators: false,
   /* Cloud Run runs the server Next emits, not `next start`.
    *
    * `standalone` writes .next/standalone with a server.js and only the

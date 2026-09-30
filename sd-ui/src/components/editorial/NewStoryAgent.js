@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
+import { FaCheck, FaXmark } from "react-icons/fa6";
+import { HiOutlineArrowUp, HiOutlinePlus } from "react-icons/hi2";
 
 import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 import AgentFace from "./AgentFace";
@@ -611,6 +612,18 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
         ) : null}
         <div className="ch-dock">
           <div className="ag-box">
+            {/* "+": the paper, the reader, the voice. With no paper yet it
+                asks which; with one, it opens the line above for changing. */}
+            <button
+              type="button"
+              className="ch-plus"
+              aria-label={selectedPaper ? "Options" : "Add a source"}
+              title={selectedPaper ? "Which source, who it is for, whose voice" : "Add a source"}
+              disabled={!ready || busy || (locked && !outlineWaiting)}
+              onClick={() => { if (!selectedPaper) { askWhichPaper(); return; } const el = bandsRef.current; if (el) el.open = !el.open; }}
+            >
+              <HiOutlinePlus size={18} aria-hidden />
+            </button>
             <textarea
               ref={inputRef}
               className="ag-input"
@@ -621,7 +634,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             />
-            <button type="submit" className="ag-send" disabled={!ready || busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><FaPaperPlane size={13} aria-hidden /></button>
+            <button type="submit" className="ag-send" disabled={!ready || busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><HiOutlineArrowUp size={16} aria-hidden /></button>
           </div>
         </div>
         <div className="ag-hint">

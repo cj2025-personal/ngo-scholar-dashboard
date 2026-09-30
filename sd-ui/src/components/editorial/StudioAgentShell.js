@@ -95,9 +95,26 @@ export function AgentAbout({ onClose, permissions, termsVersion = null, onTerms,
   );
 }
 
-/** The foot: the sections, as tabs. */
-export function AgentTabs({ tabs, tab, onTab }) {
+/**
+ * The sections, as tabs: along the foot, or as an icon bar down the side
+ * (`vertical`), where each tab is an icon with its name for a screen
+ * reader and a tooltip. Either way they are real tabs.
+ */
+export function AgentTabs({ tabs, tab, onTab, vertical = false }) {
   if (!tabs || tabs.length < 2) return null;
+  if (vertical) {
+    return (
+      <div className="ws-iconbar" role="tablist" aria-label="Agent sections" aria-orientation="vertical">
+        {tabs.map((t) => (
+          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`ws-tab ws-icon-tab${tab === t.key ? " on" : ""}`} title={t.label} onClick={() => onTab(t.key)}>
+            <span className="ws-icon-tab-ic" aria-hidden>{t.icon}</span>
+            <span className="sr-only">{t.label}</span>
+            {t.badge ? <span className="ws-tab-badge is-corner" aria-hidden>{t.badge}</span> : null}
+          </button>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="rc-tabs ws-tabs" role="tablist" aria-label="Agent sections" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
       {tabs.map((t) => (
