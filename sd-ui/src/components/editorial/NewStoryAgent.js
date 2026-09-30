@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
-import { HiChevronDown, HiOutlineAcademicCap, HiOutlineDocumentText, HiOutlinePencilSquare, HiOutlinePlusSmall, HiOutlineUsers } from "react-icons/hi2";
 
 import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 import AgentFace from "./AgentFace";
@@ -23,11 +22,70 @@ import { useStudioPersona } from "./StudioAgentShell";
  * so a story is one thing in one place whoever wrote its first paragraph.
  */
 
-const PLACEHOLDER_START = "Describe the article you want: what to focus on, what to leave out, who it is for…";
+const PLACEHOLDER_START = "Describe the article you want, or say which paper it should come from…";
 const PLACEHOLDER_REPLY = "Reply with what to change about the outline, or approve it above";
 
 function paperKey(p) {
   return `${p.origin}:${p.id}`;
+}
+
+/* ── understanding what the scholar typed ────────────────────────────────── */
+
+const STOP = new Set(["the", "and", "for", "with", "from", "that", "this", "into", "over", "about", "paper", "study", "article", "research", "using", "based", "small", "large", "their", "there", "what", "which", "when", "have", "been", "were", "will", "would", "should", "could", "than", "then", "them", "they", "your", "some", "more", "most", "very", "also", "just", "like", "make", "write", "want", "generate", "draft", "create"]);
+const words = (t) => String(t || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3 && !STOP.has(w));
+
+/** The paper the scholar named, by title words, or null when no single paper stands out. */
+function matchPaper(text, papers) {
+  const asked = new Set(words(text));
+  if (!asked.size) return null;
+  const scored = papers.map((p) => {
+    const title = words(p.title);
+    const hits = title.filter((w) => asked.has(w)).length;
+    return { p, hits, share: title.length ? hits / title.length : 0 };
+  }).filter((s) => s.hits >= 2 || (s.hits >= 1 && s.share >= 0.5)).sort((a, b) => b.hits - a.hits || b.share - a.share);
+  if (!scored.length) return null;
+  if (scored.length > 1 && scored[0].hits === scored[1].hits) return null;
+  return scored[0].p;
+}
+
+/** "Write from one of my papers": a request for a paper, with no article described yet. */
+function isBarePaperRequest(text) {
+  const t = String(text || "").toLowerCase();
+  const mentionsPaper = /\b(paper|papers|study|research|publication|article)\b/.test(t);
+  return mentionsPaper && words(t).length <= 3;
+}
+
+/** A reading age said in words, when the scholar answers by typing. */
+function audienceIn(text) {
+  const t = String(text || "").toLowerCase();
+  if (/\b(8|eight|nine|ten|eleven|11|kids?|children|child|primary|young readers)\b/.test(t) && !/\b1[2-8]\b/.test(t)) return "ages_8_11";
+  if (/\b(12|13|14|twelve|thirteen|fourteen|middle school|tweens?)\b/.test(t)) return "ages_12_14";
+  if (/\b(15|16|17|18|fifteen|sixteen|seventeen|eighteen|teens?|teenagers?|high school|sixth form|secondary school)\b/.test(t)) return "ages_15_18";
+  if (/\b(adults?|general readers?|the public|grown-?ups?)\b/.test(t)) return "adults";
+  return null;
+}
+
+function PaperCards({ papers, onPick, disabled }) {
+  return (
+    <div className="ch-papers">
+      {papers.map((p) => (
+        <button key={paperKey(p)} type="button" className="ch-paper" disabled={disabled} onClick={() => onPick(p)}>
+          <span className="ch-paper-title">{p.title}</span>
+          <span className="ch-paper-meta">{[p.year, p.wordCount ? `${Number(p.wordCount).toLocaleString()} words` : null, p.host || null].filter(Boolean).join(" · ")}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AudienceChips({ onPick, disabled }) {
+  return (
+    <div className="ch-chips">
+      {DRAFT_AUDIENCES.map((a) => (
+        <button key={a.value} type="button" className={`ch-chip${a.value === DEFAULT_AUDIENCE ? " is-default" : ""}`} disabled={disabled} onClick={() => onPick(a.value)}>{a.label}{a.value === DEFAULT_AUDIENCE ? " · default" : ""}</button>
+      ))}
+    </div>
+  );
 }
 
 function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, persona }) {
@@ -112,6 +170,10 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   const [job, setJob] = useState(null);
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
+  /* A brief said before the paper was chosen, waiting for it. */
+  const pendingBriefRef = useRef(null);
+  /* The agent has asked who the article is for and is waiting on the answer. */
+  const [askingAudience, setAskingAudience] = useState(false);
   const stopRef = useRef(null);
   const threadRef = useRef(null);
   const inputRef = useRef(null);
@@ -178,7 +240,12 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       push({ role: "agent", text: inv.nudge || "Nothing is ready to draft from yet. Add a paper you hold the rights to and come back." });
       return;
     }
-    push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? Pick the paper and the reader below, then tell me what the article should be: what to focus on, what to leave out, the angle you want — or what your work means for readers today. I will read the paper and propose an outline before a word is drafted. What you approve lands in the page beside us${hasText ? ", after what you have written" : ""}, as a draft under your name for you to read and change.` });
+    const chosen = (inv.draftable || []).find((p) => paperKey(p) === paper) || null;
+    if (chosen) {
+      push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? We are working from “${chosen.title}”. Tell me what the article should be: what to focus on, what to leave out, who it is for — or ask what the paper could become. I will read it and propose an outline before a word is drafted. What you approve lands in the page beside us${hasText ? ", after what you have written" : ""}, as a draft under your name for you to read and change.` });
+      return;
+    }
+    push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? Tell me in plain words: what to focus on, what to leave out, who it is for. If it should come from one of your papers, say so, or name the paper, and I will show you which we can draw from. I read the paper and propose an outline before a word is drafted; what you approve lands in the page beside us${hasText ? ", after what you have written" : ""}, as a draft under your name for you to read and change.` });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.name, push, resumeJobId]);
 
@@ -302,9 +369,9 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   /* The line under the agent's name, in the pane's head. */
   const progressText = messages.find((m) => m.role === "progress")?.text || "";
   useEffect(() => {
-    const text = busy ? (progressText || "Working") : outlineWaiting ? "An outline is waiting for your approval" : locked ? "Draft in hand" : !ready ? "Looking at your papers" : selectedPaper ? `Ready to plan from “${String(selectedPaper.title || "").length > 26 ? `${String(selectedPaper.title).slice(0, 25).trim()}…` : selectedPaper.title}”` : "Pick a paper to begin";
+    const text = busy ? (progressText || "Working") : outlineWaiting ? "An outline is waiting for your approval" : locked ? "Draft in hand" : !ready ? "Looking at your papers" : selectedPaper ? `Ready to plan from “${String(selectedPaper.title || "").length > 26 ? `${String(selectedPaper.title).slice(0, 25).trim()}…` : selectedPaper.title}”` : askingAudience ? "Who is the article for?" : "Tell me what to write";
     onStatus?.({ text, busy });
-  }, [busy, progressText, outlineWaiting, locked, ready, selectedPaper, onStatus]);
+  }, [busy, progressText, outlineWaiting, locked, ready, selectedPaper, askingAudience, onStatus]);
   useEffect(() => { onPaperChange?.(selectedPaper); }, [selectedPaper, onPaperChange]);
 
   /* Coming back to a job from Studio. */
@@ -328,18 +395,80 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeJobId]);
 
+  /** Plan the article from a brief, with the paper, reader and voice as set. */
+  async function startJob(brief, { from = selectedPaper, forAudience = audience } = {}) {
+    if (!from) return;
+    setBusy(true);
+    setProgress("Reading the paper…");
+    wantedLevelsRef.current = levelBands.filter((a) => a !== forAudience);
+    /* No story from the job: the page beside us is the story. */
+    const r = await createDraftJob({ origin: from.origin, sourceId: from.id, audience: forAudience, voice, brief, approveOutline: true, createStory: false, levels: false });
+    if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
+    const j = r.data.job;
+    setJob(j);
+    if (j.status === "awaiting_outline") { setBusy(false); showOutline(j, { replans: j.replans || 0 }); return; }
+    if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That draft did not complete." }); return; }
+    if (settle(j, from)) { setBusy(false); return; }
+    watch(j);
+  }
+
+  /** Which paper: shown as cards in the thread, for a tap or a name. */
+  function askWhichPaper(lead) {
+    push({ role: "papers", text: lead || "Which of your papers should this come from? Tap one, or name it. Only papers we hold in full and may reproduce are listed." });
+  }
+
+  /** The scholar tapped a paper, or named one. */
+  function pickPaper(p, { said = true } = {}) {
+    setPaper(paperKey(p));
+    if (said) push({ role: "user", text: `Use “${p.title}”.` });
+    const brief = pendingBriefRef.current;
+    if (brief) {
+      /* The article is described; one question left before planning. */
+      setAskingAudience(true);
+      push({ role: "audience", text: `Working from “${p.title}”. Who is this for? Tap an age, or tell me; adults unless you say otherwise.` });
+      return;
+    }
+    push({ role: "agent", text: `Working from “${p.title}”. Now tell me what the article should be: what to focus on, what to leave out, who it is for — or ask what the paper could become.` });
+  }
+
+  /** The reader's age, tapped or typed, and then the plan. */
+  function pickAudience(value, { said = true } = {}) {
+    const label = DRAFT_AUDIENCES.find((a) => a.value === value)?.label || value;
+    setAudience(value);
+    setAskingAudience(false);
+    if (said) push({ role: "user", text: `For ${label.toLowerCase()}.` });
+    const brief = pendingBriefRef.current;
+    pendingBriefRef.current = null;
+    const from = draftable.find((p) => paperKey(p) === paper) || selectedPaper;
+    startJob(brief || "", { from, forAudience: value });
+  }
+
   async function send() {
     const ask = text.trim();
     /* Enter reaches here even when the button is disabled. */
     if (!ask || busy || !ready) return;
-    if (!locked && !selectedPaper) {
-      push({ role: "user", text: ask });
-      push({ role: "agent", text: "Which paper should this come from? Pick one below; only papers we hold in full and may reproduce are listed." });
-      setText("");
-      return;
-    }
     setText("");
     push({ role: "user", text: ask });
+
+    /* An age, typed in answer to the question; or a fuller brief instead. */
+    if (askingAudience && !locked) {
+      const said = audienceIn(ask);
+      if (said && words(ask).length <= 4) { pickAudience(said, { said: false }); return; }
+      pendingBriefRef.current = ask;
+      pickAudience(audienceIn(ask) || DEFAULT_AUDIENCE, { said: false });
+      return;
+    }
+
+    if (!locked && !selectedPaper) {
+      /* The paper may be named in the brief itself. */
+      const named = matchPaper(ask, draftable);
+      pendingBriefRef.current = isBarePaperRequest(ask) ? null : ask;
+      if (named) { pickPaper(named, { said: false }); return; }
+      if (draftable.length === 1) { pickPaper(draftable[0], { said: false }); return; }
+      askWhichPaper(pendingBriefRef.current ? "Which of your papers should this come from? Tap one, or name it." : null);
+      return;
+    }
+
     setBusy(true);
     if (outlineWaiting) {
       setProgress("Replanning the outline from what you said…");
@@ -349,17 +478,11 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       watch(r.data.job, r.data.job.lastSequence || 0);
       return;
     }
-    setProgress("Reading the paper…");
-    wantedLevelsRef.current = levelBands.filter((a) => a !== audience);
-    /* No story from the job: the page beside us is the story. */
-    const r = await createDraftJob({ origin: selectedPaper.origin, sourceId: selectedPaper.id, audience, voice, brief: ask, approveOutline: true, createStory: false, levels: false });
-    if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
-    const j = r.data.job;
-    setJob(j);
-    if (j.status === "awaiting_outline") { setBusy(false); showOutline(j, { replans: j.replans || 0 }); return; }
-    if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That draft did not complete." }); return; }
-    if (settle(j, selectedPaper)) { setBusy(false); return; }
-    watch(j);
+    setBusy(false);
+    /* The reader, if the brief names one; else as set, adults by default. */
+    const forAudience = audienceIn(ask) || audience;
+    if (forAudience !== audience) setAudience(forAudience);
+    await startJob(ask, { forAudience });
   }
 
   async function approve(outline) {
@@ -402,6 +525,28 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
             return <OutlineMessage key={m.id} msg={m} latest={m.id === latestOutlineId && outlineWaiting} busy={busy} onApprove={approve} onDiscard={discard} persona={persona} />;
           }
           if (m.role === "user") return <div key={m.id} className="ch-msg is-user"><div className="ch-bubble">{m.text}</div></div>;
+          if (m.role === "papers") {
+            return (
+              <div key={m.id} className="ch-msg is-agent is-papers">
+                <AgentFace persona={persona} />
+                <div className="ch-bubble">
+                  <p className="ch-text">{m.text}</p>
+                  <PaperCards papers={draftable} disabled={busy || locked || Boolean(selectedPaper)} onPick={(p) => pickPaper(p)} />
+                </div>
+              </div>
+            );
+          }
+          if (m.role === "audience") {
+            return (
+              <div key={m.id} className="ch-msg is-agent is-audience">
+                <AgentFace persona={persona} />
+                <div className="ch-bubble">
+                  <p className="ch-text">{m.text}</p>
+                  <AudienceChips disabled={busy || locked || !askingAudience} onPick={(a) => pickAudience(a)} />
+                </div>
+              </div>
+            );
+          }
           if (m.role === "progress") {
             return (
               <div key={m.id} className="ch-msg is-agent">
@@ -416,81 +561,72 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       </div>
 
       <form className="ch-composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
+        {/* What the article is set to, once anything is: the paper, the
+            reader, the voice, the other ages. Said in a line above the box,
+            with the controls one tap away behind "Change", never in the way
+            of the words. The selects keep their labels so the keyboard, the
+            screen reader and the browser suite see ordinary controls. */}
+        {selectedPaper || locked ? (
+          <div className={`ch-context${locked ? " is-locked" : ""}`}>
+            <span className="ch-context-line">
+              <b>From</b> “{selectedPaper?.title || "your paper"}” · <b>for</b> {DRAFT_AUDIENCES.find((a) => a.value === audience)?.label.toLowerCase() || "adults"} · {DRAFT_VOICES.find((v) => v.value === voice)?.label.toLowerCase() || "my own account"}{extraBands.length ? ` · also for ${extraBands.length} more ${extraBands.length === 1 ? "age" : "ages"}` : ""}
+            </span>
+            {locked ? (
+              <span className="ch-locked">Set for this draft · <button type="button" className="st-link" onClick={startAnother}>Start another</button></span>
+            ) : (
+              <details ref={bandsRef} className="ch-context-more">
+                <summary className="st-link">Change</summary>
+                <div className="ch-menu ch-context-menu">
+                  <label className="ch-field"><span>Paper</span>
+                    <select aria-label="Paper" value={paper || ""} onChange={(e) => setPaper(e.target.value || null)}>
+                      <option value="">Choose a paper…</option>
+                      {draftable.map((p) => <option key={paperKey(p)} value={paperKey(p)}>{p.title}{p.year ? ` (${p.year})` : ""}</option>)}
+                    </select>
+                  </label>
+                  <label className="ch-field"><span>Reader age</span>
+                    <select aria-label="Reader age" value={audience} onChange={(e) => setAudience(e.target.value)}>
+                      {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label} · grade {a.grade}</option>)}
+                    </select>
+                  </label>
+                  <label className="ch-field"><span>Written as</span>
+                    <select aria-label="Written as" value={voice} onChange={(e) => setVoice(e.target.value)}>
+                      {DRAFT_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+                    </select>
+                  </label>
+                  <fieldset className="ch-field ch-field-bands">
+                    <legend>Also write it for</legend>
+                    <p className="ch-menu__note">After the article, the agent writes it again for each of these, on its own. You approve every level before readers see it.</p>
+                    {DRAFT_AUDIENCES.filter((a) => a.value !== audience).map((a) => (
+                      <label key={a.value} className="ch-menu__row">
+                        <input type="checkbox" checked={levelBands.includes(a.value)} onChange={(e) => setLevelBands((cur) => (e.target.checked ? [...cur, a.value] : cur.filter((v) => v !== a.value)))} />
+                        <span>{a.label}</span>
+                        <span className="ch-menu__grade">reads at grade {a.grade}</span>
+                      </label>
+                    ))}
+                  </fieldset>
+                </div>
+              </details>
+            )}
+          </div>
+        ) : null}
         <div className="ch-dock">
           <div className="ag-box">
             <textarea
               ref={inputRef}
               className="ag-input"
               rows={1}
-              placeholder={outlineWaiting ? PLACEHOLDER_REPLY : PLACEHOLDER_START}
+              placeholder={outlineWaiting ? PLACEHOLDER_REPLY : askingAudience ? "Tap an age above, or tell me who it is for…" : PLACEHOLDER_START}
               value={text}
               disabled={!ready || busy || (locked && !outlineWaiting)}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             />
-          </div>
-
-          {/* The controls are pills under the field: what to read, who for,
-              whose voice. Each is a native select styled over, so the
-              keyboard, the screen reader and the browser suite all see an
-              ordinary control. */}
-          <div className="ch-tools">
-            <span className="ch-pill" title={selectedPaper?.title || "The paper the article draws on"}>
-              <HiOutlineDocumentText size={15} className="ch-pill__ic" aria-hidden />
-              <select className="ch-pill__sel" aria-label="Paper" value={paper || ""} disabled={locked || !inventory} onChange={(e) => setPaper(e.target.value || null)}>
-                <option value="">Choose a paper…</option>
-                {draftable.map((p) => <option key={paperKey(p)} value={paperKey(p)}>{p.title}{p.year ? ` (${p.year})` : ""}</option>)}
-              </select>
-              <HiChevronDown size={13} className="ch-pill__chev" aria-hidden />
-            </span>
-
-            <span className="ch-pill" title="Who the article is written for">
-              <HiOutlineAcademicCap size={15} className="ch-pill__ic" aria-hidden />
-              <select className="ch-pill__sel" aria-label="Reader age" value={audience} disabled={locked} onChange={(e) => setAudience(e.target.value)}>
-                {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label} · grade {a.grade}</option>)}
-              </select>
-              <HiChevronDown size={13} className="ch-pill__chev" aria-hidden />
-            </span>
-
-            <span className="ch-pill" title={DRAFT_VOICES.find((v) => v.value === voice)?.hint}>
-              <HiOutlinePencilSquare size={15} className="ch-pill__ic" aria-hidden />
-              <select className="ch-pill__sel" aria-label="Written as" value={voice} disabled={locked} onChange={(e) => setVoice(e.target.value)}>
-                {DRAFT_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-              </select>
-              <HiChevronDown size={13} className="ch-pill__chev" aria-hidden />
-            </span>
-
-            {/* The other reading ages, behind one pill. */}
-            <details ref={bandsRef} className={locked ? "ch-more is-locked" : extraBands.length ? "ch-more is-set" : "ch-more"}>
-              <summary className="ch-pill is-summary" aria-disabled={locked || undefined} onClick={(e) => { if (locked) e.preventDefault(); }}>
-                {extraBands.length ? <HiOutlineUsers size={15} className="ch-pill__ic" aria-hidden /> : <HiOutlinePlusSmall size={17} className="ch-pill__ic" aria-hidden />}
-                <span className="ch-pill__text">{extraBands.length ? `Also for ${extraBands.length} more ${extraBands.length === 1 ? "age" : "ages"}` : "Other ages"}</span>
-                <HiChevronDown size={13} className="ch-pill__chev" aria-hidden />
-              </summary>
-              <fieldset className="ch-menu" disabled={locked}>
-                <legend className="ch-menu__title">Also write it for</legend>
-                <p className="ch-menu__note">After the article, the agent writes it again for each of these, on its own. You approve every level before readers see it.</p>
-                {DRAFT_AUDIENCES.filter((a) => a.value !== audience).map((a) => (
-                  <label key={a.value} className="ch-menu__row">
-                    <input type="checkbox" checked={levelBands.includes(a.value)} onChange={(e) => setLevelBands((cur) => (e.target.checked ? [...cur, a.value] : cur.filter((v) => v !== a.value)))} />
-                    <span>{a.label}</span>
-                    <span className="ch-menu__grade">reads at grade {a.grade}</span>
-                  </label>
-                ))}
-                <button type="button" className="st-link ch-menu__all" onClick={() => setLevelBands((cur) => (cur.filter((v) => v !== audience).length === DRAFT_AUDIENCES.length - 1 ? [] : DRAFT_AUDIENCES.map((a) => a.value).filter((v) => v !== audience)))}>
-                  {extraBands.length === DRAFT_AUDIENCES.length - 1 ? "None" : "Every age"}
-                </button>
-              </fieldset>
-            </details>
-
-            {locked ? <span className="ch-locked">Set for this draft · <button type="button" className="st-link" onClick={startAnother}>Start another</button></span> : null}
-
             <button type="submit" className="ag-send" disabled={!ready || busy || !text.trim() || (locked && !outlineWaiting)} aria-label="Send"><FaPaperPlane size={13} aria-hidden /></button>
           </div>
         </div>
         <div className="ag-hint">
           <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
-          <span>{outlineWaiting ? "Approve the outline, or say what to change" : "The agent proposes an outline before it drafts"}</span>
+          <span>{outlineWaiting ? "Approve the outline, or say what to change" : selectedPaper ? "An outline is proposed before anything is drafted" : "Name a paper, or ask to write from one"}</span>
         </div>
       </form>
     </div>

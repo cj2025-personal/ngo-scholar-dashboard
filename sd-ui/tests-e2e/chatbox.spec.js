@@ -29,7 +29,7 @@ for (const size of SIZES) {
     await page.setViewportSize({ width: size.width, height: size.height });
     await page.goto("/editorial/new");
     await openAgent(page);
-    await expect(page.getByLabel("Reader age")).toBeVisible();
+    await expect(page.getByPlaceholder(/Describe the article you want/)).toBeVisible();
 
     const composer = page.locator(".ch-composer");
     const box = page.locator(".ch-composer .ag-box");

@@ -4336,3 +4336,38 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 @media (max-width: 1100px) {
   .sc-writer.is-review .ws-right { height: auto; max-height: min(80dvh, 720px); }
 }
+
+/* ── The new story, asked for in words ─────────────────────────────────────
+   No controls in the prompt bar. The agent asks which paper with cards in
+   the thread, asks who it is for with chips, and what is set is said in one
+   line above the box, with the controls behind "Change". ─────────────────── */
+.ch-papers { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.ch-paper { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px; border: 1px solid var(--sd-line); border-radius: 12px; background: var(--sd-surface); cursor: pointer; font: inherit; color: inherit; transition: border-color 140ms ease, background 140ms ease; }
+.ch-paper:hover:not(:disabled) { border-color: var(--navy); background: var(--ark-navy-soft); }
+.ch-paper:disabled { opacity: 0.6; cursor: default; }
+.ch-paper-title { font-weight: 700; font-size: 14px; color: var(--sd-heading); line-height: 1.35; }
+.ch-paper-meta { font-size: 12px; color: var(--sd-faint); }
+
+.ch-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ch-chip { font: inherit; font-size: 13px; font-weight: 600; color: var(--navy); background: var(--sd-surface); border: 1px solid var(--sd-line); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.ch-chip.is-default { border-color: var(--navy); background: var(--ark-navy-soft); }
+.ch-chip:hover:not(:disabled) { background: var(--navy); color: #fff; border-color: var(--navy); }
+.ch-chip:disabled { opacity: 0.6; cursor: default; }
+
+.ch-context { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; padding: 8px 12px; border-radius: 12px; background: var(--ark-navy-soft); font-size: 12.5px; color: var(--sd-heading); }
+.ch-context-line b { font-weight: 700; color: var(--sd-faint); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; }
+.ch-context.is-locked { background: var(--sd-surface-2); }
+.ch-context-more { position: relative; }
+.ch-context-more > summary { list-style: none; cursor: pointer; font-size: 12.5px; }
+.ch-context-more > summary::-webkit-details-marker { display: none; }
+.ch-context-menu { position: absolute; right: 0; bottom: calc(100% + 8px); width: min(340px, calc(100vw - 48px)); display: flex; flex-direction: column; gap: 10px; z-index: 5; }
+.ch-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--sd-muted); }
+.ch-field > span, .ch-field > legend { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sd-faint); }
+.ch-field select { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid var(--sd-line); border-radius: 10px; background: var(--sd-surface); color: var(--ink); }
+.ch-field-bands { border: 0; padding: 0; margin: 0; min-width: 0; }
+.ch-field-bands > legend { padding: 0; }
+
+/* The send button now lives in the box, beside the words. */
+.ch-composer .ag-box { align-items: flex-end; }
+.ch-composer .ag-send { flex: 0 0 34px; }
+.ws-plan .ch-context { margin: 0 0 10px; }
