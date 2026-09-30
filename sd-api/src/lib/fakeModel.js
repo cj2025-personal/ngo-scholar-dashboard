@@ -306,12 +306,97 @@ function answerAgent(contents) {
   return { text: "", functionCalls: calls, parts: calls.map((fc) => ({ functionCall: fc })), usage: usageOf(2), modelVersion: MODEL_VERSION, resourceName: "fake/model" };
 }
 
+/**
+ * The reading companion's tool loop, answered from the question.
+ *
+ * Round one reads what the question points at: the paragraph it names, or
+ * a search for its longer words. Round two answers from what came back.
+ * A few planted phrases drive the Sentinel's paths so the suites can assert
+ * on them: "made up" writes a claim the fake Sentinel will not find in the
+ * sources (rewrite, then a clean second answer); "scary" writes a sentence
+ * it marks unsuitable (refuse); "what does the word X mean" defines X as
+ * background when the text uses it.
+ */
+function answerReader(contents, signal = null) {
+  const fc = (name, args) => ({ text: "", functionCalls: [{ name, args }], parts: [{ functionCall: { name, args } }], usage: { input: 500, output: 40, total: 540 }, modelVersion: MODEL_VERSION, resourceName: "fake/model" });
+  const opening = String(contents[0]?.parts?.[0]?.text || "");
+  const ask = (opening.split("THE READER ASKS:")[1] || "").trim();
+  const low = ask.toLowerCase();
+  const revising = opening.includes("YOUR LAST ANSWER WAS SENT BACK");
+  const last = contents[contents.length - 1];
+  const responses = (last?.parts || []).filter((p) => p.functionResponse).map((p) => String(p.functionResponse.response?.result || ""));
+
+  if (!responses.length) {
+    /* "take your time" stalls the first call, for the deadline path; an abort ends it the way it ends a real request. */
+    if (/take your time/.test(low)) {
+      return new Promise((resolve, reject) => {
+        const t = setTimeout(() => resolve(fc("read_block", { index: 1 })), Number(process.env.FAKE_MODEL_STALL_MS || 4000));
+        signal?.addEventListener("abort", () => { clearTimeout(t); const e = new Error("aborted"); e.name = "AbortError"; reject(e); }, { once: true });
+      });
+    }
+    /* The paragraph named in the question, else the one the reader is looking at. */
+    const m = low.match(/paragraph (\d+)/) || opening.match(/THE READER IS LOOKING AT: \[b(\d+)\]/);
+    if (m) return fc("read_block", { index: Number(m[1]) });
+    const words = low.replace(/what does the word|mean\??/g, " ").split(/\W+/).filter((w) => w.length > 4);
+    return fc("search_passages", { query: words.slice(0, 4).join(" ") || "story" });
+  }
+
+  const found = responses.join("\n");
+  const ids = [...found.matchAll(/^\s*\[([bp]\d+)\]/gm)].map((m) => m[1]);
+  const blockIds = [...new Set(ids.filter((id) => id.startsWith("b")))];
+  const passageIds = [...new Set(ids.filter((id) => id.startsWith("p")))];
+  const firstText = (found.match(/^\s*\[[bp]\d+\](?: \([a-z]+\))?(?: cites [p\d,]+)?:? (.+)$/m) || [])[1] || "";
+  const sentence = sentences(firstText)[0] || "The story says so.";
+
+  const word = (low.match(/what does the word ([a-z-]+)/) || [])[1];
+  if (word && (ids.length || /[bp]\d+/.test(found))) {
+    return fc("answer", { text: `“${word}” here is a plain word for the idea the paragraph is describing. Read the sentence around it and it will make sense.`, grounding: "background", term: word, block_ids: blockIds.slice(0, 1), passage_ids: [] });
+  }
+  if (/scary/.test(low)) {
+    return fc("answer", { text: "This is frightening and violent, and you should be afraid.", grounding: "story", block_ids: blockIds.slice(0, 1), passage_ids: passageIds.slice(0, 1) });
+  }
+  if (/made up/.test(low) && !revising) {
+    return fc("answer", { text: `${sentence} MADE UP FACT: the array was also tested on Mars.`, grounding: "story", block_ids: blockIds.slice(0, 1), passage_ids: passageIds.slice(0, 1) });
+  }
+  if (!ids.length || /^refused|nothing in the story/.test(found)) {
+    return fc("answer", { text: "This article doesn't say. The closest it comes is the first paragraph, which you could read again.", grounding: "not_here", block_ids: ["b1"], passage_ids: [] });
+  }
+  return fc("answer", { text: `Here is what the story says: ${sentence}`, grounding: "story", block_ids: blockIds.slice(0, 2), passage_ids: passageIds.slice(0, 2) });
+}
+
+/**
+ * The Sentinel, answered by wording. A sentence with "MADE UP" is not in the
+ * sources; "frightening" is unsuitable; a question about the reader is
+ * personal data; a sentence saying the article doesn't say is no claim.
+ */
+function answerSentinel(prompt) {
+  const answer = (prompt.split("ANSWER TO CHECK:")[1] || "").trim();
+  const anchors = [...prompt.matchAll(/^\[([bp]\d+)\] /gm)].map((m) => m[1]);
+  const claims = sentences(answer).map((s) => {
+    const absence = /doesn't say|does not say|read it again|read the sentence/i.test(s);
+    const madeUp = /MADE UP/.test(s);
+    return {
+      text: s,
+      in_sources: !madeUp && (absence || anchors.length > 0),
+      anchor_ids: !madeUp && !absence ? anchors.slice(0, 1) : [],
+      unsuitable: /frightening|violent/i.test(s),
+      personal_data: /your name|where you live|how old are you/i.test(s),
+      off_topic: false,
+    };
+  });
+  return JSON.stringify({ claims });
+}
+
 /** Same signature as `vertex.generateContent`. */
-async function generateContent({ prompt, contents = null, tools = null }) {
-  if (tools && Array.isArray(contents)) return answerAgent(contents);
+async function generateContent({ prompt, contents = null, tools = null, signal = null }) {
+  if (tools && Array.isArray(contents)) {
+    if (String(contents[0]?.parts?.[0]?.text || "").includes("THE READER ASKS:")) return answerReader(contents, signal);
+    return answerAgent(contents);
+  }
   const p = String(prompt || (contents ? contents.map((c) => (c.parts || []).map((x) => x.text || "").join("\n")).join("\n") : ""));
   let text;
-  if (p.includes("PARAGRAPHS OF THE AUTHOR'S OWN CONTEXT:")) text = answerContext(p);
+  if (p.includes("ANSWER TO CHECK:")) text = answerSentinel(p);
+  else if (p.includes("PARAGRAPHS OF THE AUTHOR'S OWN CONTEXT:")) text = answerContext(p);
   else if (p.includes("PARAGRAPHS THAT BUILD ON THEM:")) text = answerReach(p);
   else if (p.includes("PARAGRAPHS TO CHECK:")) text = answerJudge(p);
   else if (p.includes("=== PARAGRAPH TO REWRITE FOR ANOTHER READER ===")) text = answerLevel(p);

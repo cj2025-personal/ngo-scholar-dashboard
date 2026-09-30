@@ -97,6 +97,13 @@ const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 3;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** The error a caller's abort surfaces as: named, so it can be told from a fault. */
+function abortError(signal) {
+  const e = new Error(signal?.reason instanceof Error ? signal.reason.message : String(signal?.reason || "The request was aborted."));
+  e.name = "AbortError";
+  return e;
+}
+
 /**
  * One generation.
  *
@@ -119,13 +126,20 @@ async function generateContent({
   /* Gemini function declarations: [{functionDeclarations: [{name, description, parameters}]}]. */
   tools = null,
   toolConfig = null,
+  /* Gemini safety thresholds: [{category, threshold}]. Unset means the
+     model's defaults, which is what every scholar-facing call wants. The
+     reading companion sets the strict ones when the reader is a child. */
+  safetySettings = null,
   temperature = 0.4,
   maxOutputTokens = 4096,
   timeoutMs = 90_000,
+  /* The caller's way out: a reader who closed the page, a turn past its
+     deadline. Aborting ends the request in flight and stops the retries. */
+  signal = null,
 }) {
   const missing = describeMissingConfig();
   if (missing) throw new Error(`Drafting is not configured: ${missing}`);
-  if (isFake()) return require("./fakeModel").generateContent({ prompt, contents, systemInstruction, responseSchema, tools });
+  if (isFake()) return require("./fakeModel").generateContent({ prompt, contents, systemInstruction, responseSchema, tools, signal });
 
   const resourceName = resolveResourceName();
   const url = buildUrl(resourceName);
@@ -143,12 +157,16 @@ async function generateContent({
     ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
     ...(tools ? { tools } : {}),
     ...(toolConfig ? { toolConfig } : {}),
+    ...(Array.isArray(safetySettings) && safetySettings.length ? { safetySettings } : {}),
   };
 
   let lastError = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    if (signal?.aborted) throw abortError(signal);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const onAbort = () => controller.abort();
+    signal?.addEventListener("abort", onAbort, { once: true });
     let response;
     try {
       response = await fetch(url, {
@@ -160,6 +178,9 @@ async function generateContent({
     } catch (error) {
       lastError = error;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      /* The caller's abort is not a fault to retry. */
+      if (signal?.aborted) throw abortError(signal);
       if (attempt < MAX_ATTEMPTS) {
         await sleep(500 * 2 ** (attempt - 1));
         continue;
@@ -167,6 +188,7 @@ async function generateContent({
       throw new Error(`Vertex request failed: ${error.message}`);
     }
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
 
     if (!response.ok) {
       const snippet = (await response.text().catch(() => "")).slice(0, 300);
