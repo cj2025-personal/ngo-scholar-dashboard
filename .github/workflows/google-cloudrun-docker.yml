@@ -165,14 +165,14 @@ jobs:
           # secret which does not exist, and reports it as a failed revision
           # rather than as a missing secret. Named here instead.
           missing=""
-          for s in MONGODB_URI scholar-api-service-token scholar-api-ledger-signing-key; do
+          for s in MONGODB_URI scholar-api-service-token scholar-api-ledger-signing-key scholar-api-reader-cookie-secret; do
             gcloud secrets describe "$s" --project="${PROJECT_ID}" >/dev/null 2>&1 || missing="${missing} $s"
           done
           if [ -n "${missing}" ]; then
             echo "::error::Secret Manager is missing:${missing}. Create them before deploying — the revision would start and immediately fail." >&2
             exit 1
           fi
-          echo "secrets present: MONGODB_URI, scholar-api-service-token, scholar-api-ledger-signing-key"
+          echo "secrets present: MONGODB_URI, scholar-api-service-token, scholar-api-ledger-signing-key, scholar-api-reader-cookie-secret"
 
           SA="scholar-api-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
           if ! gcloud iam service-accounts describe "${SA}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
@@ -217,14 +217,17 @@ jobs:
       #
       # Cloud Run REFUSES TO START a revision that mounts a secret which does
       # not exist, so every name below must be present in the project before a
-      # deploy. The three here are:
+      # deploy. The four here are:
       #
       #   MONGODB_URI                     already existed; shared with the estate
       #   scholar-api-service-token       created for this service
       #   scholar-api-ledger-signing-key  created for this service
+      #   scholar-api-reader-cookie-secret created for this service: signs the
+      #                                   reading companion's device cookie, so
+      #                                   a reader's thread survives a restart
       #
       # The runtime service account is granted secretAccessor on exactly those
-      # three and nothing else. It is `scholar-api-runtime` rather than the
+      # four and nothing else. It is `scholar-api-runtime` rather than the
       # existing `archivyn-api-runtime` deliberately: sharing that identity
       # would hand sd-api the admin API's secrets as well.
       #
