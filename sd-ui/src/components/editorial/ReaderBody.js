@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { DRAFT_AUDIENCES, getPublicStoryPassages, publicEvidenceUrl } from "@/lib/drafting";
 import { normaliseAudience } from "@/lib/readability";
+import ReaderCompanion from "./ReaderCompanion";
 
 /**
  * The article body with a Sources toggle.
@@ -36,12 +37,30 @@ export default function ReaderBody({ story }) {
   const [passages, setPassages] = useState(null);
   const [open, setOpen] = useState(null); // { index, ids }
   const [level, setLevel] = useState(null);
+  /* The paragraph the reader last touched, numbered the way the companion
+     numbers text blocks: images skipped, 1-based. */
+  const [focus, setFocus] = useState(null);
   const levels = Array.isArray(story?.levels) ? story.levels : [];
   const own = normaliseAudience(story?.provenance?.audience);
   const shown = level ? levels.find((l) => l.audience === level) : null;
   const blocks = shown ? shown.blocks : story?.bodyBlocks || [];
   const drafted = blocks.some((b) => Array.isArray(b.sourceRefs) && b.sourceRefs.length);
   const alerts = story?.record?.alerts || [];
+  /* Text-block numbers, in the companion's terms, for every block index. */
+  const textIndex = [];
+  let textCount = 0;
+  for (const b of blocks) textIndex.push(b.type === "image" ? null : ++textCount);
+  const plainText = (html) => String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+  function jumpTo(id) {
+    const m = /^b(\d+)$/.exec(id);
+    if (!m) return;
+    const el = document.getElementById(`rb-b${m[1]}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("is-cited");
+    setTimeout(() => el.classList.remove("is-cited"), 1800);
+  }
 
   useEffect(() => {
     if (!showSources || passages || !story?.slug) return;
@@ -88,9 +107,14 @@ export default function ReaderBody({ story }) {
           const cls = block.type === "heading" ? "reader-heading" : block.type === "subheading" ? "reader-subheading" : block.type === "quote" ? "reader-quote" : "reader-paragraph";
           const ids = Array.isArray(block.sourceRefs) ? block.sourceRefs.map((r) => r.passageId) : [];
           const marked = showSources && Tag === "p";
+          const n = textIndex[index];
+          const focused = focus?.index === n;
           return (
-            <div key={`b-${index}`} className={marked ? "reader-block is-marked" : "reader-block"}>
-              <Tag className={cls} dangerouslySetInnerHTML={{ __html: block.html || "" }} />
+            <div key={`b-${index}`} id={n ? `rb-b${n}` : undefined} className={`reader-block${marked ? " is-marked" : ""}${focused ? " is-focus" : ""}`}>
+              {/* A tap on a paragraph tells the companion which one the
+                  reader means, and nothing else; there is no other selection
+                  a public page could sensibly offer a child. */}
+              <Tag className={cls} dangerouslySetInnerHTML={{ __html: block.html || "" }} onClick={n && Tag === "p" ? () => setFocus(focused ? null : { index: n, text: plainText(block.html).slice(0, 140) }) : undefined} />
               {marked ? (
                 ids.length && block.traceable !== false ? (
                   <button type="button" className={`reader-srcmark${block.extension ? " is-reach" : ""}${open?.index === index ? " on" : ""}`} title={block.extension ? "Goes beyond the paper: what follows from these passages" : "From the paper"} onClick={() => setOpen(open?.index === index ? null : { index, ids })} aria-expanded={open?.index === index}>
@@ -147,6 +171,7 @@ export default function ReaderBody({ story }) {
           {story?.slug ? <a href={publicEvidenceUrl(story.slug)} target="_blank" rel="noreferrer noopener">Verify it</a> : null}
         </footer>
       ) : null}
+      {story?.slug ? <ReaderCompanion slug={story.slug} level={level} focus={focus} onCite={jumpTo} /> : null}
     </>
   );
 }

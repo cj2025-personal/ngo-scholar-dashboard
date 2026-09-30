@@ -80,6 +80,17 @@ function readsLine({ total, recent }) {
   return recent && recent < total ? `${all} · ${recent.toLocaleString()} this week` : all;
 }
 
+/**
+ * What readers asked the companion, in a phrase. Counts only: the questions
+ * themselves are the readers' own. The ones the story could not answer are
+ * named, because they are the ones that tell a scholar what to add.
+ */
+function questionsLine({ total, notHere }) {
+  if (!total) return "";
+  const all = `${total.toLocaleString()} question${total === 1 ? "" : "s"} asked`;
+  return notHere ? `${all} · ${notHere.toLocaleString()} the story couldn't answer` : all;
+}
+
 function shortTitle(title, max = 70) {
   const t = String(title || "");
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
@@ -264,6 +275,7 @@ export default function StudioHome({ me, sources, jobs, stories, episodes }) {
                           leaving the line off — "no one yet" is an answer, and
                           the silence it replaces was the whole complaint. */}
                       {s.reads ? ` · ${readsLine(s.reads)}` : ""}
+                      {s.questions?.total ? ` · ${questionsLine(s.questions)}` : ""}
                     </div>
                   </div>
                   <span className="st-story-actions">

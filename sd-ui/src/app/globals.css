@@ -4092,3 +4092,70 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
   .sd-stand__now { padding: 18px 16px; }
   .sd-gate { padding: 16px; }
 }
+
+/* ══ Reading companion (the public reader's helper) ═════════════════════════
+   A docked sheet beside the article, built from the agent console's parts so
+   the two read as one product. Only the way in, the answer's provenance
+   labels and the activity list are new.
+   ═══════════════════════════════════════════════════════════════════════ */
+.rc-launch {
+  position: fixed; right: 24px; bottom: 24px; z-index: 40;
+  display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 18px 0 8px;
+  border: 0; border-radius: 999px; background: var(--navy); color: #fff;
+  font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 12px 28px -10px rgba(30, 58, 138, 0.55);
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+.rc-launch:hover { transform: translateY(-1px); background: var(--sd-heading); }
+.rc-launch-mark { width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.16); font-family: var(--sd-display); font-size: 16px; }
+
+.rc-sheet {
+  position: fixed; top: 16px; right: 16px; bottom: 16px; z-index: 45; width: min(400px, calc(100vw - 32px));
+  display: flex; flex-direction: column;
+  background: var(--sd-surface); border: 1px solid var(--sd-line); border-radius: 18px;
+  box-shadow: 0 24px 60px -24px rgba(23, 37, 84, 0.45);
+  overflow: hidden;
+}
+.rc-panel { height: 100%; }
+.rc-head { align-items: flex-start; }
+.rc-head-actions { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.rc-activity-link { font-size: 11.5px; white-space: nowrap; }
+.rc-avatar { background: var(--ark-info, #2563eb); }
+.rc-thread { padding-bottom: 8px; }
+.rc-steps .ag-step-ic { background: var(--ark-navy-soft); color: var(--navy); font-size: 10px; }
+.rc-working .ag-steps { margin-top: 4px; }
+
+.rc-answer { display: flex; flex-direction: column; gap: 8px; }
+.rc-answer-text { margin: 0; font-family: var(--sd-display); font-size: 15px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; }
+.rc-answer-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rc-grounding { display: inline-flex; align-items: center; font-family: var(--sd-sans); font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+.rc-grounding.is-story { background: var(--ark-success-soft); color: var(--ark-success); }
+.rc-grounding.is-background { background: #efeaf9; color: #4a3b7a; }
+.rc-grounding.is-not-here { background: var(--sd-surface-2); color: var(--sd-muted); }
+.rc-grounding.is-refused { background: var(--ark-warning-soft); color: #7a4b00; }
+.rc-cites { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.rc-cite { font-family: var(--sd-sans); font-size: 10px; font-weight: 700; color: var(--navy); background: var(--ark-navy-soft); border: 0; border-radius: 999px; padding: 2px 7px; cursor: pointer; }
+.rc-cite:hover { background: var(--navy); color: #fff; }
+
+.rc-composer .ag-hint { flex-wrap: wrap; gap: 6px; }
+
+/* The paragraph the reader is asking about, and the one an answer points at. */
+.reader-block .reader-paragraph { cursor: pointer; border-radius: 6px; transition: background 160ms ease, box-shadow 160ms ease; }
+.reader-block.is-focus .reader-paragraph { background: var(--ark-navy-soft); box-shadow: 0 0 0 6px var(--ark-navy-soft); }
+.reader-block.is-cited .reader-paragraph { background: var(--ark-success-soft); box-shadow: 0 0 0 6px var(--ark-success-soft); }
+
+/* What the companion did: every question, every step. */
+.rc-activity { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.rc-activity-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--sd-heading); }
+.rc-activity-note { font-size: 12.5px; line-height: 1.55; margin: 0; }
+.rc-activity-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.rc-activity-item { border: 1px solid var(--sd-line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--sd-surface); }
+.rc-activity-q { font-size: 13px; color: var(--sd-heading); font-weight: 600; }
+.rc-activity-meta { font-size: 11px; color: var(--sd-faint); }
+.rc-forget { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--sd-line-soft); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; }
+.rc-forget-link { color: var(--ark-red, #b91c1c); }
+
+@media (max-width: 760px) {
+  .rc-launch { right: 16px; bottom: 16px; }
+  .rc-sheet { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: min(82dvh, 680px); border-radius: 18px 18px 0 0; border-bottom: 0; }
+}
