@@ -129,6 +129,27 @@ const env = {
       .map((v) => v.trim())
       .filter(Boolean),
   },
+  /* The reading companion: a reader's questions about a published story,
+     answered from the story and its paper. Readers are anonymous. Each one
+     gets a signed device cookie; only a hash of it is ever stored, and that
+     hash is what the caps and the audit trail are keyed on. */
+  reader: {
+    cookieName: process.env.READER_COOKIE_NAME || "sd_reader",
+    /* Signs the device cookie. Absent, one is generated per process, which
+       means every restart hands readers a fresh identity and their earlier
+       questions stop being theirs to list — fine for a laptop, not for a
+       deployment, which is why boot says so. */
+    cookieSecret: process.env.READER_COOKIE_SECRET || null,
+    /* Questions per reader per UTC day, and across every reader per day. The
+       second is a cost ceiling: the companion is open to anyone with a link. */
+    dailyCap: getNumberEnv("READER_DAILY_CAP", 40),
+    globalDailyCap: getNumberEnv("READER_GLOBAL_DAILY_CAP", 5000),
+    /* How long a reader's questions are kept for them to look back on. */
+    turnsTtlDays: getNumberEnv("READER_TURNS_TTL_DAYS", 30),
+    /* How long one question may take, model calls included, before the
+       reader is told to ask again and the work is stopped. */
+    turnDeadlineMs: getNumberEnv("READER_TURN_DEADLINE_MS", 45_000),
+  },
 };
 
 if (!env.mongodbUri) {

@@ -32,6 +32,14 @@ const COLLECTIONS = {
      the scholar is owed an answer about and all this is allowed to know.
      Private to this service, like the turns and the terms above. */
   storyReads: "scholar_story_reads",
+  /* One row per question a reader asks the companion about a published
+     story: the question, what the agent did, the answer, and what the
+     Sentinel made of it. Keyed by a hashed device id that identifies no
+     one; expires after READER_TURNS_TTL_DAYS. Private to this service. */
+  readerTurns: "reader_turns",
+  /* One row per reader per UTC day, and one for every reader together:
+     how many questions were asked. The caps read them. Private, expiring. */
+  readerQuota: "reader_quota",
 };
 
 let clientPromise;
@@ -290,6 +298,33 @@ async function ensureIndexes() {
       await db.collection(COLLECTIONS.storyRevisions).createIndex(
         { story_id: 1, version: -1 },
         { name: "idx_scholar_editorial_revisions_story_version", unique: true },
+      );
+
+      /* The reader's own list, per story and overall, newest first; and the
+         expiry that keeps the collection from being a record of anything. */
+      const readerTurns = db.collection(COLLECTIONS.readerTurns);
+      await readerTurns.createIndex(
+        { reader_key: 1, story_id: 1, created_at: -1 },
+        { name: "idx_reader_turns_reader_story_created" },
+      );
+      await readerTurns.createIndex(
+        { reader_key: 1, created_at: -1 },
+        { name: "idx_reader_turns_reader_created" },
+      );
+      await readerTurns.createIndex(
+        { expires_at: 1 },
+        { expireAfterSeconds: 0, name: "idx_reader_turns_expires_at_ttl" },
+      );
+      /* One row per key per day; the `$inc` upsert relies on it. Rows expire
+         two days on, which is as long as a day's count matters. */
+      const readerQuota = db.collection(COLLECTIONS.readerQuota);
+      await readerQuota.createIndex(
+        { key: 1, day: 1 },
+        { unique: true, name: "idx_reader_quota_key_day_unique" },
+      );
+      await readerQuota.createIndex(
+        { expires_at: 1 },
+        { expireAfterSeconds: 0, name: "idx_reader_quota_expires_at_ttl" },
       );
     })();
   }
