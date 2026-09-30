@@ -203,7 +203,12 @@ test("a draft job is created, streamed to completion, and parked for review", as
   assert.ok(types.includes("draft_ready"));
   assert.equal(types[types.length - 1], "done");
   const steps = frames.filter((f) => f.event === "progress").map((f) => f.data.step);
-  for (const s of ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "assemble", "verify"]) assert.ok(steps.includes(s), `missing step ${s} in ${steps.join(",")}`);
+  for (const s of ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "section_drafted", "assemble", "verify"]) assert.ok(steps.includes(s), `missing step ${s} in ${steps.join(",")}`);
+  /* Each section is sent as it lands, with its text, so the page can show it being written. */
+  const written = frames.filter((f) => f.event === "progress" && f.data.step === "section_drafted").map((f) => f.data);
+  assert.ok(written.length >= 2, "at least two sections were streamed");
+  assert.ok(written.every((w) => Number.isInteger(w.index) && w.total >= written.length && typeof w.heading === "string" && Array.isArray(w.blocks) && w.blocks.length >= 1 && w.blocks.every((b) => typeof b.html === "string" && b.type)), JSON.stringify(written[0]).slice(0, 300));
+  assert.deepEqual(written.map((w) => w.index), [...written.map((w) => w.index)].sort((a, b) => a - b), "in order");
   const ids = frames.filter((f) => f.id).map((f) => Number(f.id));
   assert.deepEqual(ids, [...ids].sort((a, b) => a - b), "event ids are sequenced");
 

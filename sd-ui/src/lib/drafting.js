@@ -354,7 +354,8 @@ export function watchDraftJob(jobId, { onProgress = () => {}, onSettled, onError
     gotAnyFrame = true;
     try {
       const data = JSON.parse(e.data);
-      onProgress({ step: data.step, message: data.message || stepLabel(data.step) });
+      /* The whole frame rides along: a section as it lands carries its blocks. */
+      onProgress({ step: data.step, message: data.message || stepLabel(data.step), detail: data });
     } catch { /* a malformed frame is not worth stopping for */ }
   });
   source.addEventListener("done", (e) => {

@@ -105,7 +105,7 @@ test("a clean run: outline → sections with provenance → judged → assembled
   const r = await runDraftGraph(input, { generate: model.generate, onProgress: (e) => progress.push(e.step) });
 
   assert.equal(r.title, "Steering silence toward the noise");
-  assert.deepEqual([...new Set(progress)], ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "assemble", "verify"]);
+  assert.deepEqual([...new Set(progress)], ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "section_drafted", "assemble", "verify"]);
   assert.equal(r.outline.length, 3);
 
   const paragraphs = r.bodyBlocks.filter((b) => b.type === "paragraph");
@@ -508,4 +508,22 @@ test("an approved outline keeps a section's kind, and a section cannot be promot
   assert.deepEqual(kept.beats.map((b) => [b.heading, b.kind]), [["Why it matters", "extension"], ["Found", "paper"]]);
   assert.deepEqual(kept.coverage, { met: "full", note: "" });
   assert.ok(normaliseApprovedOutline(proposed, null, passages).beats.every((b, i) => b.kind === proposed.beats[i].kind));
+});
+
+test("each section is reported as it lands, with its text, in order, before assembly", async () => {
+  const model = fakeModel();
+  const events = [];
+  const r = await runDraftGraph(input, { generate: model.generate, onProgress: (e) => events.push(e) });
+  assert.ok(r.bodyBlocks.length > 0);
+  const written = events.filter((e) => e.step === "section_drafted");
+  assert.ok(written.length >= 2, `sections streamed: ${written.length}`);
+  assert.deepEqual(written.map((e) => e.detail.index), written.map((_, i) => i + 1), "one per beat, in order");
+  for (const e of written) {
+    assert.equal(typeof e.detail.heading, "string");
+    assert.ok(Array.isArray(e.detail.blocks) && e.detail.blocks.length >= 1);
+    assert.ok(e.detail.blocks.every((b) => typeof b.html === "string" && b.html.length > 0 && b.type), "text only, typed");
+    assert.ok(!("fidelity" in e.detail.blocks[0]), "the checks travel with the finished draft, not the stream");
+  }
+  const order = events.map((e) => e.step);
+  assert.ok(order.lastIndexOf("section_drafted") < order.indexOf("assemble"), "every section lands before assembly");
 });

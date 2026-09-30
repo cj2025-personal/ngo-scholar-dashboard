@@ -52,7 +52,7 @@ test("a draft in review and reading levels waiting can each be removed from the 
   /* The queue. Both rows carry a way out; the paper row does not, because the
      paper is the Documents portal's. */
   await page.goto("/");
-  const levelsRow = row(page, "waiting for your approval");
+  const levelsRow = row(page, "reading levels waiting for your approval");
   const draftRow = row(page, "A draft is waiting for your review");
   await expect(levelsRow).toBeVisible();
   await expect(draftRow).toBeVisible();
@@ -70,7 +70,7 @@ test("a draft in review and reading levels waiting can each be removed from the 
   await levelsRow.locator(".del-btn").click();
   await expect(page.locator(".cf-dialog")).toContainText("The article itself is not touched");
   await page.locator(".cf-dialog").getByRole("button", { name: "Discard" }).click();
-  await expect(row(page, "waiting for your approval")).toHaveCount(0, { timeout: 30_000 });
+  await expect(row(page, "reading levels waiting for your approval")).toHaveCount(0, { timeout: 30_000 });
   const after = await page.request.get(`${apiUrl}/api/editorial-stories/${storyId}`);
   expect(after.status()).toBe(200);
   expect((await after.json()).story.levels).toEqual([]);

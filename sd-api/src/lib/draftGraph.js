@@ -305,6 +305,13 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
 
       warnings.push(...accepted.warnings);
       sections[beat.index] = accepted;
+      /* The section as it will stand, sent as it lands so the page can show
+         it being written rather than everything at once at the end. Text
+         only: the checks travel with the finished draft. */
+      await progress("section_drafted", `Section ${beat.index} of ${total} written: ${beat.heading}`, {
+        index: beat.index, total, heading: beat.heading, kind: beat.kind || plan.BEAT_KIND.PAPER,
+        blocks: accepted.blocks.map((b) => ({ type: b.type, html: b.html })),
+      });
     }
     return { sections, calls, warnings };
   }

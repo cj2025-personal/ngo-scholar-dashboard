@@ -4463,3 +4463,16 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 /* Icon tabs are squares, not stretched strips: the foot-tab rule gave every .ws-tab flex: 1. */
 .ws-iconbar .ws-icon-tab { flex: 0 0 40px; padding: 0; border-bottom: 0; text-align: center; }
 .ws-iconbar .ws-icon-tab.on { border-bottom: 0; }
+
+/* ── The draft being written, typed onto the page ────────────────────────── */
+.ds-stream { width: min(100%, var(--ark-width-reading, 760px)); margin: 0 auto; padding: 28px 24px 64px; display: flex; flex-direction: column; gap: 14px; }
+.ds-title { margin: 0 0 6px; font-family: var(--sd-serif, var(--sd-display)); font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; color: var(--sd-heading); }
+.ds-status { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 12.5px; font-weight: 600; color: var(--navy); font-family: var(--sd-sans); }
+.ds-heading { margin: 14px 0 0; font-family: var(--sd-display); font-size: 21px; font-weight: 700; color: var(--flag-blue, var(--navy)); line-height: 1.3; }
+.ds-paragraph { margin: 0; font-family: var(--sd-serif, Georgia, serif); font-size: 18px; line-height: 1.7; color: var(--ink); }
+.ds-quote { margin: 0; padding: 8px 0 8px 16px; border-left: 3px solid var(--burgundy, #8b1e2d); font-style: italic; font-size: 17px; line-height: 1.6; color: var(--ink); }
+.ds-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.15em; background: var(--navy); animation: ds-blink 0.9s steps(1) infinite; }
+@keyframes ds-blink { 50% { opacity: 0; } }
+.ds-coming { list-style: none; margin: 18px 0 0; padding: 14px 0 0; border-top: 1px dashed var(--sd-line); display: flex; flex-direction: column; gap: 8px; }
+.ds-coming-item { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--sd-muted); font-family: var(--sd-sans); }
+.ds-coming-note { color: var(--sd-faint); }

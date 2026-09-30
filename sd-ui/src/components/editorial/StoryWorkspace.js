@@ -32,6 +32,7 @@ import RecordBanner from "@/components/editorial/RecordBanner";
 import { HiOutlineChatBubbleLeftRight, HiOutlineLightBulb } from "react-icons/hi2";
 import StudioAgentShell, { AgentAbout, AgentIdentity, AgentTabs, STUDIO_PERMISSIONS } from "@/components/editorial/StudioAgentShell";
 import AgentIdeas, { newStoryIdeas, reviewIdeas } from "@/components/editorial/AgentIdeas";
+import DraftStream from "@/components/editorial/DraftStream";
 import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { AUDIENCE_TARGETS, assessForAudience, normaliseAudience } from "@/lib/readability";
@@ -370,6 +371,16 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const [agentStage, setAgentStage] = useState(null);
   const handleStageChange = useCallback((stage) => setAgentStage(stage), []);
   const outlineStage = !reviewMode && agentStage === "outline" && totalWords === 0;
+  /* The draft being written, section by section, typed onto the empty page
+     as each lands; the finished draft then takes the page over. */
+  const [stream, setStream] = useState({ title: "", beats: [], sections: [] });
+  const handleDraftingStart = useCallback(({ title, beats }) => setStream({ title, beats, sections: [] }), []);
+  const handleSection = useCallback((section) => setStream((cur) => ({
+    ...cur,
+    beats: cur.beats.length ? cur.beats : Array.from({ length: section.total || 0 }, (_, i) => ({ index: i + 1, heading: i + 1 === section.index ? section.heading : `Section ${i + 1}` })),
+    sections: [...cur.sections.filter((s) => s.index !== section.index), section].sort((a, b) => a.index - b.index),
+  })), []);
+  const draftingStage = !reviewMode && agentStage === "drafting" && totalWords === 0 && stream.beats.length > 0;
   const planRef = useRef(null);
 
   /* Put the outline on screen the moment the page has rearranged around it.
@@ -851,7 +862,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
           /* The pane stays in the tree while closed, slid off to the left and
              inert, so opening it again finds the conversation where it was. */
           <div className={outlineStage ? "ws-plan" : "ws-grid is-two"} ref={planRef}>
-            {outlineStage ? null : <div className="ws-center">{editorColumn}</div>}
+            {outlineStage ? null : <div className="ws-center">{draftingStage ? <DraftStream title={stream.title} beats={stream.beats} sections={stream.sections} /> : editorColumn}</div>}
             <aside
               className={outlineStage ? "ws-plan__inner" : `ws-right is-agent ws-agent-rail${railOpen ? "" : " is-closed"}`}
               role={outlineStage ? "region" : undefined}
@@ -868,7 +879,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                 {/* The agent is asked for an angle only once the terms are
                     settled — `terms`, which the consent sheet updates, not the
                     `aiTerms` this page was rendered with. */}
-                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} prefill={newPrefill} onPrefillTaken={() => setNewPrefill("")} proposeNow={proposeNow} onStatus={setAgentStatus} onPaperChange={setNewPaper} />
+                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} prefill={newPrefill} onPrefillTaken={() => setNewPrefill("")} proposeNow={proposeNow} onStatus={setAgentStatus} onPaperChange={setNewPaper} onDraftingStart={handleDraftingStart} onSection={handleSection} />
               </div>
               {outlineStage ? null : newAbout ? (
                 <AgentAbout onClose={() => setNewAbout(false)} permissions={STUDIO_PERMISSIONS} termsVersion={terms?.version || null} onTerms={() => { setConsentError(""); setConsentOpen(true); }} activity={<p className="st-muted">Nothing yet: this story is not saved. Once a draft lands, every version and who made it is listed here.</p>} />

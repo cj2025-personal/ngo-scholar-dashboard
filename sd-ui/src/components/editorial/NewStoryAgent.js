@@ -158,7 +158,7 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, persona }) {
  *                                    `initialSource` rather than describing one
  * @param {(stage: "outline"|null) => void} [p.onStageChange]   what the rail is asking for, so the page can give it the room it needs
  */
-export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, onStatus, onPaperChange }) {
+export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, onStatus, onPaperChange, onDraftingStart, onSection }) {
   const [persona] = useStudioPersona();
   const [inventory, setInventory] = useState(null);
   const [paper, setPaper] = useState(initialSource);
@@ -209,9 +209,11 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
      edit. Tell the page, so it can hand the outline the canvas instead of
      leaving it in a rail beside a blank editor inviting them to start
      writing the article the machine is about to write. */
+  /* And while the draft is being written, the page shows it being written. */
+  const drafting = Boolean(job) && !outlineWaiting && busy;
   useEffect(() => {
-    onStageChange?.(outlineWaiting ? "outline" : null);
-  }, [outlineWaiting, onStageChange]);
+    onStageChange?.(outlineWaiting ? "outline" : drafting ? "drafting" : null);
+  }, [outlineWaiting, drafting, onStageChange]);
   /* Closing the rail, or leaving, puts the page back the way it was. */
   useEffect(() => () => onStageChange?.(null), [onStageChange]);
 
@@ -294,7 +296,11 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     if (stopRef.current) stopRef.current();
     stopRef.current = watchDraftJob(j.id, {
       after,
-      onProgress: ({ message }) => setProgress(message),
+      onProgress: ({ message, detail }) => {
+        setProgress(message);
+        /* A section as it lands: handed to the page, which types it in. */
+        if (detail?.step === "section_drafted" && Array.isArray(detail.blocks)) onSection?.({ index: detail.index, total: detail.total, heading: detail.heading, kind: detail.kind, blocks: detail.blocks });
+      },
       onSettled: (settled) => {
         stopRef.current = null;
         setJob(settled);
@@ -491,6 +497,8 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     setBusy(true);
     push({ role: "user", text: `Approved${outline.beats.length ? `: ${outline.beats.length} section${outline.beats.length === 1 ? "" : "s"}` : ""}.` });
     setProgress("Drafting…");
+    /* The page knows what is coming, and shows each section as it is written. */
+    onDraftingStart?.({ title: outline.title || "", beats: outline.beats.map((b, i) => ({ index: b.index ?? i + 1, heading: b.heading })) });
     const r = await approveDraftOutline(job.id, outline);
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     setJob(r.data.job);
