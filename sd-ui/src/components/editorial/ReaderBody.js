@@ -51,6 +51,39 @@ export default function ReaderBody({ story }) {
   let textCount = 0;
   for (const b of blocks) textIndex.push(b.type === "image" ? null : ++textCount);
   const plainText = (html) => String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  /* The same blocks as the companion sees them, for its Ask and Sources tabs. */
+  const companionBlocks = blocks.map((b, i) => (textIndex[i] ? { id: `b${textIndex[i]}`, index: textIndex[i], type: b.type, text: plainText(b.html), passageIds: Array.isArray(b.sourceRefs) ? b.sourceRefs.map((r) => r.passageId) : [] } : null)).filter(Boolean);
+
+  /* What the reader has done on this page, for the companion's checklist.
+     Which paragraphs have been on screen, whether a passage was opened,
+     whether another reading age was tried. This browser only. */
+  const progressKey = `sd:progress:${story?.slug || ""}`;
+  const [readSet, setReadSet] = useState(() => {
+    try { return new Set(JSON.parse(window.localStorage.getItem(progressKey) || "{}").read || []); } catch { return new Set(); }
+  });
+  const [marks, setMarks] = useState(() => {
+    try { return JSON.parse(window.localStorage.getItem(progressKey) || "{}").marks || {}; } catch { return {}; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(progressKey, JSON.stringify({ read: [...readSet], marks })); } catch { /* private mode: it lives for this page only */ }
+  }, [progressKey, readSet, marks]);
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return undefined;
+    const els = Array.from(document.querySelectorAll(".reader-block[id^='rb-b']"));
+    const io = new IntersectionObserver((entries) => {
+      const hits = entries.filter((e) => e.isIntersecting).map((e) => Number(e.target.id.replace("rb-b", "")));
+      if (!hits.length) return;
+      setReadSet((prev) => {
+        if (hits.every((n) => prev.has(n))) return prev;
+        const next = new Set(prev);
+        hits.forEach((n) => next.add(n));
+        return next;
+      });
+    }, { threshold: 0.6 });
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [blocks.length, level]);
+  const mark = (key) => setMarks((m) => (m[key] ? m : { ...m, [key]: true }));
 
   /* A citation from the companion: scroll to the paragraph; for a passage of
      the paper, also turn the sources on and open that passage under the
@@ -69,6 +102,7 @@ export default function ReaderBody({ story }) {
       if (index >= 0) {
         setShowSources(true);
         setOpen({ index, ids: [passageId] });
+        mark("source");
       }
     }
   }
@@ -93,13 +127,13 @@ export default function ReaderBody({ story }) {
           <span className="reader-levels-label">Read this for</span>
           <button type="button" role="tab" aria-selected={!level} className={!level ? "reader-level on" : "reader-level"} onClick={() => { setLevel(null); setOpen(null); }}>{DRAFT_AUDIENCES.find((a) => a.value === own)?.label || "Adults"}</button>
           {levels.map((l) => (
-            <button key={l.audience} type="button" role="tab" aria-selected={level === l.audience} className={level === l.audience ? "reader-level on" : "reader-level"} onClick={() => { setLevel(l.audience); setOpen(null); }}>{DRAFT_AUDIENCES.find((a) => a.value === l.audience)?.label || l.label}</button>
+            <button key={l.audience} type="button" role="tab" aria-selected={level === l.audience} className={level === l.audience ? "reader-level on" : "reader-level"} onClick={() => { setLevel(l.audience); setOpen(null); mark("level"); }}>{DRAFT_AUDIENCES.find((a) => a.value === l.audience)?.label || l.label}</button>
           ))}
         </div>
       ) : null}
       {drafted ? (
         <div className="reader-tools">
-          <button type="button" className={showSources ? "reader-toggle on" : "reader-toggle"} aria-pressed={showSources} onClick={() => { setShowSources((v) => !v); setOpen(null); }}>
+          <button type="button" className={showSources ? "reader-toggle on" : "reader-toggle"} aria-pressed={showSources} onClick={() => { setShowSources((v) => !v); setOpen(null); if (!showSources) mark("source"); }}>
             <span className="reader-sw" aria-hidden /> Show sources
           </button>
         </div>
@@ -182,7 +216,7 @@ export default function ReaderBody({ story }) {
           {story?.slug ? <a href={publicEvidenceUrl(story.slug)} target="_blank" rel="noreferrer noopener">Verify it</a> : null}
         </footer>
       ) : null}
-      {story?.slug ? <ReaderCompanion slug={story.slug} level={level} focus={focus} onCite={jumpTo} /> : null}
+      {story?.slug ? <ReaderCompanion slug={story.slug} level={level} levelsAvailable={levels.length > 0} blocks={companionBlocks} readSet={readSet} marks={marks} focus={focus} onCite={jumpTo} /> : null}
     </>
   );
 }

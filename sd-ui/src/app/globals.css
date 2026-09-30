@@ -4198,3 +4198,88 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 @media (max-width: 760px) {
   .rc-launch { right: 16px; bottom: 16px; }
 }
+
+/* ── The companion as a personal helper: identity, tabs, Ask, Progress, Sources ── */
+.rc-face { flex: 0 0 24px; width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 800; font-family: var(--sd-display); }
+.rc-face.is-md { flex-basis: 34px; width: 34px; height: 34px; font-size: 16px; }
+.rc-face.is-lg { flex-basis: 52px; width: 52px; height: 52px; font-size: 24px; }
+.rc-face.is-navy, .rc-tone-pick.is-navy { background: var(--navy); }
+.rc-face.is-teal, .rc-tone-pick.is-teal { background: #0f766e; }
+.rc-face.is-plum, .rc-tone-pick.is-plum { background: #6d28d9; }
+.rc-face.is-amber, .rc-tone-pick.is-amber { background: #b45309; }
+.rc-launch .rc-face { background: rgba(255, 255, 255, 0.16); width: 30px; height: 30px; flex-basis: 30px; font-size: 15px; }
+
+.rc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--sd-line-soft); }
+.rc-identity { display: inline-flex; align-items: center; gap: 10px; min-width: 0; border: 0; background: none; padding: 4px 8px 4px 4px; border-radius: 12px; cursor: pointer; font: inherit; text-align: left; color: inherit; }
+.rc-identity:hover { background: var(--sd-surface-2); }
+.rc-identity-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.rc-identity-text b { font-size: 13.5px; color: var(--sd-heading); }
+.rc-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--sd-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.rc-status.is-busy { color: var(--navy); }
+
+/* Tabs along the foot, like a messaging app. */
+.rc-tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--sd-line); background: var(--sd-surface); }
+.rc-tab-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 9px; border: 0; background: none; font: inherit; font-size: 11px; font-weight: 600; color: var(--sd-faint); cursor: pointer; border-top: 2px solid transparent; margin-top: -1px; }
+.rc-tab-btn .rc-tab-ic { font-size: 15px; line-height: 1; }
+.rc-tab-btn:hover { color: var(--sd-heading); }
+.rc-tab-btn.on { color: var(--navy); border-top-color: var(--navy); }
+
+.rc-tab { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.rc-tab-title { margin: 0; font-family: var(--sd-display); font-weight: 700; font-size: 15px; color: var(--sd-heading); }
+.rc-tab-note { font-size: 12.5px; line-height: 1.55; margin: 0; }
+.rc-tab-note a { color: var(--navy); font-weight: 600; }
+
+/* Ask */
+.rc-ask-group { display: flex; flex-direction: column; gap: 6px; }
+.rc-ask-group-title { margin: 4px 0 0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sd-faint); font-family: var(--sd-sans); }
+
+/* Progress */
+.rc-progress-bar { height: 8px; border-radius: 999px; background: var(--sd-surface-2); overflow: hidden; }
+.rc-progress-bar > span { display: block; height: 100%; background: var(--ark-success); border-radius: 999px; transition: width 240ms ease; }
+.rc-progress-count { margin: -6px 0 0; font-size: 12px; color: var(--sd-muted); }
+.rc-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rc-checklist li { display: grid; grid-template-columns: 22px 1fr; column-gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--sd-line); border-radius: 12px; background: var(--sd-surface); }
+.rc-checklist li.is-done { border-color: var(--ark-success-soft); background: var(--ark-success-soft); }
+.rc-check { width: 22px; height: 22px; border-radius: 999px; border: 2px solid var(--sd-line); display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--ark-success); background: var(--sd-surface); grid-row: 1 / span 2; }
+.rc-checklist li.is-done .rc-check { border-color: var(--ark-success); }
+.rc-check-label { font-size: 13.5px; font-weight: 600; color: var(--sd-heading); }
+.rc-check-detail { font-size: 12px; color: var(--sd-muted); grid-column: 2; }
+.rc-progress-asked { margin: 0; font-size: 12.5px; color: var(--sd-muted); }
+
+/* Sources */
+.rc-passages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.rc-passage { border: 1px solid var(--sd-line); border-radius: 12px; padding: 10px 12px; background: var(--sd-surface); display: flex; flex-direction: column; gap: 6px; }
+.rc-passage.is-cited { border-color: var(--navy); box-shadow: 0 0 0 2px var(--ark-navy-soft); }
+.rc-passage.is-unused { opacity: 0.7; }
+.rc-passage-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--sd-sans); }
+.rc-passage-head b { font-size: 11px; color: var(--sd-faint); }
+.rc-passage-mark { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sd-faint); }
+.rc-passage.is-cited .rc-passage-mark { color: var(--navy); }
+.rc-passage-text { margin: 0; font-family: var(--sd-display); font-size: 13.5px; line-height: 1.55; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.rc-passage:hover .rc-passage-text, .rc-passage:focus-within .rc-passage-text { -webkit-line-clamp: unset; }
+
+/* Behind the avatar */
+.rc-about { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+.rc-about-head { display: flex; align-items: center; gap: 12px; }
+.rc-about-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rc-about-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sd-faint); font-family: var(--sd-sans); }
+.rc-name-input { font: inherit; font-family: var(--sd-display); font-weight: 700; font-size: 17px; color: var(--sd-heading); border: 1px solid transparent; border-radius: 8px; padding: 4px 8px; margin-left: -8px; background: transparent; }
+.rc-name-input:hover { border-color: var(--sd-line); }
+.rc-name-input:focus { outline: 0; border-color: var(--navy); background: var(--sd-surface); }
+.rc-about-row { display: flex; align-items: center; gap: 12px; }
+.rc-faces, .rc-tones { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.rc-face-pick { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--sd-line); background: var(--sd-surface); font: inherit; font-family: var(--sd-display); font-size: 15px; color: var(--sd-heading); cursor: pointer; }
+.rc-face-pick.on { border-color: var(--navy); background: var(--ark-navy-soft); color: var(--navy); }
+.rc-tone-pick { width: 26px; height: 26px; border-radius: 999px; border: 3px solid var(--sd-surface); box-shadow: 0 0 0 1px var(--sd-line); cursor: pointer; }
+.rc-tone-pick.on { box-shadow: 0 0 0 2px var(--navy); }
+.rc-about-section { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--sd-line-soft); }
+.rc-permissions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink); }
+.rc-permissions li { display: flex; gap: 8px; align-items: flex-start; }
+.rc-permissions li > span { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 999px; display: grid; place-items: center; font-size: 10px; font-weight: 800; margin-top: 1px; }
+.rc-permissions li.is-yes > span { background: var(--ark-success-soft); color: var(--ark-success); }
+.rc-permissions li.is-no > span { background: var(--sd-surface-2); color: var(--sd-muted); }
+.rc-about .rc-activity { padding: 12px 0 0; overflow: visible; flex: 0 0 auto; }
+
+@media (max-width: 760px) {
+  .rc-status { max-width: 180px; }
+}

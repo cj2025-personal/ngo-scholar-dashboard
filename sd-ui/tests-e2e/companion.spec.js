@@ -74,6 +74,8 @@ test("a reader asks about a paragraph, watches the work, and reads a checked ans
   const sheet = page.getByRole("dialog", { name: "Reading companion" });
   await expect(sheet).toBeVisible();
   await expect(sheet.locator(".rc-intro-text")).toContainText("I never ask about you");
+  await expect(sheet.locator(".rc-identity b")).toHaveText("Reading companion");
+  await expect(sheet.locator(".rc-status")).toHaveText("Ready when you are");
   await expect(sheet.locator(".ag-hint")).toContainText("left today");
   /* On a wide screen the article makes room rather than being covered. */
   await expect(page.locator("html")).toHaveClass(/rc-open/);
@@ -136,18 +138,49 @@ test("a reader asks about a paragraph, watches the work, and reads a checked ans
   await page.reload();
   await page.getByRole("button", { name: "Ask about this story" }).click();
   await expect(sheet.locator(".rc-turn")).toHaveCount(4);
+  await expect(sheet.locator(".rc-status")).toHaveText("4 questions on this story");
 
-  /* Everything the companion did, and the way to be forgotten. */
-  await sheet.getByRole("button", { name: "What it did" }).click();
+  /* Ask: suggestions made from this story, one tap to send. */
+  await sheet.getByRole("button", { name: "Ask", exact: true }).click();
+  await expect(sheet.locator(".rc-ask-group-title").first()).toHaveText(/About the paragraph you tapped|About the whole story/);
+  await expect(sheet.locator(".rc-ask .ag-example", { hasText: "Steering away from noise" })).toBeVisible();
+
+  /* Progress: what the reader has done, from this browser only. */
+  await sheet.getByRole("button", { name: "Progress", exact: true }).click();
+  await expect(sheet.locator(".rc-checklist li", { hasText: "Ask about a paragraph" })).toHaveClass(/is-done/);
+  await expect(sheet.locator(".rc-checklist li", { hasText: "Open a passage of the paper" })).toHaveClass(/is-done/);
+  await expect(sheet.locator(".rc-checklist li", { hasText: "Try another reading age" })).toHaveClass(/is-done/);
+  await expect(sheet.locator(".rc-progress-asked")).toContainText("¶ 3");
+
+  /* Sources: the paper's passages, the cited ones marked, each opening under its paragraph. */
+  await sheet.getByRole("button", { name: "Sources", exact: true }).click();
+  await expect(sheet.locator(".rc-passage").first()).toBeVisible();
+  await expect(sheet.locator(".rc-passage.is-cited", { has: page.locator("b", { hasText: "p2" }) })).toHaveCount(1);
+  await sheet.locator(".rc-passage", { has: page.locator("b", { hasText: "p1" }) }).locator(".rc-cite").click();
+  await expect(page.locator("#rb-b2 .reader-pop")).toBeVisible();
+  await page.locator("#rb-b2 .reader-pop-close").click();
+  await sheet.getByRole("button", { name: "Chat", exact: true }).click();
+
+  /* Behind the avatar: a name and face of the reader's choosing, what it may do, what it did, and the way to be forgotten. */
+  await sheet.locator(".rc-identity").click();
+  await sheet.locator("#rc-name").fill("Pip");
+  await sheet.locator("#rc-name").press("Enter");
+  await sheet.locator(".rc-face-pick", { hasText: "★" }).click();
+  await expect(sheet.locator(".rc-permissions li.is-no").first()).toContainText("Ask about you");
   await expect(sheet.locator(".rc-activity-item")).toHaveCount(4);
   await expect(sheet.locator(".rc-activity-item").first()).toContainText("Adaptive nulling, for the companion");
   await expect(sheet.locator(".rc-activity-note")).toContainText("Nobody knows who you are");
   await sheet.getByRole("button", { name: "Forget me" }).click();
   await sheet.getByRole("button", { name: "Yes, forget me" }).click();
   await expect(sheet.locator(".rc-activity")).toContainText("Nothing yet.");
-  await sheet.getByRole("button", { name: "Back", exact: true }).click();
-  await expect(sheet.locator(".rc-intro-text")).toBeVisible();
+  await sheet.getByRole("button", { name: "Back to the conversation" }).click();
+  await expect(sheet.locator(".rc-identity b")).toHaveText("Pip");
+  await expect(sheet.locator(".rc-intro-text")).toContainText("I'm Pip");
   await expect(sheet.locator(".rc-turn")).toHaveCount(0);
+
+  /* The name and face are this browser's, and survive a reload. */
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Ask Pip" })).toBeVisible();
 });
 
 test("the companion fits a phone and never scrolls the page sideways", async ({ page }) => {
