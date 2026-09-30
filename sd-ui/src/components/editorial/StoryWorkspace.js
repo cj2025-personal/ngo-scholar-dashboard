@@ -270,7 +270,9 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
      page was opened with a paper or a job in hand. */
   const [terms, setTerms] = useState(aiTerms);
   const consented = Boolean(terms?.current);
-  const [railOpen, setRailOpen] = useState(() => Boolean(aiTerms?.current));
+  /* Closed unless the page was opened with a paper or a job in hand: the
+     editor is the page, and the agent is a nudge in the corner until asked. */
+  const [railOpen, setRailOpen] = useState(() => Boolean(aiTerms?.current) && Boolean(initialSource || resumeJobId || autoPropose));
   const [consentOpen, setConsentOpen] = useState(() => Boolean(!aiTerms?.current && (initialSource || resumeJobId)));
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState("");
@@ -829,7 +831,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
           <StoryPreview title={form.title} subtitle={form.subtitle} excerpt={form.excerpt} coverImageUrl={effectiveCoverImageUrl} coverImageFilename={form.coverImageFilename} bodyBlocks={form.bodyBlocks.map((block) => (block.type === "image" ? { ...block, url: block.previewUrl || block.imageUrl } : block))} />
         </div>
       ) : !reviewMode ? (
-        railOpen ? (
+        (
           /* ── The outline has the canvas ──────────────────────────────────
              Approving an outline is the decision this whole surface exists
              to serve: it settles what the article is before a word of it is
@@ -845,12 +847,16 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
              position in the tree and only the wrappers change. The two
              `null`s below hold their slots so the element after them stays
              at the same index. */
+          /* The pane stays in the tree while closed, slid off to the left and
+             inert, so opening it again finds the conversation where it was. */
           <div className={outlineStage ? "ws-plan" : "ws-grid is-two"} ref={planRef}>
             {outlineStage ? null : <div className="ws-center">{editorColumn}</div>}
             <aside
-              className={outlineStage ? "ws-plan__inner" : "ws-right is-agent"}
+              className={outlineStage ? "ws-plan__inner" : `ws-right is-agent ws-agent-rail${railOpen ? "" : " is-closed"}`}
               role={outlineStage ? "region" : undefined}
               aria-label={outlineStage ? "The outline, waiting for your approval" : "Agent"}
+              aria-hidden={!outlineStage && !railOpen ? true : undefined}
+              inert={!outlineStage && !railOpen ? true : undefined}
             >
               {/* The pane's head, body and foot are laid around the agent,
                   never wrapped over it, so its place in the tree holds. */}
@@ -875,7 +881,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               )}
             </aside>
           </div>
-        ) : editorColumn
+        )
       ) : (
         <div className="ws-grid">
           {/* Three things, each foldable, in the order they are wanted: where

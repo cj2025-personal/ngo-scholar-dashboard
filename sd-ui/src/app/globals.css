@@ -3388,12 +3388,21 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
    ═══════════════════════════════════════════════════════════════════════ */
 .sc-writer.has-rail { max-width: none; margin: 0; }
 .sc-editorial:has(> .sc-writer.has-rail) { max-width: none; padding: 20px 0 0; }
-.sc-writer.has-rail .sc-write-bar, .sc-writer.has-rail > .sc-write-msg { margin-left: 24px; margin-right: calc(var(--ag-rail-w) + 24px); }
+/* The pane is on the LEFT, and it slides. The editor leaves the pane's
+   width free on the left while it is open, and takes it back when it
+   closes; both moves are animated, and the pane stays mounted while closed
+   so the conversation is where it was when it is opened again. */
+.sc-writer:not(.is-review) .sc-write-bar, .sc-writer:not(.is-review) > .sc-write-msg { transition: margin 260ms ease; }
+.sc-writer.has-rail .sc-write-bar, .sc-writer.has-rail > .sc-write-msg { margin-left: calc(var(--ag-rail-w) + 24px); margin-right: 24px; }
 .sc-writer { --ag-rail-w: 400px; }
-.ws-grid.is-two { display: block; min-height: 0; padding-right: var(--ag-rail-w); }
-.sc-writer.has-rail .ws-right {
-  position: fixed; top: var(--ag-rail-top, var(--sc-nav-height)); right: 0; bottom: 0; width: var(--ag-rail-w);
+.ws-grid.is-two { display: block; min-height: 0; padding-left: 0; transition: padding-left 260ms ease; }
+.sc-writer.has-rail .ws-grid.is-two { padding-left: var(--ag-rail-w); }
+.ws-right.is-agent.ws-agent-rail {
+  position: fixed; top: var(--ag-rail-top, var(--sc-nav-height)); left: 0; bottom: 0; width: var(--ag-rail-w);
   height: auto; max-height: none; z-index: 30;
+  border-left: 0; border-right: 1px solid var(--sd-line);
+  transform: translateX(0); visibility: visible;
+  transition: transform 260ms ease, visibility 0s linear 0s;
   /* The review grid gives .ws-right `align-self: start`, and Chrome applies
      align-self to fixed boxes too: with top and bottom both set, `start`
      sizes the pane to its content and pins it to the top instead of
@@ -3401,6 +3410,7 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
      viewport rather than scrolling. `auto` stretches. */
   align-self: auto;
 }
+.ws-right.is-agent.ws-agent-rail.is-closed { transform: translateX(calc(-100% - 24px)); visibility: hidden; transition: transform 260ms ease, visibility 0s linear 260ms; pointer-events: none; }
 /* ── The outline stage ─────────────────────────────────────────────────────
    While an outline waits for approval there is nothing in the page to edit:
    the machine has not written yet and the editor is empty. The only decision
@@ -3492,7 +3502,7 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 
 /* The way in, when the pane is closed. */
 .ag-nudge {
-  position: fixed; right: 24px; bottom: 24px; z-index: 40;
+  position: fixed; left: 24px; bottom: 24px; z-index: 40;
   display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px 0 16px;
   border: 0; border-radius: 999px; background: var(--navy); color: #fff;
   font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
@@ -3513,14 +3523,17 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .ag-gate { padding: 24px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 
 @media (max-width: 1100px) {
-  .ws-grid.is-two { padding-right: 0; }
-  .sc-writer.has-rail .sc-write-bar, .sc-writer.has-rail > .sc-write-msg { margin-right: 24px; }
-  .sc-writer.has-rail .ws-right {
+  .sc-writer.has-rail .ws-grid.is-two { padding-left: 0; }
+  .sc-writer.has-rail .sc-write-bar, .sc-writer.has-rail > .sc-write-msg { margin-left: 24px; margin-right: 24px; }
+  /* A sheet from the bottom; closed, it is below the fold. */
+  .ws-right.is-agent.ws-agent-rail {
     position: fixed; top: auto; left: 0; right: 0; bottom: 0; width: auto; height: min(78dvh, 640px);
     z-index: 45; border: 1px solid var(--sd-line); border-bottom: 0; border-radius: 18px 18px 0 0;
     box-shadow: 0 -18px 40px -20px rgba(23, 37, 84, 0.45);
+    transform: translateY(0);
   }
-  .ag-nudge { right: 16px; bottom: 16px; }
+  .ws-right.is-agent.ws-agent-rail.is-closed { transform: translateY(110%); }
+  .ag-nudge { left: 16px; bottom: 16px; }
 }
 
 /* ══ Agent console (Codex-style thread with a docked composer) ═══════════ */
