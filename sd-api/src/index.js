@@ -17,6 +17,7 @@ const editorialRoutes = require("./routes/editorial.routes");
 const imageRoutes = require("./routes/images");
 const inviteRoutes = require("./routes/invite.routes");
 const podcastRoutes = require("./routes/podcasts.routes");
+const readerRoutes = require("./routes/reader.routes");
 const standingRoutes = require("./routes/standing.routes");
 const reviewRoutes = require("./routes/review.routes");
 const { ensureInviteIndexes } = require("./services/invite.service");
@@ -98,6 +99,8 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/editorial-stories", editorialRoutes);
 app.use("/api/images", imageRoutes);
 app.use("/api/podcasts", podcastRoutes);
+/* Public: the reading companion beside a published story. */
+app.use("/api/reader", readerRoutes);
 app.use("/api/standing", standingRoutes);
 /* Mounted at /api so the public claim path is /api/invites/:token and the
    service path is /api/internal/invites — one prefix, two auth models. */

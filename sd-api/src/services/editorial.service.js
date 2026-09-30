@@ -17,6 +17,7 @@ const recordLib = require("../lib/record");
 const ledger = require("../lib/evidenceLedger");
 const { AUDIENCES: AUDIENCE_TABLE } = require("../lib/audiences");
 const { readsForStories } = require("./reads.service");
+const { questionsForStories } = require("./readerQuestions.service");
 const {
   normalizeBlockProvenance,
   presentBlockProvenance,
@@ -1504,7 +1505,7 @@ async function listEditorialStories({ scholarId, profileId, status = "all" }) {
   const publishedIds = stories
     .filter((story) => story.status === "published" || story.status === "scheduled")
     .map((story) => story._id);
-  const reads = await readsForStories(db, publishedIds);
+  const [reads, questions] = await Promise.all([readsForStories(db, publishedIds), questionsForStories(db, publishedIds)]);
 
   return serializeMongoValue({
     stories: stories.map((story) => {
@@ -1512,9 +1513,11 @@ async function listEditorialStories({ scholarId, profileId, status = "all" }) {
       /* `null`, not `{total: 0}`, for a story that was never published: "no
          reads yet" and "cannot have been read" are different things and the
          dashboard says them differently. */
-      summary.reads = publishedIds.some((id) => id.equals(story._id))
-        ? reads.get(String(story._id)) || { total: 0, recent: 0 }
-        : null;
+      const isPublic = publishedIds.some((id) => id.equals(story._id));
+      summary.reads = isPublic ? reads.get(String(story._id)) || { total: 0, recent: 0 } : null;
+      /* What readers asked the companion about it, as counts. The ones the
+         story could not answer are the ones worth a scholar's attention. */
+      summary.questions = isPublic ? questions.get(String(story._id)) || { total: 0, recent: 0, notHere: 0 } : null;
       return summary;
     }),
   });
