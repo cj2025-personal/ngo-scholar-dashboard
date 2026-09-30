@@ -52,14 +52,25 @@ export default function ReaderBody({ story }) {
   for (const b of blocks) textIndex.push(b.type === "image" ? null : ++textCount);
   const plainText = (html) => String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
-  function jumpTo(id) {
-    const m = /^b(\d+)$/.exec(id);
+  /* A citation from the companion: scroll to the paragraph; for a passage of
+     the paper, also turn the sources on and open that passage under the
+     paragraph, the same popover the source mark opens. */
+  function jumpTo({ blockId, passageId = null }) {
+    const m = /^b(\d+)$/.exec(blockId || "");
     if (!m) return;
-    const el = document.getElementById(`rb-b${m[1]}`);
+    const n = Number(m[1]);
+    const el = document.getElementById(`rb-b${n}`);
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     el.classList.add("is-cited");
     setTimeout(() => el.classList.remove("is-cited"), 1800);
+    if (passageId) {
+      const index = textIndex.indexOf(n);
+      if (index >= 0) {
+        setShowSources(true);
+        setOpen({ index, ids: [passageId] });
+      }
+    }
   }
 
   useEffect(() => {

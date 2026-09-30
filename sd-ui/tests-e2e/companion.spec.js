@@ -73,8 +73,10 @@ test("a reader asks about a paragraph, watches the work, and reads a checked ans
   await launch.click();
   const sheet = page.getByRole("dialog", { name: "Reading companion" });
   await expect(sheet).toBeVisible();
-  await expect(sheet.locator(".ag-empty-title")).toHaveText("Stuck on something?");
+  await expect(sheet.locator(".rc-intro-text")).toContainText("I never ask about you");
   await expect(sheet.locator(".ag-hint")).toContainText("left today");
+  /* On a wide screen the article makes room rather than being covered. */
+  await expect(page.locator("html")).toHaveClass(/rc-open/);
 
   /* Tapping a paragraph puts it in focus, and the composer says so. */
   await page.locator(".reader-paragraph").nth(1).click();
@@ -84,20 +86,29 @@ test("a reader asks about a paragraph, watches the work, and reads a checked ans
   await sheet.getByPlaceholder("Ask about this story…").fill("What does this mean?");
   await sheet.getByRole("button", { name: "Send" }).click();
 
-  /* The answer, with where it came from and what was read to get there. */
+  /* The question is in the thread at once; the answer follows, with where it
+     came from and what was read to get there. */
   const turn = sheet.locator(".rc-turn").first();
   await expect(turn.locator(".ag-ask")).toHaveText("What does this mean?");
   await expect(turn.locator(".rc-answer-text")).toContainText("Here is what the story says: In field trials the array improved", { timeout: 60_000 });
   await expect(turn.locator(".rc-grounding")).toHaveText("From the story");
+  /* Once done, the work folds to one line the reader can open. */
+  await expect(turn.locator(".rc-work-line")).toHaveText("Read ¶ 3 · checked the answer before showing it");
+  await turn.locator(".rc-work-line").click();
   await expect(turn.locator(".ag-step")).toHaveCount(3);
   await expect(turn.locator(".ag-step").first()).toContainText("Reading paragraph 3");
   await expect(turn.locator(".ag-step").last()).toContainText("Reading my answer back");
-  await expect(turn.locator(".rc-cite", { hasText: "b3" })).toBeVisible();
+  await expect(turn.locator(".rc-cite", { hasText: "¶ 3" })).toBeVisible();
   await expect(turn.locator(".rc-cite", { hasText: "p2" })).toBeVisible();
 
-  /* A citation points back at the paragraph. */
-  await turn.locator(".rc-cite", { hasText: "b3" }).click();
+  /* A paragraph citation points back at the paragraph; a passage citation
+     opens that passage of the paper under it. */
+  await turn.locator(".rc-cite", { hasText: "¶ 3" }).click();
   await expect(page.locator("#rb-b3")).toHaveClass(/is-cited/);
+  await turn.locator(".rc-cite", { hasText: "p2" }).click();
+  await expect(page.locator("#rb-b3 .reader-pop")).toBeVisible();
+  await expect(page.locator("#rb-b3 .reader-pop-passage b")).toHaveText("p2");
+  await page.locator("#rb-b3 .reader-pop-close").click();
 
   /* What the story does not say is said so. */
   await page.locator(".reader-paragraph").nth(1).click();
@@ -134,8 +145,8 @@ test("a reader asks about a paragraph, watches the work, and reads a checked ans
   await sheet.getByRole("button", { name: "Forget me" }).click();
   await sheet.getByRole("button", { name: "Yes, forget me" }).click();
   await expect(sheet.locator(".rc-activity")).toContainText("Nothing yet.");
-  await sheet.getByRole("button", { name: "Back to the conversation" }).click();
-  await expect(sheet.locator(".ag-empty-title")).toHaveText("Stuck on something?");
+  await sheet.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(sheet.locator(".rc-intro-text")).toBeVisible();
   await expect(sheet.locator(".rc-turn")).toHaveCount(0);
 });
 

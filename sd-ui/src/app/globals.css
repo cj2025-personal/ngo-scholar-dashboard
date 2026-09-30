@@ -4094,10 +4094,15 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 }
 
 /* ══ Reading companion (the public reader's helper) ═════════════════════════
-   A docked sheet beside the article, built from the agent console's parts so
-   the two read as one product. Only the way in, the answer's provenance
-   labels and the activity list are new.
+   A pane beside the article, built from the agent console's parts so the two
+   read as one product. On a wide screen the article moves over and the two
+   sit side by side; on a phone the companion is a sheet over the bottom of
+   the page. New here: the way in, the pending turn with its live steps, the
+   folded work line, the answer's provenance label and citations, and the
+   activity list.
    ═══════════════════════════════════════════════════════════════════════ */
+:root { --rc-width: 400px; --rc-gap: 16px; }
+
 .rc-launch {
   position: fixed; right: 24px; bottom: 24px; z-index: 40;
   display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 18px 0 8px;
@@ -4109,21 +4114,48 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .rc-launch:hover { transform: translateY(-1px); background: var(--sd-heading); }
 .rc-launch-mark { width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.16); font-family: var(--sd-display); font-size: 16px; }
 
+/* The article makes room. `padding-right` rather than a grid, so the reading
+   column keeps its own width and re-centres in what is left. */
+.public-story-shell { transition: padding-right 220ms ease; }
+html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--rc-gap) * 2); }
+
 .rc-sheet {
-  position: fixed; top: 16px; right: 16px; bottom: 16px; z-index: 45; width: min(400px, calc(100vw - 32px));
+  position: fixed; top: var(--rc-gap); right: var(--rc-gap); bottom: var(--rc-gap); z-index: 45; width: min(var(--rc-width), calc(100vw - 32px));
   display: flex; flex-direction: column;
   background: var(--sd-surface); border: 1px solid var(--sd-line); border-radius: 18px;
   box-shadow: 0 24px 60px -24px rgba(23, 37, 84, 0.45);
   overflow: hidden;
 }
 .rc-panel { height: 100%; }
-.rc-head { align-items: flex-start; }
+.rc-head { padding: 10px 12px 10px 14px; }
+.rc-head-title { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.rc-head-title .rc-avatar { width: 22px; height: 22px; flex-basis: 22px; font-size: 11px; }
 .rc-head-actions { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .rc-activity-link { font-size: 11.5px; white-space: nowrap; }
-.rc-avatar { background: var(--ark-info, #2563eb); }
-.rc-thread { padding-bottom: 8px; }
+.rc-avatar { background: var(--ark-info, #2563eb); border-radius: 999px; }
+
+/* The thread grows up from the composer, like a conversation; a long one scrolls. */
+.rc-thread { justify-content: safe flex-end; padding-bottom: 10px; gap: 20px; }
+.rc-intro { align-self: stretch; }
+.rc-intro-text { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink); }
+.rc-intro-hint { margin: 2px 0 0; font-size: 12.5px; color: var(--sd-muted); }
+.rc-examples { margin-top: 2px; }
+
 .rc-steps .ag-step-ic { background: var(--ark-navy-soft); color: var(--navy); font-size: 10px; }
-.rc-working .ag-steps { margin-top: 4px; }
+.rc-step-spinner { width: 10px; height: 10px; border-width: 2px; }
+.rc-steps .ag-step.is-live { color: var(--sd-heading); }
+.rc-working { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-left: 3px solid var(--navy); background: var(--ark-navy-soft); border-radius: 0 10px 10px 0; }
+.rc-working .ag-elapsed { align-self: flex-end; }
+.rc-turn.is-pending .ag-ask { opacity: 0.9; }
+
+/* The work, folded to a line once the turn is done. */
+.rc-work { font-size: 12px; color: var(--sd-faint); }
+.rc-work-line { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.rc-work-line::-webkit-details-marker { display: none; }
+.rc-work-line::before { content: "›"; display: inline-block; transition: transform 120ms ease; color: var(--sd-faint); }
+.rc-work[open] .rc-work-line::before { transform: rotate(90deg); }
+.rc-work-line:hover { color: var(--navy); }
+.rc-work .ag-steps { margin-top: 6px; }
 
 .rc-answer { display: flex; flex-direction: column; gap: 8px; }
 .rc-answer-text { margin: 0; font-family: var(--sd-display); font-size: 15px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; }
@@ -4134,8 +4166,10 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .rc-grounding.is-not-here { background: var(--sd-surface-2); color: var(--sd-muted); }
 .rc-grounding.is-refused { background: var(--ark-warning-soft); color: #7a4b00; }
 .rc-cites { display: inline-flex; gap: 4px; flex-wrap: wrap; }
-.rc-cite { font-family: var(--sd-sans); font-size: 10px; font-weight: 700; color: var(--navy); background: var(--ark-navy-soft); border: 0; border-radius: 999px; padding: 2px 7px; cursor: pointer; }
+.rc-cite { font-family: var(--sd-sans); font-size: 10.5px; font-weight: 700; color: var(--navy); background: var(--ark-navy-soft); border: 0; border-radius: 999px; padding: 2px 8px; cursor: pointer; }
 .rc-cite:hover { background: var(--navy); color: #fff; }
+.rc-cite.is-paper { background: var(--sd-surface-2); color: var(--sd-muted); border: 1px solid var(--sd-line); }
+.rc-cite.is-paper:hover { background: var(--sd-heading); color: #fff; border-color: var(--sd-heading); }
 
 .rc-composer .ag-hint { flex-wrap: wrap; gap: 6px; }
 
@@ -4146,7 +4180,7 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 
 /* What the companion did: every question, every step. */
 .rc-activity { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
-.rc-activity-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--sd-heading); }
+.rc-activity-title { margin: 0; font-family: var(--sd-display); font-weight: 700; font-size: 15px; color: var(--sd-heading); }
 .rc-activity-note { font-size: 12.5px; line-height: 1.55; margin: 0; }
 .rc-activity-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .rc-activity-item { border: 1px solid var(--sd-line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--sd-surface); }
@@ -4155,7 +4189,12 @@ a.sc-prof-mini-item:hover strong { color: var(--navy); }
 .rc-forget { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--sd-line-soft); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; }
 .rc-forget-link { color: var(--ark-red, #b91c1c); }
 
+/* Narrower than the article plus the pane: the pane sits over the page,
+   from the bottom, as a sheet; the article does not move. */
+@media (max-width: 1180px) {
+  html.rc-open .public-story-shell { padding-right: 20px; }
+  .rc-sheet { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: min(82dvh, 680px); border-radius: 18px 18px 0 0; border-bottom: 0; }
+}
 @media (max-width: 760px) {
   .rc-launch { right: 16px; bottom: 16px; }
-  .rc-sheet { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: min(82dvh, 680px); border-radius: 18px 18px 0 0; border-bottom: 0; }
 }

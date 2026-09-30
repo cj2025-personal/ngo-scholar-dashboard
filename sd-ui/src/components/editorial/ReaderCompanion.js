@@ -9,12 +9,17 @@ import { askCompanion, forgetMe, getCompanionThread, getMyCompanionTurns } from 
  * The reading companion: a thread beside the article, for a reader with a
  * question about it.
  *
- * The reader asks in plain words. What they watch is the work: each thing
- * the companion reads or searches, as it happens, then the answer once it
- * has been read back by the Sentinel. Every answer says where it came
- * from: the story, background on a word, or "the story doesn't say".
- * Citations click through to the paragraph. A reader can see everything
- * they asked and can be forgotten, from the same panel.
+ * The reader asks in plain words. Their question takes its place in the
+ * thread at once; under it, the work arrives step by step as it happens,
+ * then the answer once the Sentinel has read it back. Every answer says
+ * where it came from: the story, background on a word, or "the story
+ * doesn't say". Citations point back at the paragraph, or open the passage
+ * of the paper it rests on. Once a turn is done its steps fold into one
+ * line, so a long thread reads as a conversation and not as a log.
+ *
+ * On a wide screen the article moves over and the two sit side by side; on
+ * a phone the companion is a sheet over the bottom of the page. A reader
+ * can see everything they asked and can be forgotten, from the same panel.
  *
  * Nothing here knows who the reader is. Neither does the server.
  */
@@ -34,13 +39,36 @@ const GROUNDING_LABEL = {
 
 const TOOL_ICON = { read_block: "¶", read_passage: "§", search_passages: "⌕", answer: "✎", sentinel: "✓" };
 
-function Steps({ steps, live = false }) {
+/** A citation, in the reader's terms: a paragraph number, or a passage of the paper. */
+function citeLabel(id) {
+  const b = /^b(\d+)$/.exec(id);
+  if (b) return `¶ ${b[1]}`;
+  const p = /^p(\d+)$/.exec(id);
+  if (p) return `Paper · ${id}`;
+  return id;
+}
+
+/** What a finished turn's steps come to, in one line. */
+function stepsSummary(steps) {
+  const read = [...new Set((steps || []).filter((s) => s.tool === "read_block").map((s) => (s.summary.match(/(\d+)/) || [])[1]).filter(Boolean))];
+  const searched = (steps || []).filter((s) => s.tool === "search_passages").length;
+  const checked = (steps || []).some((s) => s.tool === "sentinel");
+  const parts = [];
+  if (read.length) parts.push(`Read ${read.map((n) => `¶ ${n}`).join(", ")}`);
+  if (searched) parts.push(searched === 1 ? "searched the paper" : `searched the paper ${searched} times`);
+  if (checked) parts.push("checked the answer before showing it");
+  if (!parts.length) return "";
+  const line = parts.join(" · ");
+  return line.charAt(0).toUpperCase() + line.slice(1);
+}
+
+function StepList({ steps, live = false }) {
   if (!steps?.length) return null;
   return (
     <ol className="ag-steps rc-steps" aria-live={live ? "polite" : undefined}>
       {steps.map((s, i) => (
-        <li key={i} className="ag-step">
-          <span className="ag-step-ic" aria-hidden>{TOOL_ICON[s.tool] || "…"}</span>
+        <li key={i} className={`ag-step${live && i === steps.length - 1 ? " is-live" : ""}`}>
+          <span className="ag-step-ic" aria-hidden>{live && i === steps.length - 1 ? <span className="ag-spinner rc-step-spinner" /> : TOOL_ICON[s.tool] || "…"}</span>
           <span>{s.summary}</span>
         </li>
       ))}
@@ -48,20 +76,42 @@ function Steps({ steps, live = false }) {
   );
 }
 
-function Answer({ turn, text, onCite }) {
+/** A finished turn's work, folded to a line the reader can open. */
+function Steps({ steps }) {
+  const line = stepsSummary(steps);
+  if (!line) return null;
+  return (
+    <details className="rc-work">
+      <summary className="rc-work-line">{line}</summary>
+      <StepList steps={steps} />
+    </details>
+  );
+}
+
+function Answer({ turn, onCite }) {
   const g = turn?.outcome === "refused" ? { text: "Couldn't answer safely", cls: "is-refused" }
     : turn?.outcome === "failed" ? { text: "Ran out of time", cls: "is-refused" }
     : GROUNDING_LABEL[turn?.answer?.grounding] || GROUNDING_LABEL.story;
-  const cites = turn?.answer ? [...(turn.answer.blockIds || []), ...(turn.answer.passageIds || [])] : [];
+  const blockIds = turn?.answer?.blockIds || [];
+  const passageIds = turn?.answer?.passageIds || [];
+  const cites = [...blockIds, ...passageIds];
   return (
     <div className="rc-answer">
-      <p className="rc-answer-text">{text}</p>
+      <p className="rc-answer-text">{turn.text}</p>
       <div className="rc-answer-foot">
         <span className={`rc-grounding ${g.cls}`}>{g.text}{turn?.answer?.term ? ` · “${turn.answer.term}”` : ""}</span>
         {cites.length ? (
           <span className="rc-cites">
             {cites.map((id) => (
-              <button key={id} type="button" className="rc-cite" onClick={() => onCite?.(id)} title={id.startsWith("b") ? "Go to this paragraph" : "A passage of the paper"}>{id}</button>
+              <button
+                key={id}
+                type="button"
+                className={`rc-cite${id.startsWith("p") ? " is-paper" : ""}`}
+                onClick={() => onCite?.(id.startsWith("b") ? { blockId: id } : { blockId: blockIds[0] || null, passageId: id })}
+                title={id.startsWith("b") ? "Go to this paragraph" : "Open this passage of the paper"}
+              >
+                {citeLabel(id)}
+              </button>
             ))}
           </span>
         ) : null}
@@ -70,21 +120,55 @@ function Answer({ turn, text, onCite }) {
   );
 }
 
-function Working({ steps }) {
+function Elapsed() {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setSeconds((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
+  return <span className="ag-elapsed">{seconds}s</span>;
+}
+
+function Turn({ turn, onCite }) {
   return (
-    <div className="ag-working rc-working" role="status" aria-live="polite">
-      <div className="ag-working-line"><span className="ag-spinner" aria-hidden /> {steps.length ? steps[steps.length - 1].summary : "Reading your question"}… <span className="ag-elapsed">{seconds}s</span></div>
-      <Steps steps={steps} live />
+    <div className={`ag-turn rc-turn${turn.pending ? " is-pending" : ""}`}>
+      <div className="ag-ask">{turn.question}</div>
+      <div className="ag-reply">
+        <span className="ag-avatar rc-avatar" aria-hidden>?</span>
+        <div className="ag-reply-body">
+          {turn.pending ? (
+            <div className="rc-working" role="status" aria-live="polite">
+              <StepList steps={turn.steps.length ? turn.steps : [{ tool: "answer", summary: "Reading your question" }]} live />
+              <Elapsed />
+            </div>
+          ) : (
+            <>
+              <Steps steps={turn.steps} />
+              <Answer turn={turn} onCite={onCite} />
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function Activity({ onClose, onForgotten }) {
+function Intro({ onExample, disabled }) {
+  return (
+    <div className="ag-reply rc-intro">
+      <span className="ag-avatar rc-avatar" aria-hidden>?</span>
+      <div className="ag-reply-body">
+        <p className="rc-intro-text">
+          Hello. I&apos;m here to help you read this story. Ask me about any part of it and I&apos;ll look it up in the article and the paper behind it, show you what I read, and tell you plainly if the story doesn&apos;t say. I never ask about you.
+        </p>
+        <p className="rc-intro-hint">Tap a paragraph to ask about that one, or start with:</p>
+        <div className="ag-examples rc-examples">{EXAMPLES.map((e) => <button key={e} type="button" className="ag-example" disabled={disabled} onClick={() => onExample(e)}>{e}</button>)}</div>
+      </div>
+    </div>
+  );
+}
+
+function Activity({ onForgotten }) {
   const [state, setState] = useState({ loading: true, turns: [], keepDays: 30, error: "" });
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -104,10 +188,7 @@ function Activity({ onClose, onForgotten }) {
   }
   return (
     <div className="rc-activity">
-      <div className="rc-activity-head">
-        <b>What the companion did</b>
-        <button type="button" className="ag-rail-close" onClick={onClose} aria-label="Back to the conversation"><FaXmark size={12} aria-hidden /></button>
-      </div>
+      <p className="rc-activity-title">What the companion did</p>
       <p className="st-muted rc-activity-note">Every question you asked, on any story, and every step taken to answer it. Kept for {state.keepDays} days on this device only, then gone. Nobody knows who you are, here or on the server.</p>
       {state.loading ? <p className="st-muted">Loading…</p> : null}
       {state.error ? <p className="sc-write-msg is-error">{state.error}</p> : null}
@@ -116,8 +197,8 @@ function Activity({ onClose, onForgotten }) {
         {state.turns.map((t) => (
           <li key={t.id} className="rc-activity-item">
             <div className="rc-activity-q">{t.question}</div>
-            <div className="rc-activity-meta">{t.storyTitle} · {new Date(t.createdAt).toLocaleString()} · {t.outcome === "refused" ? "not answered" : GROUNDING_LABEL[t.answer?.grounding]?.text.toLowerCase() || "answered"}</div>
-            <Steps steps={t.steps} />
+            <div className="rc-activity-meta">{t.storyTitle} · {new Date(t.createdAt).toLocaleString()} · {t.outcome === "refused" ? "not answered" : t.outcome === "failed" ? "ran out of time" : GROUNDING_LABEL[t.answer?.grounding]?.text.toLowerCase() || "answered"}</div>
+            <StepList steps={t.steps} />
           </li>
         ))}
       </ol>
@@ -141,21 +222,28 @@ function Activity({ onClose, onForgotten }) {
  * @param {string} p.slug
  * @param {string|null} p.level        the reading level the reader is on, or null for the article's own
  * @param {{index:number, text:string}|null} p.focus   the paragraph the reader last touched, 1-based among text blocks
- * @param {(blockId:string)=>void} [p.onCite]
+ * @param {(cite:{blockId:string|null, passageId?:string})=>void} [p.onCite]
  */
 export default function ReaderCompanion({ slug, level = null, focus = null, onCite }) {
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState(null);
+  const [pending, setPending] = useState(null);
   const [remaining, setRemaining] = useState(null);
   const [question, setQuestion] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [liveSteps, setLiveSteps] = useState([]);
   const [error, setError] = useState("");
   const [useFocus, setUseFocus] = useState(true);
   const [showActivity, setShowActivity] = useState(false);
   const threadRef = useRef(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
+  const busy = Boolean(pending);
+
+  /* The article makes room on a wide screen; the stylesheet reads this. */
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    document.documentElement.classList.toggle("rc-open", open);
+    return () => document.documentElement.classList.remove("rc-open");
+  }, [open]);
 
   useEffect(() => {
     if (!open || turns !== null) return undefined;
@@ -169,7 +257,7 @@ export default function ReaderCompanion({ slug, level = null, focus = null, onCi
 
   useEffect(() => {
     if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
-  }, [turns?.length, busy, liveSteps.length]);
+  }, [turns?.length, pending?.steps?.length, pending]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -187,20 +275,19 @@ export default function ReaderCompanion({ slug, level = null, focus = null, onCi
     const ask = (text ?? question).trim();
     if (!ask || busy) return;
     setError("");
-    setBusy(true);
-    setLiveSteps([]);
     setQuestion("");
     if (inputRef.current) inputRef.current.style.height = "auto";
+    /* The question takes its place at once; the work fills in under it. */
+    setPending({ id: "pending", question: ask, pending: true, steps: [] });
     const controller = new AbortController();
     abortRef.current = controller;
     const r = await askCompanion(slug, {
       question: ask,
       level,
       focusIndex: focusUsable && useFocus && !mentionsParagraph(ask) ? focus.index : null,
-    }, { onStep: (s) => setLiveSteps((cur) => [...cur, s]), signal: controller.signal });
+    }, { onStep: (s) => setPending((cur) => (cur ? { ...cur, steps: [...cur.steps, s] } : cur)), signal: controller.signal });
     abortRef.current = null;
-    setBusy(false);
-    setLiveSteps([]);
+    setPending(null);
     if (r.aborted) return;
     if (!r.ok) {
       /* A stopped turn takes its place in the thread, saying so; the question
@@ -230,7 +317,7 @@ export default function ReaderCompanion({ slug, level = null, focus = null, onCi
     <aside className="rc-sheet" role="dialog" aria-label="Reading companion">
       <div className="ag-panel rc-panel">
         <div className="ag-head rc-head">
-          <span><b>Reading companion</b> · answers only from this story and its paper</span>
+          <span className="rc-head-title"><span className="ag-avatar rc-avatar" aria-hidden>?</span><b>Reading companion</b></span>
           <span className="rc-head-actions">
             <button type="button" className="st-link rc-activity-link" onClick={() => setShowActivity((v) => !v)} aria-pressed={showActivity}>{showActivity ? "Back" : "What it did"}</button>
             <button type="button" className="ag-rail-close" onClick={() => setOpen(false)} aria-label="Close the companion"><FaXmark size={12} aria-hidden /></button>
@@ -238,31 +325,14 @@ export default function ReaderCompanion({ slug, level = null, focus = null, onCi
         </div>
 
         {showActivity ? (
-          <Activity onClose={() => setShowActivity(false)} onForgotten={() => { setTurns([]); setRemaining(null); }} />
+          <Activity onForgotten={() => { setTurns([]); setRemaining(null); }} />
         ) : (
           <>
             <div className="ag-thread rc-thread" ref={threadRef}>
-              {turns !== null && turns.length === 0 && !busy ? (
-                <div className="ag-empty">
-                  <p className="ag-empty-title">Stuck on something?</p>
-                  <p className="st-muted">Ask about any part of this story. The companion reads the article and the paper behind it, shows you what it looked at, and tells you plainly when the story doesn&apos;t say. It never asks about you.</p>
-                  <div className="ag-examples">{EXAMPLES.map((e) => <button key={e} type="button" className="ag-example" onClick={() => send(e)}>{e}</button>)}</div>
-                </div>
-              ) : null}
               {turns === null ? <p className="st-muted">Loading…</p> : null}
-              {(turns || []).map((t) => (
-                <div key={t.id} className="ag-turn rc-turn">
-                  <div className="ag-ask">{t.question}</div>
-                  <div className="ag-reply">
-                    <span className="ag-avatar rc-avatar" aria-hidden>?</span>
-                    <div className="ag-reply-body">
-                      <Steps steps={t.steps} />
-                      <Answer turn={t} text={t.text} onCite={onCite} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {busy ? <Working steps={liveSteps} /> : null}
+              {turns !== null && turns.length === 0 ? <Intro onExample={send} disabled={busy || capped} /> : null}
+              {(turns || []).map((t) => <Turn key={t.id} turn={t} onCite={onCite} />)}
+              {pending ? <Turn turn={pending} /> : null}
               {error ? <p className="sc-write-msg is-error">{error}</p> : null}
             </div>
 
@@ -291,7 +361,7 @@ export default function ReaderCompanion({ slug, level = null, focus = null, onCi
                 <button type="submit" className="sc-write-publish ag-send" disabled={busy || capped || !question.trim()} aria-label="Send"><FaPaperPlane size={12} aria-hidden /></button>
               </div>
               <div className="ag-hint">
-                <span>Answers come from this story and its paper, and are checked before you see them.</span>
+                <span>Answers come from this story and its paper, checked before you see them.</span>
                 {remaining !== null ? <span>{remaining} left today</span> : null}
               </div>
             </form>
