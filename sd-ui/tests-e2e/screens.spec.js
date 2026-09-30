@@ -58,7 +58,7 @@ test("capture the current screens", async ({ page, context, browser }) => {
   await shot("09-workspace-source");
   await page.getByRole("tab", { name: "Checks" }).click();
   await shot("10-workspace-checks");
-  await page.getByRole("tab", { name: "Agent" }).click();
+  await page.getByRole("tab", { name: "Chat" }).click();
   await page.getByPlaceholder("What should change?").fill("Shorten paragraph 2 to one sentence");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".ag-proposal").first().locator(".ag-change").first()).toBeVisible({ timeout: 60_000 });

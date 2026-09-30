@@ -4283,3 +4283,56 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 @media (max-width: 760px) {
   .rc-status { max-width: 180px; }
 }
+
+/* ══ The scholar's agent as a personal helper ═══════════════════════════════
+   The review rail and the new-story rail share one shape with the reader's
+   companion: a head naming the agent and saying what it is doing, sections
+   along the foot, the current section between. Built from the same pieces
+   (.rc-*), so the two agents read as one product.
+   ═══════════════════════════════════════════════════════════════════════ */
+.ws-agent { height: 100%; }
+.ws-agent-head { flex: 0 0 auto; }
+.ws-agent-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.ws-agent-body > .ag-panel { flex: 1; min-height: 0; }
+.ws-agent-body > .sr-wrap, .ws-agent-body > .ck-wrap, .ws-agent-body > .ev-wrap { padding: 14px 16px 16px; }
+
+/* The review rail: head at the top, tabs along the foot, no header tabs. */
+.ws-right .ws-tabs { border-top: 1px solid var(--sd-line); border-bottom: 0; flex: 0 0 auto; }
+.ws-right .ws-tab { border-bottom: 0; }
+.ws-right .ws-tab.on { border-bottom: 0; }
+.ws-tab-badge { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 5px; border-radius: 999px; background: var(--ark-warning); color: #fff; font-size: 10px; font-weight: 800; vertical-align: middle; }
+.ws-right .ws-rail-body.is-hidden { display: none; }
+
+/* Sources: the paragraph's passages, or the whole story's record. */
+.ws-sources { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.ws-seg { display: inline-flex; gap: 2px; padding: 3px; margin: 12px 16px 0; border: 1px solid var(--sd-line); border-radius: 999px; background: var(--sd-surface-2); align-self: flex-start; }
+.ws-seg-btn { border: 0; background: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--sd-muted); padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.ws-seg-btn.on { background: var(--sd-surface); color: var(--navy); box-shadow: var(--sd-sh-sm); }
+
+/* Behind the face, in the studio. */
+.ws-about-terms { margin: 4px 0 0; font-size: 12.5px; color: var(--sd-muted); line-height: 1.5; }
+.ws-about-terms .st-link { font-size: 12.5px; }
+.ws-about-activity .hist-wrap, .ws-about-activity > div { padding: 0; }
+
+/* Approval cards: the outline waiting, the change waiting. One look. */
+.ag-approval > .ch-bubble, .ag-proposal.ag-approval { border-color: var(--navy); box-shadow: 0 0 0 3px var(--ark-navy-soft), var(--sd-sh-sm); }
+.ag-approval-kicker { margin: 0 0 8px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--navy); font-family: var(--sd-sans); }
+.ag-example.is-primary { border-color: var(--navy); background: var(--ark-navy-soft); font-weight: 700; }
+
+/* The new-story rail, with the head above and the tabs below the chat. */
+.sc-writer.has-rail .ws-right { display: flex; flex-direction: column; }
+.sc-writer.has-rail .ws-right > .ws-rail-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sc-writer.has-rail .ws-right > .ws-agent-body { flex: 1; min-height: 0; }
+.sc-writer.has-rail .ws-right > .rc-about { flex: 1; }
+
+/* The agent's face in the chat, where a navy square used to be. */
+.ag-avatar.rc-face { border-radius: 999px; }
+
+/* The review rail keeps one height whichever section is open, so the tabs
+   sit at its foot and the section scrolls inside it, like a messaging app.
+   Below 1100px the rail is static in the page and takes its own height. */
+.sc-writer.is-review .ws-right { height: calc(100vh - var(--ws-bar-h, 56px)); display: flex; flex-direction: column; }
+.sc-writer.is-review .ws-right > .ws-agent { flex: 1; min-height: 0; }
+@media (max-width: 1100px) {
+  .sc-writer.is-review .ws-right { height: auto; max-height: min(80dvh, 720px); }
+}

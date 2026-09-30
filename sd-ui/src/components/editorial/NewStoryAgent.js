@@ -5,6 +5,8 @@ import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 import { HiChevronDown, HiOutlineAcademicCap, HiOutlineDocumentText, HiOutlinePencilSquare, HiOutlinePlusSmall, HiOutlineUsers } from "react-icons/hi2";
 
 import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
+import AgentFace from "./AgentFace";
+import { useStudioPersona } from "./StudioAgentShell";
 
 /**
  * The agent, in the rail of a story that has no paper behind it yet.
@@ -28,15 +30,16 @@ function paperKey(p) {
   return `${p.origin}:${p.id}`;
 }
 
-function OutlineMessage({ msg, latest, busy, onApprove, onDiscard }) {
+function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, persona }) {
   const [beats, setBeats] = useState(() => (msg.outline.beats || []).map((b) => ({ ...b, kept: true })));
   const kept = beats.filter((b) => b.kept);
   const beyond = beats.filter((b) => b.kind === "extension").length;
   const coverage = msg.outline.coverage || null;
   return (
-    <div className="ch-msg is-agent is-outline">
-      <span className="ag-avatar" aria-hidden>A</span>
+    <div className={`ch-msg is-agent is-outline${latest ? " ag-approval" : ""}`}>
+      <AgentFace persona={persona} />
       <div className="ch-bubble">
+        {latest ? <p className="ag-approval-kicker">Needs your approval</p> : null}
         <p className="ch-text">
           {msg.replans ? "Here is the outline again, replanned from what you said." : "I read the paper. Here is how the article would go."}{" "}
           {beyond
@@ -96,7 +99,8 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard }) {
  *                                    `initialSource` rather than describing one
  * @param {(stage: "outline"|null) => void} [p.onStageChange]   what the rail is asking for, so the page can give it the room it needs
  */
-export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange }) {
+export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, onStatus, onPaperChange }) {
+  const [persona] = useStudioPersona();
   const [inventory, setInventory] = useState(null);
   const [paper, setPaper] = useState(initialSource);
   const [audience, setAudience] = useState(DEFAULT_AUDIENCE);
@@ -241,32 +245,67 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
      holds it — and never when a job is already in hand, so a reload of a
      proposal that exists picks it up rather than paying for a second one. */
   const proposedRef = useRef(false);
+  async function propose() {
+    if (!ready || busy || job || !selectedPaper) return;
+    push({ role: "user", text: "What could this paper become?" });
+    setBusy(true);
+    setProgress("Reading the paper…");
+    const r = await proposeFromPaper({ origin: selectedPaper.origin, sourceId: selectedPaper.id });
+    if (!r.ok) {
+      setBusy(false);
+      clearProgress();
+      /* The day's allowance, a provider that is down, a paper that turned
+         out not to be draftable. Said here, where the composer still works,
+         so the scholar can describe an article themselves instead. */
+      push({ role: "error", text: `${r.error} You can still tell me what to write below.` });
+      return;
+    }
+    const j = r.data.job;
+    setJob(j);
+    if (j.status === "awaiting_outline") { setBusy(false); showOutline(j, { replans: j.replans || 0 }); return; }
+    if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That did not complete." }); return; }
+    watch(j);
+  }
   useEffect(() => {
     if (!autoPropose || proposedRef.current) return;
     if (!ready || resumeJobId || job || !selectedPaper) return;
     proposedRef.current = true;
-    (async () => {
-      push({ role: "user", text: "What could this paper become?" });
-      setBusy(true);
-      setProgress("Reading the paper…");
-      const r = await proposeFromPaper({ origin: selectedPaper.origin, sourceId: selectedPaper.id });
-      if (!r.ok) {
-        setBusy(false);
-        clearProgress();
-        /* The day's allowance, a provider that is down, a paper that turned
-           out not to be draftable. Said here, where the composer still works,
-           so the scholar can describe an article themselves instead. */
-        push({ role: "error", text: `${r.error} You can still tell me what to write below.` });
-        return;
-      }
-      const j = r.data.job;
-      setJob(j);
-      if (j.status === "awaiting_outline") { setBusy(false); showOutline(j, { replans: j.replans || 0 }); return; }
-      if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That did not complete." }); return; }
-      watch(j);
-    })();
+    const t = setTimeout(propose, 0);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPropose, ready, resumeJobId, job, selectedPaper]);
+  /* The Ideas tab asks the same question, on demand. */
+  const proposeSeenRef = useRef(proposeNow);
+  useEffect(() => {
+    if (proposeNow === proposeSeenRef.current) return undefined;
+    proposeSeenRef.current = proposeNow;
+    const t = setTimeout(() => {
+      if (!selectedPaper) { push({ role: "agent", text: "Pick a paper below first, and I will read it and propose what it could become." }); return; }
+      propose();
+    }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposeNow]);
+
+  /* A brief handed in from the Ideas tab: in the box, to change before sending. */
+  useEffect(() => {
+    if (!prefill) return undefined;
+    const t = setTimeout(() => {
+      setText(prefill);
+      onPrefillTaken?.();
+      inputRef.current?.focus();
+    }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
+
+  /* The line under the agent's name, in the pane's head. */
+  const progressText = messages.find((m) => m.role === "progress")?.text || "";
+  useEffect(() => {
+    const text = busy ? (progressText || "Working") : outlineWaiting ? "An outline is waiting for your approval" : locked ? "Draft in hand" : !ready ? "Looking at your papers" : selectedPaper ? `Ready to plan from “${String(selectedPaper.title || "").length > 26 ? `${String(selectedPaper.title).slice(0, 25).trim()}…` : selectedPaper.title}”` : "Pick a paper to begin";
+    onStatus?.({ text, busy });
+  }, [busy, progressText, outlineWaiting, locked, ready, selectedPaper, onStatus]);
+  useEffect(() => { onPaperChange?.(selectedPaper); }, [selectedPaper, onPaperChange]);
 
   /* Coming back to a job from Studio. */
   useEffect(() => {
@@ -360,19 +399,19 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       <div className="ch-thread" ref={threadRef}>
         {messages.map((m) => {
           if (m.role === "outline") {
-            return <OutlineMessage key={m.id} msg={m} latest={m.id === latestOutlineId && outlineWaiting} busy={busy} onApprove={approve} onDiscard={discard} />;
+            return <OutlineMessage key={m.id} msg={m} latest={m.id === latestOutlineId && outlineWaiting} busy={busy} onApprove={approve} onDiscard={discard} persona={persona} />;
           }
           if (m.role === "user") return <div key={m.id} className="ch-msg is-user"><div className="ch-bubble">{m.text}</div></div>;
           if (m.role === "progress") {
             return (
               <div key={m.id} className="ch-msg is-agent">
-                <span className="ag-avatar" aria-hidden>A</span>
+                <AgentFace persona={persona} />
                 <div className="ag-working" role="status" aria-live="polite"><div className="ag-working-line"><span className="ag-spinner" aria-hidden /> {m.text}</div></div>
               </div>
             );
           }
-          if (m.role === "error") return <div key={m.id} className="ch-msg is-agent"><span className="ag-avatar" aria-hidden>A</span><div className="ch-bubble is-error">{m.text}</div></div>;
-          return <div key={m.id} className="ch-msg is-agent"><span className="ag-avatar" aria-hidden>A</span><div className="ch-bubble">{m.text}</div></div>;
+          if (m.role === "error") return <div key={m.id} className="ch-msg is-agent"><AgentFace persona={persona} /><div className="ch-bubble is-error">{m.text}</div></div>;
+          return <div key={m.id} className="ch-msg is-agent"><AgentFace persona={persona} /><div className="ch-bubble">{m.text}</div></div>;
         })}
       </div>
 

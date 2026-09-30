@@ -114,13 +114,14 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.locator(".block-row .block-chip.is-lost")).toHaveCount(0);
 
   /* The Agent console is the default rail; the composer is docked and ready. */
-  await expect(page.locator(".ws-tab.on")).toHaveText("Agent");
+  await expect(page.locator(".ws-tab.on")).toContainText("Chat");
   await expect(page.getByPlaceholder("What should change?")).toBeVisible();
 
   /* Source rail: the passages behind the paragraph the scholar is on. */
   const firstParagraph = page.locator(".block-row", { has: page.locator(".block-chip") }).first();
   await firstParagraph.locator(".block-editor-surface").click();
-  await page.getByRole("tab", { name: "Source" }).click();
+  await page.getByRole("tab", { name: "Sources" }).click();
+  await page.getByRole("button", { name: "This paragraph" }).click();
   await expect(page.locator(".sr-passage").first()).toBeVisible();
   await expect(page.locator(".sr-passage mark").first()).toBeVisible();
 
@@ -137,14 +138,14 @@ test("from a paper to a published story, with the agent editing by instruction",
   await page.keyboard.type(" Written by hand.");
   await expect(page.locator(".sc-write-saved")).toHaveText(/Unsaved/);
 
-  await page.getByRole("tab", { name: "Agent" }).click();
+  await page.getByRole("tab", { name: "Chat" }).click();
   await expect(page.getByPlaceholder(/Save your edits first/)).toBeDisabled();
   await expect(page.locator(".sc-write-saved")).toHaveText("Saved", { timeout: 25_000 });
   await expect(page.getByPlaceholder("What should change?")).toBeEnabled();
   await expect(page.locator(".block-row").filter({ hasText: "Written by hand." })).toHaveCount(1);
 
   /* Agent: an instruction becomes a proposal; nothing lands until Accept. */
-  await page.getByRole("tab", { name: "Agent" }).click();
+  await page.getByRole("tab", { name: "Chat" }).click();
   await expect(page.locator(".ag-example").first()).toBeVisible();
   await expect(page.locator(".ag-ctx-chip")).toContainText("¶ 2");
   const secondBlock = page.locator(".block-row").nth(1).locator(".block-editor-surface");
@@ -167,15 +168,17 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.locator(".block-row").nth(1).locator(".block-editor-surface")).toHaveText(proposed);
   await expect(page.locator(".block-row").nth(1).locator(".block-chip")).not.toHaveClass(/is-lost/);
 
-  /* Every version is on the record, and an earlier one can be put back. */
-  await page.getByRole("tab", { name: "History" }).click();
+  /* Every version is on the record, behind the agent's face, and an earlier one can be put back. */
+  await page.locator(".ws-right .ws-identity").click();
+  await expect(page.locator(".ws-about .rc-permissions li.is-no").first()).toContainText("without your acceptance");
   await expect(page.locator(".hist-item").first()).toBeVisible();
   const versions = await page.locator(".hist-item").count();
   expect(versions).toBeGreaterThanOrEqual(3);
   await expect(page.locator(".hist-badge.is-drafter")).toHaveCount(1);
   await expect(page.locator(".hist-badge.is-agent").first()).toBeVisible();
   await expect(page.locator(".hist-item.is-current")).toHaveCount(1);
-  await page.getByRole("tab", { name: "Agent" }).click();
+  await page.getByRole("button", { name: "Back to the agent" }).click();
+  await page.getByRole("tab", { name: "Chat" }).click();
 
   /* An illustration by instruction, then rejected: it never touches the story. */
   const rowsBefore = await page.locator(".block-row").count();
@@ -190,12 +193,14 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* Claim by claim: the Source rail shows which sentence rests on which. */
   await page.locator(".block-row", { has: page.locator(".block-chip") }).first().locator(".block-editor-surface").click();
-  await page.getByRole("tab", { name: "Source" }).click();
+  await page.getByRole("tab", { name: "Sources" }).click();
+  await page.getByRole("button", { name: "This paragraph" }).click();
   await expect(page.locator(".sr-claim").first()).toBeVisible();
   await expect(page.locator(".sr-claim-ev").first()).toContainText(/p\d+:/);
 
-  /* The Evidence rail: the whole article, checked by rule and ready to be signed. */
-  await page.getByRole("tab", { name: "Evidence" }).click();
+  /* Sources, whole story: the article checked by rule and ready to be signed. */
+  await page.getByRole("tab", { name: "Sources" }).click();
+  await page.getByRole("button", { name: "Whole story" }).click();
   await expect(page.locator(".ev-summary")).toContainText(/claims? checked against the paper/);
   await expect(page.locator(".ev-wrap .ck-item").first()).toContainText("Every number is in the paper");
   await expect(page.locator(".ev-wrap")).toContainText("When you publish");
@@ -224,7 +229,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.locator(".rec-banner")).toContainText("was retracted", { timeout: 20_000 });
   await expect(page.locator(".rec-banner")).toContainText(/Paragraphs? [\d, ]+ rests? on it/);
   await page.locator(".rec-banner").getByRole("button", { name: "Have the agent draft a notice" }).click();
-  await expect(page.locator(".ws-tab.on")).toHaveText("Agent");
+  await expect(page.locator(".ws-tab.on")).toContainText("Chat");
   await expect(page.getByPlaceholder("What should change?")).toHaveValue(/was retracted/);
   await page.getByPlaceholder("What should change?").fill("");
 

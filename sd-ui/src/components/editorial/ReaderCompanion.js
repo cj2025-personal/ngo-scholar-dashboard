@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FaPaperPlane, FaXmark } from "react-icons/fa6";
 
 import { getPublicStoryPassages, publicEvidenceUrl } from "@/lib/drafting";
+import { FACES, TONES, usePersona } from "@/lib/persona";
 import { askCompanion, forgetMe, getCompanionThread, getMyCompanionTurns } from "@/lib/reader";
+import AgentFace from "./AgentFace";
 
 /**
  * The reading companion: a personal helper beside the article, shaped like
@@ -44,8 +46,6 @@ const TABS = [
   { key: "sources", label: "Sources", icon: "§" },
 ];
 
-const FACES = ["?", "✦", "★", "☼", "❋", "◆"];
-const TONES = ["navy", "teal", "plum", "amber"];
 const DEFAULT_PERSONA = { name: "Reading companion", face: "?", tone: "navy" };
 
 const GROUNDING_LABEL = {
@@ -56,39 +56,7 @@ const GROUNDING_LABEL = {
 
 const TOOL_ICON = { read_block: "¶", read_passage: "§", search_passages: "⌕", answer: "✎", sentinel: "✓" };
 
-/* ── this browser's memory, and nowhere else ─────────────────────────────── */
-
-/*
- * The persona is read as an external store: the server renders the default,
- * the browser reads what this device chose, and a change tells every
- * subscriber. Private mode or blocked storage falls back to the default.
- */
 const PERSONA_KEY = "sd:companion";
-const personaListeners = new Set();
-let personaMemory = "";
-function subscribePersona(cb) { personaListeners.add(cb); return () => personaListeners.delete(cb); }
-function personaSnapshot() {
-  try { return window.localStorage.getItem(PERSONA_KEY) || personaMemory; } catch { return personaMemory; }
-}
-function parsePersona(raw) {
-  if (!raw) return DEFAULT_PERSONA;
-  try {
-    const p = JSON.parse(raw);
-    return { name: String(p.name || DEFAULT_PERSONA.name).slice(0, 24), face: FACES.includes(p.face) ? p.face : DEFAULT_PERSONA.face, tone: TONES.includes(p.tone) ? p.tone : DEFAULT_PERSONA.tone };
-  } catch {
-    return DEFAULT_PERSONA;
-  }
-}
-function usePersona() {
-  const raw = useSyncExternalStore(subscribePersona, personaSnapshot, () => "");
-  const persona = useMemo(() => parsePersona(raw), [raw]);
-  const setPersona = useCallback((next) => {
-    personaMemory = JSON.stringify(next);
-    try { window.localStorage.setItem(PERSONA_KEY, personaMemory); } catch { /* private mode: it lives for this page only */ }
-    personaListeners.forEach((cb) => cb());
-  }, []);
-  return [persona, setPersona];
-}
 
 /** A citation, in the reader's terms: a paragraph number, or a passage of the paper. */
 function citeLabel(id) {
@@ -116,7 +84,7 @@ function stepsSummary(steps) {
 /* ── pieces of the chat ──────────────────────────────────────────────────── */
 
 function Face({ persona, size = "" }) {
-  return <span className={`rc-face is-${persona.tone}${size ? ` is-${size}` : ""}`} aria-hidden>{persona.face}</span>;
+  return <AgentFace persona={persona} size={size} />;
 }
 
 function StepList({ steps, live = false }) {
@@ -435,7 +403,7 @@ export default function ReaderCompanion({ slug, level = null, levelsAvailable = 
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState("chat");
   const [about, setAbout] = useState(false);
-  const [persona, setPersona] = usePersona();
+  const [persona, setPersona] = usePersona(PERSONA_KEY, DEFAULT_PERSONA);
   const [turns, setTurns] = useState(null);
   const [pending, setPending] = useState(null);
   const [remaining, setRemaining] = useState(null);

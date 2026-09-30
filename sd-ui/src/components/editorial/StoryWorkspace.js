@@ -29,6 +29,8 @@ import HistoryRail from "@/components/editorial/HistoryRail";
 import EvidenceRail from "@/components/editorial/EvidenceRail";
 import ReadingLevels from "@/components/editorial/ReadingLevels";
 import RecordBanner from "@/components/editorial/RecordBanner";
+import StudioAgentShell, { AgentAbout, AgentIdentity, AgentTabs, STUDIO_PERMISSIONS } from "@/components/editorial/StudioAgentShell";
+import AgentIdeas, { newStoryIdeas, reviewIdeas } from "@/components/editorial/AgentIdeas";
 import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { AUDIENCE_TARGETS, assessForAudience, normaliseAudience } from "@/lib/readability";
@@ -245,7 +247,17 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
      on "What should change?" while four paragraphs need a look answers a
      question the scholar has not asked yet. */
   const [railTab, setRailTab] = useState(() =>
-    (initialStory?.bodyBlocks || []).some(needsAttention) ? "checks" : "agent");
+    (initialStory?.bodyBlocks || []).some(needsAttention) ? "checks" : "chat");
+  /* Sources shows the paragraph's passages, or the whole story's record. */
+  const [sourcesView, setSourcesView] = useState("block");
+  /* The line under the agent's name, reported by whichever agent is in the pane. */
+  const [agentStatus, setAgentStatus] = useState({ text: "Ready", busy: false });
+  /* The new-story pane: its section, its about sheet, and what the Ideas tab hands the composer. */
+  const [newTab, setNewTab] = useState("chat");
+  const [newAbout, setNewAbout] = useState(false);
+  const [newPrefill, setNewPrefill] = useState("");
+  const [proposeNow, setProposeNow] = useState(0);
+  const [newPaper, setNewPaper] = useState(null);
   const [passages, setPassages] = useState(null);
   const [showPublishCheck, setShowPublishCheck] = useState(false);
   const [proposalPending, setProposalPending] = useState(false);
@@ -410,16 +422,26 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     setForm((current) => ({ ...current, bodyBlocks }));
   }
 
+  /* The pane's sections, by the names the rest of the page has always used
+     for them: "source" and "evidence" are the two views of Sources, "agent"
+     is Chat. */
+  const showRail = useCallback((id) => {
+    if (id === "source") { setSourcesView("block"); setRailTab("sources"); return; }
+    if (id === "evidence") { setSourcesView("story"); setRailTab("sources"); return; }
+    if (id === "agent") { setRailTab("chat"); return; }
+    setRailTab(id);
+  }, []);
+
   const goToBlock = useCallback((index, rail = null) => {
     const block = form.bodyBlocks[index];
     if (!block) return;
     setMode("write");
     setActiveBlockId(block.id);
-    if (rail) setRailTab(rail);
+    if (rail) showRail(rail);
     window.requestAnimationFrame(() => {
       document.querySelector(`[data-block-id="${block.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
-  }, [form.bodyBlocks]);
+  }, [form.bodyBlocks, showRail]);
 
   /* Autosave, drafts only.
      A published story is live, so its text never changes without the scholar
@@ -460,7 +482,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const askAgent = useCallback((instruction) => {
     setViewLevel(null);
     setRailOpen(true);
-    setRailTab("agent");
+    setRailTab("chat");
     setAgentPrefill(instruction);
   }, []);
 
@@ -522,7 +544,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const openAgent = useCallback(() => {
     if (!consented) { setConsentError(""); setConsentOpen(true); return; }
     setRailOpen(true);
-    setRailTab("agent");
+    setRailTab("chat");
   }, [consented]);
 
   async function agreeToTerms() {
@@ -534,7 +556,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     setTerms(r.data.aiTerms);
     setConsentOpen(false);
     setRailOpen(true);
-    setRailTab("agent");
+    setRailTab("chat");
   }
 
   /* ── a draft placed into the page ─────────────────────────────────────── */
@@ -830,18 +852,27 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               role={outlineStage ? "region" : undefined}
               aria-label={outlineStage ? "The outline, waiting for your approval" : "Agent"}
             >
+              {/* The pane's head, body and foot are laid around the agent,
+                  never wrapped over it, so its place in the tree holds. */}
               {outlineStage ? null : (
-                <div className="ag-rail-head">
-                  <span className="sc-kicker">Agent</span>
-                  <button type="button" className="ag-rail-close" aria-label="Close the agent" onClick={() => setRailOpen(false)}><FaXmark size={13} aria-hidden /></button>
-                </div>
+                <AgentIdentity status={agentStatus.text} busy={agentStatus.busy} about={newAbout} onAbout={setNewAbout} onClose={() => setRailOpen(false)} />
               )}
-              <div className="ws-rail-body">
+              <div className={`ws-rail-body${!outlineStage && (newTab !== "chat" || newAbout) ? " is-hidden" : ""}`}>
                 {/* The agent is asked for an angle only once the terms are
                     settled — `terms`, which the consent sheet updates, not the
                     `aiTerms` this page was rendered with. */}
-                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} />
+                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} prefill={newPrefill} onPrefillTaken={() => setNewPrefill("")} proposeNow={proposeNow} onStatus={setAgentStatus} onPaperChange={setNewPaper} />
               </div>
+              {outlineStage ? null : newAbout ? (
+                <AgentAbout onClose={() => setNewAbout(false)} permissions={STUDIO_PERMISSIONS} termsVersion={terms?.version || null} onTerms={() => { setConsentError(""); setConsentOpen(true); }} activity={<p className="st-muted">Nothing yet: this story is not saved. Once a draft lands, every version and who made it is listed here.</p>} />
+              ) : newTab === "ideas" ? (
+                <div className="ws-agent-body">
+                  <AgentIdeas ideas={newStoryIdeas({ paper: newPaper })} disabled={agentStatus.busy} note="Ways this could start. Tap a brief to put it in the chat and change it before you send, or ask what the paper could become." onPick={(idea) => { setNewTab("chat"); if (idea.propose) setProposeNow((n) => n + 1); else setNewPrefill(idea.text); }} />
+                </div>
+              ) : null}
+              {outlineStage ? null : (
+                <AgentTabs tabs={[{ key: "chat", label: "Chat", icon: "💬" }, { key: "ideas", label: "Ideas", icon: "✦" }]} tab={newTab} onTab={(k) => { setNewTab(k); setNewAbout(false); }} />
+              )}
             </aside>
           </div>
         ) : editorColumn
@@ -902,25 +933,51 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
             {viewLevel ? null : editorColumn}
           </div>
 
-          <aside className={railTab === "agent" ? "ws-right is-agent" : "ws-right"}>
-            <div className="ws-tabs" role="tablist">
-              {[["source", "Source"], ["checks", "Checks"], ["evidence", "Evidence"], ["agent", "Agent"], ["history", "History"]].map(([id, label]) => (
-                <button key={id} type="button" role="tab" aria-selected={railTab === id} className={railTab === id ? "ws-tab on" : "ws-tab"} onClick={() => (id === "agent" ? openAgent() : setRailTab(id))}>{label}</button>
-              ))}
-            </div>
-            <div className="ws-rail-body">
-              {railTab === "source" ? <SourceRail block={activeBlock} passages={passages} provenance={form.provenance} onVerify={verifySpecific} onOwnView={markAsOwnView} onRecheck={form.id ? recheckBlock : null} rechecking={recheckingId === activeBlockId} dirty={dirty} /> : null}
-              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} onVerify={verifySpecific} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => setRailTab("evidence")} /> : null}
-              {railTab === "evidence" ? <EvidenceRail storyId={form.id} version={form.version} status={form.status} slug={initialStory?.slug} onGoTo={(i) => goToBlock(i, "source")} /> : null}
-              {railTab === "history" ? <HistoryRail storyId={form.id} version={form.version} dirty={dirty} onRestored={() => window.location.reload()} /> : null}
-              {railTab === "agent" ? (consented ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} prefill={agentPrefill} onPrefillTaken={() => setAgentPrefill("")} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} /> : (
+          <aside className={railTab === "chat" ? "ws-right is-agent" : "ws-right"}>
+            <StudioAgentShell
+              status={consented ? agentStatus.text : "Read the terms once to begin"}
+              busy={consented && agentStatus.busy}
+              tabs={[
+                { key: "chat", label: "Chat", icon: "💬" },
+                { key: "ideas", label: "Ideas", icon: "✦" },
+                { key: "checks", label: "Checks", icon: "◎", badge: form.bodyBlocks.filter(needsAttention).length || 0 },
+                { key: "sources", label: "Sources", icon: "§" },
+              ]}
+              tab={railTab}
+              onTab={(k) => (k === "chat" ? openAgent() : setRailTab(k))}
+              termsVersion={terms?.version || null}
+              onTerms={() => { setConsentError(""); setConsentOpen(true); }}
+              activityTitle="This story's history"
+              activity={<HistoryRail storyId={form.id} version={form.version} dirty={dirty} onRestored={() => window.location.reload()} />}
+            >
+              {railTab === "sources" ? (
+                <div className="ws-sources">
+                  <div className="ws-seg" role="group" aria-label="Sources view">
+                    <button type="button" className={sourcesView === "block" ? "ws-seg-btn on" : "ws-seg-btn"} aria-pressed={sourcesView === "block"} onClick={() => setSourcesView("block")}>This paragraph</button>
+                    <button type="button" className={sourcesView === "story" ? "ws-seg-btn on" : "ws-seg-btn"} aria-pressed={sourcesView === "story"} onClick={() => setSourcesView("story")}>Whole story</button>
+                  </div>
+                  {sourcesView === "block"
+                    ? <SourceRail block={activeBlock} passages={passages} provenance={form.provenance} onVerify={verifySpecific} onOwnView={markAsOwnView} onRecheck={form.id ? recheckBlock : null} rechecking={recheckingId === activeBlockId} dirty={dirty} />
+                    : <EvidenceRail storyId={form.id} version={form.version} status={form.status} slug={initialStory?.slug} onGoTo={(i) => goToBlock(i, "source")} />}
+                </div>
+              ) : null}
+              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} onVerify={verifySpecific} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => showRail("evidence")} /> : null}
+              {railTab === "ideas" ? (
+                <AgentIdeas
+                  ideas={reviewIdeas({ blocks: form.bodyBlocks, context: agentContext, record: form.record, audience })}
+                  disabled={!consented || proposalPending || dirty}
+                  note={!consented ? "Read the agent's terms once and these become one tap away." : proposalPending ? "Decide on the change waiting in Chat first." : dirty ? "Your edits are saving; a moment, then these are one tap away." : "Things the agent could do next, made from this draft. Tap one to put it in the chat; change it before you send."}
+                  onPick={(idea) => { if (!consented) { openAgent(); return; } setRailTab("chat"); setAgentPrefill(idea.text); }}
+                />
+              ) : null}
+              {railTab === "chat" ? (consented ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} prefill={agentPrefill} onPrefillTaken={() => setAgentPrefill("")} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} onStatus={setAgentStatus} /> : (
                 <div className="ag-gate">
                   <p className="ag-empty-title">The agent edits by instruction.</p>
                   <p className="st-muted">It works from the paper behind this story and shows every change before it lands. Read its terms once to use it.</p>
                   <button type="button" className="sc-write-secondary st-btn" onClick={openAgent}>Read the terms</button>
                 </div>
               )) : null}
-            </div>
+            </StudioAgentShell>
           </aside>
         </div>
       )}

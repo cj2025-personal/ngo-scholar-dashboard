@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 
 import { askStoryAgent, listStoryTurns, resolveStoryTurn } from "@/lib/drafting";
+import AgentFace from "./AgentFace";
+import { useStudioPersona } from "./StudioAgentShell";
 
 /**
  * The agent console: a thread with the agent, and a composer docked at the
@@ -77,9 +79,9 @@ function Proposal({ turn, onAccept, onReject, busy, blocked = false }) {
   const c = turn.checks || {};
   const pending = turn.status === "proposed" && turn.changes.length > 0;
   return (
-    <div className="ag-proposal">
+    <div className={`ag-proposal${pending ? " ag-approval" : ""}`}>
       <div className="ag-proposal-head">
-        <span>{turn.changes.length ? `${turn.changes.length} change${turn.changes.length === 1 ? "" : "s"} proposed` : "No change"}</span>
+        <span>{pending ? "Needs your approval · " : ""}{turn.changes.length ? `${turn.changes.length} change${turn.changes.length === 1 ? "" : "s"} proposed` : "No change"}</span>
         {turn.status !== "proposed" ? <span className="ag-resolved">{turn.status === "accepted" ? "Accepted" : "Rejected"}</span> : null}
       </div>
       {turn.changes.length ? <div className="ag-changes">{turn.changes.map((ch, i) => <ChangeRow key={i} change={ch} />)}</div> : <p className="st-muted">The draft is unchanged.</p>}
@@ -127,7 +129,8 @@ function Working() {
   );
 }
 
-export default function AgentPanel({ storyId, context = null, dirty = false, prefill = "", onPrefillTaken, onStoryChanged, onProposalPending }) {
+export default function AgentPanel({ storyId, context = null, dirty = false, prefill = "", onPrefillTaken, onStoryChanged, onProposalPending, onStatus }) {
+  const [persona] = useStudioPersona();
   const [turns, setTurns] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
@@ -148,6 +151,10 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
 
   const pending = turns.find((t) => t.status === "proposed" && t.changes?.length);
   useEffect(() => { onProposalPending?.(Boolean(pending)); }, [pending, onProposalPending]);
+  /* The line under the agent's name, in the pane's head. */
+  useEffect(() => {
+    onStatus?.({ text: busy ? "Working on your change" : pending ? "A change is waiting for your decision" : turns.length ? `${turns.length} change${turns.length === 1 ? "" : "s"} discussed` : "Ready to edit what you ask", busy });
+  }, [busy, pending, turns.length, onStatus]);
 
   const grow = useCallback(() => {
     const el = inputRef.current;
@@ -203,24 +210,22 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
 
   return (
     <div className="ag-panel">
-      <div className="ag-head">
-        <span><b>Agent</b> · edits only what you ask, from the paper</span>
-        <span className="ag-head-status"><span className={`st-dot ${busy ? "is-navy" : pending ? "is-warn" : "is-ok"}`} aria-hidden />{busy ? "Working" : pending ? "Awaiting your decision" : "Ready"}</span>
-      </div>
-
       <div className="ag-thread" ref={threadRef}>
         {turns.length === 0 && !busy ? (
-          <div className="ag-empty">
-            <p className="ag-empty-title">What should change?</p>
-            <p className="st-muted">Ask in plain words. The agent reads the draft and the paper, makes the change, checks it against the passages, and shows it to you before it lands. Try one of these:</p>
-            <div className="ag-examples">{EXAMPLES.map((e) => <button key={e} type="button" className="ag-example" onClick={() => send(e)}>{e}</button>)}</div>
+          <div className="ag-reply rc-intro">
+            <AgentFace persona={persona} />
+            <div className="ag-reply-body ag-empty">
+              <p className="ag-empty-title">What should change?</p>
+              <p className="st-muted">Say it in plain words. I read the draft and the paper, make the change, check it against the passages, and show it to you before it lands. Nothing changes until you accept. Try one of these:</p>
+              <div className="ag-examples">{EXAMPLES.map((e) => <button key={e} type="button" className="ag-example" onClick={() => send(e)}>{e}</button>)}</div>
+            </div>
           </div>
         ) : null}
         {turns.map((t) => (
           <div key={t.id} className="ag-turn">
             <div className="ag-ask">{t.instruction}</div>
             <div className="ag-reply">
-              <span className="ag-avatar" aria-hidden>A</span>
+              <AgentFace persona={persona} />
               <div className="ag-reply-body">
                 <Steps calls={t.calls} />
                 {t.summary ? <div className="ag-summary">{t.summary}</div> : null}
