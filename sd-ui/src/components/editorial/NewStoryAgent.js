@@ -335,9 +335,10 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       return;
     }
     const j = r.data.job;
+    if (r.data.reused && j.terminal) { setBusy(false); clearProgress(); if (alreadyDone(j)) return; }
     setJob(j);
     if (j.status === "awaiting_outline") { setBusy(false); showOutline(j, { replans: j.replans || 0 }); return; }
-    if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That did not complete." }); return; }
+    if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That did not complete. Ask again in a moment." }); return; }
     watch(j);
   }
   useEffect(() => {
@@ -402,6 +403,24 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeJobId]);
 
+  /**
+   * A job the server handed back instead of starting one: this exact brief
+   * from this paper was drafted before. Says so, points at the story if it
+   * became one, and leaves the composer open. True when it was handled.
+   */
+  function alreadyDone(j) {
+    if (j.status === "published" && j.storyId) {
+      push({ role: "story", text: "You have had this exact brief drafted from this paper already, and it became a story. Open it, or change a word and I will plan a fresh one.", storyId: j.storyId });
+      return true;
+    }
+    if (j.status === "discarded") {
+      push({ role: "agent", text: "This exact brief from this paper was planned before and you discarded it. Change a word and I will plan it again." });
+      return true;
+    }
+    push({ role: "agent", text: `This exact brief from this paper was tried before and did not complete${j.failure?.sentence ? `: ${j.failure.sentence}` : ""}. Change a word and I will try again.` });
+    return true;
+  }
+
   /** Plan the article from a brief, with the paper, reader and voice as set. */
   async function startJob(brief, { from = selectedPaper, forAudience = audience } = {}) {
     if (!from) return;
@@ -412,9 +431,17 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     const r = await createDraftJob({ origin: from.origin, sourceId: from.id, audience: forAudience, voice, brief, approveOutline: true, createStory: false, levels: false });
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     const j = r.data.job;
+    if (r.data.reused && j.terminal) {
+      /* The same brief from the same paper was drafted before, so the server
+         handed back that job rather than paying for it twice. Said as what
+         it is, and the composer stays open for a changed brief. */
+      setBusy(false);
+      clearProgress();
+      if (alreadyDone(j)) return;
+    }
     setJob(j);
     if (j.status === "awaiting_outline") { setBusy(false); showOutline(j, { replans: j.replans || 0 }); return; }
-    if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That draft did not complete." }); return; }
+    if (j.terminal) { setBusy(false); clearProgress(); push({ role: "error", text: j.failure?.sentence || "That draft did not complete. Change the brief a little and I will try again." }); return; }
     if (settle(j, from)) { setBusy(false); return; }
     watch(j);
   }
@@ -541,6 +568,17 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
                 <div className="ch-bubble">
                   <p className="ch-text">{m.text}</p>
                   <PaperCards papers={draftable} disabled={busy || locked || Boolean(selectedPaper)} onPick={(p) => pickPaper(p)} />
+                </div>
+              </div>
+            );
+          }
+          if (m.role === "story") {
+            return (
+              <div key={m.id} className="ch-msg is-agent is-story">
+                <AgentFace persona={persona} />
+                <div className="ch-bubble">
+                  <p className="ch-text">{m.text}</p>
+                  <div className="ch-chips"><button type="button" className="ch-chip is-default" onClick={() => onStoryReady?.(m.storyId)}>Open the story</button></div>
                 </div>
               </div>
             );
