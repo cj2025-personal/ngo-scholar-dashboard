@@ -103,9 +103,21 @@ jobs:
             exit 0
           fi
           npm run eval:drafts -- --json eval-results.json ${LANGSMITH_API_KEY:+--langsmith}
+      - name: Reader evals (skipped without model credentials)
+        # The reading companion's grounding, citations and Sentinel pass rate
+        # over evals/reader.jsonl. A prompt change that makes it guess where
+        # it should say "the article doesn't say" fails the build here.
+        run: |
+          if [ -z "$GCP_SERVICE_ACCOUNT_JSON" ] || [ -z "$GCP_PROJECT_ID" ]; then
+            echo "No Vertex credentials in this run; evals skipped."
+            exit 0
+          fi
+          npm run eval:reader -- --json reader-eval-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: draft-eval-results
-          path: sd-api/eval-results.json
+          path: |
+            sd-api/eval-results.json
+            sd-api/reader-eval-results.json
           if-no-files-found: ignore
