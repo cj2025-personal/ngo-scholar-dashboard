@@ -254,6 +254,7 @@ jobs:
             MONGODB_URI=MONGODB_URI:latest
             SERVICE_TOKEN=scholar-api-service-token:latest
             LEDGER_SIGNING_KEY=scholar-api-ledger-signing-key:latest
+            READER_COOKIE_SECRET=scholar-api-reader-cookie-secret:latest
           # Configuration, not secrets. A database name, an origin and a bucket
           # are not credentials, and putting them in Secret Manager would only
           # make them harder to read and change.

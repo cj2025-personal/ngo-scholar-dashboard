@@ -324,7 +324,12 @@ test("a fresh reader has their own count and sees nothing of the first reader's 
 
 test("a forged cookie is a stranger, not an error", async () => {
   const real = jar;
-  jar = "sd_reader=" + real.split("=")[1].replace(/.$/, (c) => (c === "A" ? "B" : "A"));
+  /* Flip a character in the middle of the signature. Not the last one: it
+     carries two significant bits and four of padding, so a change there can
+     decode to the same bytes and the "forgery" is the real cookie. */
+  const [id, sig] = real.split("=")[1].split(".");
+  const flipped = sig.slice(0, 6) + (sig[6] === "A" ? "B" : "A") + sig.slice(7);
+  jar = `sd_reader=${id}.${flipped}`;
   const r = await call("GET", `/api/reader/stories/${SLUG}/turns`);
   assert.equal(r.status, 200);
   assert.deepEqual(r.data.turns, []);
