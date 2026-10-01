@@ -346,6 +346,14 @@ test("saving the draft into a story stores provenance, links the job, and return
   assert.equal(s.provenance.sourceId, "src-e2e-1");
   assert.equal(s.provenance.line, "Drawn from the author's research: Adaptive nulling in small antenna arrays (2024)".replace(" (2024)", ""), "no year on the seeded source, so no year in the line");
   assert.equal(s.provenance.url, "https://pmc.example/src-e2e-1");
+  /* Who it was written for and whose account it is travel from the job to
+     the story: the reading-level target, the levels and the agent all read
+     them from here. They were once left behind, and every story saved from
+     the page read as written for adults, about the scholar. */
+  const jobDoc = await db.collection("scholar_draft_jobs").findOne({ _id: new ObjectId(state.jobId) });
+  assert.ok(jobDoc.audience, "the job records its reader");
+  assert.equal(s.provenance.audience, jobDoc.audience);
+  assert.equal(s.provenance.voice, jobDoc.voice || null);
   const drafted = s.bodyBlocks.filter((b) => b.sourceRefs);
   assert.ok(drafted.length >= 2);
   assert.ok(drafted.every((b) => b.traceable === true && b.overlap >= 0.99));

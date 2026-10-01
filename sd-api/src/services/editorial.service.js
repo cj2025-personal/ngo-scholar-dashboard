@@ -888,7 +888,10 @@ async function claimDraftProvenance(db, { draftJobId, profileId }) {
   if (!ObjectId.isValid(String(draftJobId))) throw new ApiError(400, "Draft job id is invalid.");
   const job = await db
     .collection(COLLECTIONS.draftJobs)
-    .findOne({ _id: new ObjectId(String(draftJobId)), profile_id: profileId }, { projection: { source: 1, status: 1, prompt_version: 1, graph_version: 1, finished_at: 1, created_at: 1 } });
+    /* Every field storyProvenanceFromJob reads. Leaving audience and voice
+       out of this list once saved every story drafted in the page as
+       written for adults, about the scholar, whatever was asked for. */
+    .findOne({ _id: new ObjectId(String(draftJobId)), profile_id: profileId }, { projection: { source: 1, status: 1, audience: 1, voice: 1, prompt_version: 1, graph_version: 1, finished_at: 1, created_at: 1 } });
   if (!job) throw new ApiError(404, "Draft job not found.");
   if (job.status !== "awaiting_review" && job.status !== "published") {
     throw new ApiError(409, "That draft is not ready to be saved into a story.");
