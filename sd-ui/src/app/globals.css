@@ -4655,13 +4655,14 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
    the reader has not asked for less motion. Distances are in the drawing's
    own units (a 400-unit grid), so a move reads the same at every size.
    ═══════════════════════════════════════════════════════════════════════ */
-.kv {
+/* The palette, on Kivyn and on the bubbles that rise beside it (siblings, so they need their own). */
+.kv, .kv-emote {
   --kv-line: var(--ark-navy, #1e3a8a);
   --kv-page: var(--ark-surface, #ffffff);
   --kv-fold: #eef3fb;
   --kv-accent: var(--ark-red, #b22234);
-  display: inline-block; flex: 0 0 auto; vertical-align: middle; overflow: visible;
 }
+.kv { display: inline-block; flex: 0 0 auto; vertical-align: middle; overflow: visible; }
 /* On navy, the page is the shape; a navy line would vanish into it. */
 .kv-on-dark { --kv-line: var(--ark-navy-ink, #172554); }
 .kv-line { fill: none; stroke: var(--kv-line); stroke-linecap: round; stroke-linejoin: round; }
@@ -4716,8 +4717,53 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 @keyframes kv-hop { 0% { transform: translateY(0); } 35% { transform: translateY(-14px); } 70% { transform: translateY(3px); } 100% { transform: translateY(0); } }
 @keyframes kv-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+/* Kivyn answering a tap: a button that is only Kivyn, with a bubble rising over it. */
+.kv-actor {
+  position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center;
+  padding: 2px; margin: 0; border: 0; border-radius: 12px; background: none; line-height: 0;
+  color: inherit; font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.kv-actor:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+.kv-emote { position: absolute; top: -4px; right: -6px; width: 30px; height: 30px; overflow: visible; pointer-events: none; animation: kv-emote-still 1.8s linear both; }
+.kv-emote text { font-family: var(--font-jakarta), system-ui, sans-serif; }
+@keyframes kv-emote-still { 0% { opacity: 0; } 8%, 85% { opacity: 1; } 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .kv-actor { transition: transform 160ms var(--ark-ease, ease); }
+  .kv-actor:hover { transform: translateY(-1px); }
+  .kv-actor:active { transform: scale(0.96); }
+  .kv-emote { transform-origin: 20% 100%; animation: kv-emote 1.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .kv-emote-wait .kv-p-dot-1, .kv-emote-wait .kv-p-dot-2, .kv-emote-wait .kv-p-dot-3 { animation: kv-dot 0.9s ease-in-out infinite; }
+  .kv-emote-wait .kv-p-dot-2 { animation-delay: 0.15s; }
+  .kv-emote-wait .kv-p-dot-3 { animation-delay: 0.3s; }
+
+  /* The reactions. Each plays once, then Kivyn is back as it was. */
+  .kv-react .kv-p-eye { animation: none; }
+  .kv-react-wave .kv-p-arm-wave { transform-box: view-box; transform-origin: 292px 222px; animation: kv-wave 0.36s ease-in-out 4 alternate both; }
+  .kv-react-wink .kv-p-figure { transform-box: fill-box; transform-origin: 50% 100%; animation: kv-tilt 0.9s ease-in-out both; }
+  .kv-react-hop .kv-p-figure { animation: kv-hop 0.62s cubic-bezier(0.2, 0.8, 0.2, 1) 2 both; }
+  .kv-react-curious .kv-p-figure { transform-box: fill-box; transform-origin: 50% 100%; animation: kv-curious 1.6s ease-in-out both; }
+  .kv-react-surprised .kv-p-figure { transform-box: fill-box; transform-origin: 50% 100%; animation: kv-startle 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .kv-react-turn .kv-p-figure { transform-box: fill-box; transform-origin: center; animation: kv-turn 0.9s ease-in-out both; }
+}
+@keyframes kv-emote {
+  0% { opacity: 0; transform: translateY(8px) scale(0.4); }
+  14% { opacity: 1; transform: translateY(0) scale(1.1); }
+  24% { transform: translateY(0) scale(1); }
+  80% { opacity: 1; transform: translateY(-6px) scale(1); }
+  100% { opacity: 0; transform: translateY(-12px) scale(0.96); }
+}
+@keyframes kv-dot { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes kv-wave { from { transform: rotate(-14deg); } to { transform: rotate(18deg); } }
+@keyframes kv-tilt { 0%, 100% { transform: rotate(0deg); } 35%, 70% { transform: rotate(-5deg); } }
+@keyframes kv-curious { 0%, 100% { transform: rotate(0deg); } 25%, 75% { transform: rotate(7deg); } }
+@keyframes kv-startle { 0% { transform: translateY(0) scale(1, 1); } 30% { transform: translateY(-16px) scale(0.96, 1.05); } 65% { transform: translateY(2px) scale(1.03, 0.97); } 100% { transform: translateY(0) scale(1, 1); } }
+@keyframes kv-turn { 0%, 100% { transform: scaleX(1); } 45%, 55% { transform: scaleX(0.06); } }
+
 /* Where Kivyn sits. */
-.ws-identity .kv { margin: -6px 0 -6px -4px; }
+.ws-agent-head { justify-content: flex-start; gap: 2px; }
+.ws-agent-head > .ws-identity { margin-right: auto; padding-left: 6px; }
+.ws-agent-head > .kv-actor { margin: -6px -2px -6px -6px; }
 .ag-reply > .kv, .ch-msg > .kv { margin-top: 2px; }
 .ch-wrap .ch-msg > .kv-mark { margin-top: 4px; }
 .ag-nudge { padding-left: 8px; gap: 8px; }
@@ -4727,8 +4773,8 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .ag-working.has-kv .ag-working-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .ag-working.has-kv .ag-steps { margin-top: 2px; }
 .ch-msg.is-working { align-items: center; }
-.ch-msg.is-working > .kv { margin-top: 0; }
-.ds-status .kv { margin: -6px 0 -6px -4px; }
+.ch-msg.is-working > .kv-actor { margin: -2px 0 0 -2px; }
+.ds-status .kv-actor { margin: -6px 0 -6px -4px; }
 .ws-about-hero { display: flex; align-items: center; gap: 14px; }
 .ws-about-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .ws-about-name { font-family: var(--sd-display); font-size: 20px; font-weight: 700; color: var(--sd-heading); }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 
 import Kivyn from "@/components/kivyn/Kivyn";
+import KivynButton from "@/components/kivyn/KivynButton";
 import { useKivynMoment } from "@/components/kivyn/useKivynMoment";
 import { askStoryAgent, listStoryTurns, resolveStoryTurn } from "@/lib/drafting";
 import { AGENT_NAME, poseForStep } from "@/lib/kivyn/pose.mjs";
@@ -131,7 +132,7 @@ function Working({ activity }) {
   const done = activity.done.filter((c) => c.name !== "finish");
   return (
     <div className="ag-working has-kv" role="status" aria-live="polite">
-      <Kivyn pose={activity.pose} size={60} live />
+      <KivynButton pose={activity.pose} busy size={60} />
       <div className="ag-working-body">
         <div className="ag-working-line">{activity.message}… <span className="ag-elapsed">{seconds}s</span></div>
         {done.length ? <Steps calls={done} /> : null}

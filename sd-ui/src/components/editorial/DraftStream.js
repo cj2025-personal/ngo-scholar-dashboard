@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import Kivyn from "@/components/kivyn/Kivyn";
+import KivynButton from "@/components/kivyn/KivynButton";
 
 /**
  * The draft being written, on the page, as it is written.
@@ -63,7 +63,7 @@ export default function DraftStream({ title = "", beats = [], sections = [] }) {
   return (
     <div className="ds-stream" aria-live="polite" aria-busy={arrived < beats.length}>
       {title ? <h1 className="ds-title">{title}</h1> : null}
-      <p className="ds-status"><Kivyn pose={allIn ? "checking" : "writing"} size={40} live /> {allIn ? "Every section written · checking it against the paper and assembling the draft…" : `Writing section ${Math.min(arrived + 1, beats.length)} of ${beats.length}${arrived ? ` · ${arrived} written` : ""}`}</p>
+      <p className="ds-status"><KivynButton pose={allIn ? "checking" : "writing"} busy size={40} /> {allIn ? "Every section written · checking it against the paper and assembling the draft…" : `Writing section ${Math.min(arrived + 1, beats.length)} of ${beats.length}${arrived ? ` · ${arrived} written` : ""}`}</p>
       {units.map((u) => {
         if (remaining <= 0) return null;
         const show = u.words.slice(0, remaining);

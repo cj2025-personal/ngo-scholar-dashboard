@@ -1,7 +1,7 @@
 import { createElement } from "react";
 
 import { FIGURE_BOX, MARK_BOX, figure, mark, smallMark } from "@/lib/kivyn/art.mjs";
-import { normalisePose, poseLabel } from "@/lib/kivyn/pose.mjs";
+import { normaliseDrawing, poseLabel } from "@/lib/kivyn/pose.mjs";
 
 /**
  * Kivyn, inline, in a pose.
@@ -16,7 +16,7 @@ import { normalisePose, poseLabel } from "@/lib/kivyn/pose.mjs";
  * what it is doing, the words are what a screen reader should hear.
  *
  * @param {object} p
- * @param {string} [p.pose]       one of POSES; anything else is rest
+ * @param {string} [p.pose]       one of POSES, or a reaction to a tap; anything else is rest
  * @param {"figure"|"mark"} [p.variant]   the whole figure, or the page and its face
  * @param {number} [p.size]       height in CSS pixels; a mark under 33 px draws the small mark
  * @param {"light"|"on-dark"} [p.tone]    on a navy surface, the line darkens so the page reads
@@ -26,7 +26,7 @@ import { normalisePose, poseLabel } from "@/lib/kivyn/pose.mjs";
  *                               conversation would blink at the reader from every line.
  */
 export default function Kivyn({ pose = "neutral", variant = "figure", size = 48, tone = "light", label = null, live = false, className = "" }) {
-  const p = normalisePose(pose);
+  const p = normaliseDrawing(pose);
   const small = variant === "mark" && size <= 32;
   const viewBox = variant === "mark" ? MARK_BOX : FIGURE_BOX;
   const [, , vw, vh] = viewBox.split(" ").map(Number);
@@ -49,7 +49,9 @@ export default function Kivyn({ pose = "neutral", variant = "figure", size = 48,
 }
 
 /* A drawing node as a React element: its paint and its layer become classes. */
-function draw([tag, attrs, children], key) {
+export function draw(node, key) {
+  if (typeof node === "string") return node;
+  const [tag, attrs, children] = node;
   const { k, part, ...rest } = attrs;
   const classes = [];
   if (k) classes.push(`kv-${k}`);

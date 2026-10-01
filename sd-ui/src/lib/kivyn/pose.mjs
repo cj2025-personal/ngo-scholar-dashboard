@@ -77,6 +77,39 @@ export function normalisePose(pose) {
   return POSES.includes(pose) ? pose : "neutral";
 }
 
+/**
+ * What a tap on Kivyn gets: a reaction and the bubble that rises with it,
+ * in turn, starting with a hello, so two taps in a row never look the same.
+ * Each is an answer to the person who tapped — it plays once and ends — and
+ * nothing counts the taps or gets bigger for more of them: Kivyn is not a
+ * game to keep playing.
+ */
+export const REACTIONS = [
+  { name: "wave", emote: "hi", said: `${AGENT_NAME} waves hello.` },
+  { name: "wink", emote: "heart", said: `${AGENT_NAME} winks.` },
+  { name: "hop", emote: "sparkle", said: `${AGENT_NAME} hops.` },
+  { name: "curious", emote: "query", said: `${AGENT_NAME} tilts its head.` },
+  { name: "surprised", emote: "bang", said: `${AGENT_NAME} jumps, surprised.` },
+  { name: "turn", emote: "note", said: `${AGENT_NAME} turns like a page.` },
+];
+
+/* While the agent is working, a tap does not take Kivyn off the work: the
+   pose stays the step under way, and a bubble says it is still on it. */
+export const BUSY_REACTION = { name: null, emote: "wait", said: `${AGENT_NAME} is still working on it.` };
+
+/** How long a reaction plays before Kivyn is back to what it was doing. */
+export const REACTION_MS = 1800;
+
+/** The reaction for the nth tap. */
+export function reactionAt(n) {
+  return REACTIONS[((n % REACTIONS.length) + REACTIONS.length) % REACTIONS.length];
+}
+
+/** Anything Kivyn can be drawn as: a pose, or a reaction to a tap. */
+export function normaliseDrawing(name) {
+  return POSES.includes(name) || REACTIONS.some((r) => r.name === name) ? name : "neutral";
+}
+
 /** What a screen reader hears when Kivyn is the only thing saying it. */
 export function poseLabel(pose) {
   return {

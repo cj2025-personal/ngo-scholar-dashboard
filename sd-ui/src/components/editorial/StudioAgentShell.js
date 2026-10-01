@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { FaXmark } from "react-icons/fa6";
 
-import Kivyn from "@/components/kivyn/Kivyn";
+import KivynButton from "@/components/kivyn/KivynButton";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
@@ -30,12 +30,16 @@ import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
  * had, so the way the studio is driven and tested is unchanged.
  */
 
-/** The head: Kivyn in its pose, its name, and the line saying what it is doing. */
+/**
+ * The head: Kivyn in its pose, its name, and the line saying what it is
+ * doing. Kivyn is its own button — a tap gets a reaction — and the name
+ * beside it opens who Kivyn is, so the two never compete for one click.
+ */
 export function AgentIdentity({ status, busy = false, pose = "neutral", about, onAbout, onClose, closeLabel = `Close ${AGENT_NAME}` }) {
   return (
     <div className="rc-head ws-agent-head">
+      <KivynButton pose={pose} busy={busy} size={52} />
       <button type="button" className="rc-identity ws-identity" onClick={() => onAbout(!about)} aria-expanded={about} title={`Who ${AGENT_NAME} is, what it may do, and what it did`}>
-        <Kivyn pose={pose} size={52} live />
         <span className="rc-identity-text">
           <b>{AGENT_NAME}</b>
           <span className={`rc-status${busy ? " is-busy" : ""}`}>{status}</span>
@@ -51,7 +55,7 @@ export function AgentAbout({ onClose, permissions, termsVersion = null, onTerms,
   return (
     <div className="rc-about ws-about">
       <div className="rc-about-head ws-about-hero">
-        <Kivyn pose="neutral" size={88} live />
+        <KivynButton size={88} />
         <div className="ws-about-who">
           <b className="ws-about-name">{AGENT_NAME}</b>
           <p className="ws-about-intro">A computer helper that reads your papers, drafts with you, and shows the passage behind what it writes.</p>

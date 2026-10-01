@@ -46,6 +46,11 @@ export const PAINTS = {
 };
 
 export const POSES = ["neutral", "reading", "searching", "writing", "checking", "tracing", "cant-answer", "done"];
+/* What Kivyn does when someone taps it: answers to the person, never to the work. */
+export const REACTIONS = ["wave", "wink", "hop", "curious", "surprised", "turn"];
+/* The bubbles that rise over Kivyn when it reacts. */
+export const EMOTES = ["hi", "heart", "sparkle", "query", "bang", "note", "wait"];
+export const EMOTE_BOX = "0 0 40 40";
 
 /** The whole figure, cropped to what any pose draws; and the files' full grid. */
 export const FIGURE_BOX = "24 40 368 304";
@@ -200,13 +205,67 @@ const POSE_ART = {
     faceParts: [happyEye("eye-left", 198, 188), happyEye("eye-right", 250, 188), smile(224, 208, 10, 9)],
     front: [g("fold-back", [line("M276 64 Q300 64 310 88", 4, { opacity: 0.5 }), line("M290 54 Q314 56 322 78", 4, { opacity: 0.35 })])],
   }),
+
+  /* ── reactions: what a tap gets ── */
+
+  /* One hand up, from behind the page, so the shoulder stays hidden as it waves. */
+  wave: () => standing({
+    back: g("arms", [line("M112 226 Q90 234 84 256"), hand(84, 257), g("arm-wave", [line("M288 222 Q316 212 321 180"), hand(321, 177)])]),
+    faceParts: [openEye("eye-left", 198, 188), openEye("eye-right", 250, 188), smile(224, 209, 10, 9)],
+  }),
+  wink: () => standing({
+    faceParts: [openEye("eye-left", 198, 188), happyEye("eye-right", 250, 190), smile(224, 210, 10, 9)],
+  }),
+  hop: () => standing({
+    back: g("arms", [line("M112 224 Q92 222 80 204"), hand(79, 202), line("M288 224 Q308 222 320 204"), hand(321, 202)]),
+    faceParts: [happyEye("eye-left", 198, 188), happyEye("eye-right", 250, 188), smile(224, 208, 10, 9)],
+  }),
+  curious: () => standing({
+    back: g("arms", [line("M112 226 Q90 234 84 256"), hand(84, 257), line("M288 226 Q306 222 312 204"), hand(312, 202)]),
+    faceParts: [openEye("eye-left", 205, 182), openEye("eye-right", 257, 182), g("mouth", [n("ellipse", { cx: 231, cy: 207, rx: 3.5, ry: 4, k: "ink" })])],
+  }),
+  surprised: () => standing({
+    back: g("arms", [line("M112 222 Q92 214 84 198"), hand(84, 196), line("M288 222 Q308 214 316 198"), hand(316, 196)]),
+    faceParts: [openEye("eye-left", 198, 186, 14), openEye("eye-right", 250, 186, 14), g("mouth", [n("ellipse", { cx: 224, cy: 214, rx: 5, ry: 7, k: "ink" })])],
+  }),
+  /* A page turning: drawn at rest; the turn is the motion. */
+  turn: () => standing({ faceParts: [openEye("eye-left", 198, 188), openEye("eye-right", 250, 188), smile(224, 210, 9, 8)] }),
 };
 
-const known = (pose) => (POSES.includes(pose) ? pose : "neutral");
+const known = (pose) => (POSES.includes(pose) || REACTIONS.includes(pose) ? pose : "neutral");
+
+/* ── emotes ───────────────────────────────────────────────────────────────── */
+
+/* A speech bubble, its tail down to the left, toward Kivyn. */
+const BUBBLE = "M11 3 H29 A8 8 0 0 1 37 11 V22 A8 8 0 0 1 29 30 H16 L8 37 L10 30 A8 8 0 0 1 3 22 V11 A8 8 0 0 1 11 3 Z";
+/* In the app the stylesheet sets the product's own face; the files name it for design tools. */
+const glyph = (text, size = 17) => n("text", { x: 20, y: 16.5 + size * 0.36, textAnchor: "middle", fontFamily: "Plus Jakarta Sans, Arial, sans-serif", fontSize: size, fontWeight: 800, k: "ink" }, [text]);
+const EMOTE_ART = {
+  hi: () => [glyph("Hi!", 12)],
+  heart: () => [path("M20 25 C13.5 20.5 10.5 17.5 10.5 14 C10.5 11 12.8 9 15.3 9 C17.2 9 18.7 10.1 20 12 C21.3 10.1 22.8 9 24.7 9 C27.2 9 29.5 11 29.5 14 C29.5 17.5 26.5 20.5 20 25 Z", "accent")],
+  sparkle: () => [path("M20 6.5 Q21.5 15 29.5 16.5 Q21.5 18 20 26.5 Q18.5 18 10.5 16.5 Q18.5 15 20 6.5 Z", "ink")],
+  query: () => [glyph("?")],
+  bang: () => [glyph("!")],
+  note: () => [
+    n("ellipse", { cx: 16, cy: 22.5, rx: 4.2, ry: 3.4, k: "ink", transform: "rotate(-20 16 22.5)" }),
+    n("rect", { x: 18.6, y: 8, width: 2.4, height: 14.5, k: "ink" }),
+    path("M21 8 Q27.5 9.5 27 15.5 Q25 12 21 12 Z", "ink"),
+  ],
+  /* Still working: three dots, which the stylesheet takes in turn. */
+  wait: () => [g("dots", [g("dot-1", [dot(13, 16.5, 2.6)]), g("dot-2", [dot(20, 16.5, 2.6)]), g("dot-3", [dot(27, 16.5, 2.6)])])],
+};
+
+/** A bubble with its glyph. */
+export function emote(kind) {
+  const art = EMOTE_ART[EMOTES.includes(kind) ? kind : "sparkle"]();
+  return [g("bubble", [path(BUBBLE, "card", { strokeWidth: 2.5 })]), g("glyph", art)];
+}
 
 /* Every line heavier by `factor`, fills untouched: what a small figure needs
    to stay a drawing rather than a sketch. Hands grow with the arms. */
-function weighted([tag, attrs, children], factor) {
+function weighted(node, factor) {
+  if (typeof node === "string") return node;
+  const [tag, attrs, children] = node;
   const next = { ...attrs };
   if (typeof next.strokeWidth === "number") next.strokeWidth = +(next.strokeWidth * factor).toFixed(2);
   if (tag === "circle" && next.k === "ink" && next.r <= 6) next.r = +(next.r * factor).toFixed(2);
@@ -232,6 +291,13 @@ const MARK_EYES = {
   tracing: (e) => [e("eye-left", 204, 186), e("eye-right", 256, 186)],
   "cant-answer": (e) => [e("eye-left", 198, 186), e("eye-right", 250, 186)],
   done: () => [happyEye("eye-left", 198, 188, 8), happyEye("eye-right", 250, 188, 8)],
+  /* a tap, answered with the face alone */
+  wave: (e) => [e("eye-left", 198, 188), e("eye-right", 250, 188)],
+  wink: (e) => [e("eye-left", 198, 188), happyEye("eye-right", 250, 190, 8)],
+  hop: () => [happyEye("eye-left", 198, 188, 8), happyEye("eye-right", 250, 188, 8)],
+  curious: (e) => [e("eye-left", 205, 182), e("eye-right", 257, 182)],
+  surprised: () => [openEye("eye-left", 198, 186, 15), openEye("eye-right", 250, 186, 15)],
+  turn: (e) => [e("eye-left", 198, 188), e("eye-right", 250, 188)],
 };
 
 /** The page and its face, for 40 px and up: no limbs, no props; the eyes still say the pose. */
@@ -246,7 +312,7 @@ const FLAP_SMALL = "M225 80 V142 A8 8 0 0 0 233 150 H295 Z";
 
 /** The mark for 32 px and under. Only "done" changes its face; anything finer would not survive the size. */
 export function smallMark(pose) {
-  const eyes = known(pose) === "done"
+  const eyes = ["done", "hop", "wink"].includes(known(pose))
     ? [happyEye("eye-left", 192, 202, 16), happyEye("eye-right", 254, 202, 16)]
     : [g("eye-left", [dot(192, 200, 19)]), g("eye-right", [dot(254, 200, 19)])];
   return [
@@ -281,7 +347,9 @@ const KEBAB = /[A-Z]/g;
 const attrName = (key) => (key === "viewBox" ? key : key.replace(KEBAB, (c) => `-${c.toLowerCase()}`));
 const escapeAttr = (v) => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-function nodeToString([tag, attrs, children], palette, ids) {
+function nodeToString(node, palette, ids) {
+  if (typeof node === "string") return escapeAttr(node);
+  const [tag, attrs, children] = node;
   const { k, part, ...rest } = attrs;
   const out = { ...(part ? { id: uniqueId(part, ids) } : {}), ...(k ? PAINTS[k](palette) : {}), ...rest };
   const attrText = Object.entries(out).map(([key, v]) => ` ${attrName(key)}="${escapeAttr(v)}"`).join("");
@@ -312,6 +380,9 @@ export function brandFiles() {
   };
   const files = {};
   for (const pose of POSES) files[`kivyn-${pose}.svg`] = toSvg(figure(pose), { title: titles[pose] });
+  const reacting = { wave: "Kivyn waving", wink: "Kivyn winking", hop: "Kivyn hopping", curious: "Kivyn, curious", surprised: "Kivyn, surprised", turn: "Kivyn turning like a page" };
+  for (const r of REACTIONS) files[`kivyn-react-${r}.svg`] = toSvg(figure(r), { title: reacting[r] });
+  for (const e of EMOTES) files[`kivyn-emote-${e}.svg`] = toSvg(emote(e), { viewBox: EMOTE_BOX, title: `Kivyn emote: ${e}` });
   files["kivyn-mark.svg"] = toSvg(mark("neutral"), { viewBox: MARK_BOX, title: "Kivyn mark" });
   files["kivyn-mark-small.svg"] = toSvg(smallMark("neutral"), { viewBox: MARK_BOX, title: "Kivyn mark, small sizes" });
   files["kivyn-mono.svg"] = toSvg(monoMark(), { viewBox: MARK_BOX, title: "Kivyn mark, one colour" });

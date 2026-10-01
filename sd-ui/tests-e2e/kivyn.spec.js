@@ -69,15 +69,15 @@ test.describe("in the studio", () => {
     await expect(nudge.locator("svg.kv")).toHaveAttribute("aria-hidden", "true");
 
     await openAgent(page);
-    const head = page.locator(".ws-right.is-agent .ws-identity");
-    await expect(head.locator("b")).toHaveText("Kivyn");
-    await expect(head.locator("svg.kv")).toBeVisible();
+    const head = page.locator(".ws-right.is-agent .ws-agent-head");
+    await expect(head.locator(".ws-identity b")).toHaveText("Kivyn");
+    await expect(head.locator(".kv-actor > svg.kv")).toBeVisible();
     /* Each message has Kivyn's face, still: only the one showing the work moves. */
     const face = page.locator(".ch-msg.is-agent > svg.kv").first();
     await expect(face).toBeVisible();
     await expect(face).not.toHaveClass(/kv-live/);
 
-    await head.click();
+    await head.locator(".ws-identity").click();
     const about = page.locator(".ws-about");
     await expect(about.locator(".ws-about-name")).toHaveText("Kivyn");
     await expect(about.getByText("What Kivyn may do")).toBeVisible();
@@ -91,8 +91,8 @@ test.describe("in the studio", () => {
     test.setTimeout(180_000);
     await page.goto("/editorial/new");
     await openAgent(page);
-    const head = page.locator(".ws-right.is-agent .ws-identity");
-    const headKivyn = head.locator("svg.kv");
+    const head = page.locator(".ws-right.is-agent .ws-agent-head");
+    const headKivyn = head.locator(".kv-actor > svg.kv");
     await expect(headKivyn).toHaveAttribute("data-pose", "neutral");
 
     /* Held at the network, so the step can be seen while it is the step. */
@@ -102,7 +102,7 @@ test.describe("in the studio", () => {
     const box = page.getByPlaceholder(/Describe the article you want/);
     await box.fill("I want to write from one of my papers");
     await box.press("Enter");
-    const working = page.locator(".ch-msg.is-working > svg.kv");
+    const working = page.locator(".ch-msg.is-working .kv-actor > svg.kv");
     await expect(working).toHaveAttribute("data-pose", "reading");
     await expect(working).toHaveClass(/kv-live/);
     await expect(headKivyn).toHaveAttribute("data-pose", "reading");
@@ -124,12 +124,65 @@ test.describe("in the studio", () => {
     await expect(outlineFace).not.toHaveClass(/kv-live/);
   });
 
-  test("asked for less motion, Kivyn holds its pose still", async ({ page }) => {
+  test("a tap gets a reaction and then Kivyn is itself again; while it works, it stays on the work", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto("/editorial/new");
+    await openAgent(page);
+    const actor = page.locator(".ws-right.is-agent .ws-agent-head .kv-actor");
+    const kivyn = actor.locator("svg.kv");
+    await expect(actor).toHaveAccessibleName("Say hello to Kivyn");
+    await actor.click();
+    await expect(kivyn).toHaveAttribute("data-pose", "wave");
+    await expect(kivyn).toHaveClass(/kv-react-wave/);
+    await expect(actor.locator(".kv-emote")).toHaveAttribute("data-emote", "hi");
+    /* Painted in Kivyn's colours, not the browser's black: a white bubble with a navy line. */
+    await expect(actor.locator(".kv-emote .kv-card")).toHaveCSS("fill", "rgb(255, 255, 255)");
+    await expect(actor.locator(".kv-emote .kv-card")).toHaveCSS("stroke", "rgb(30, 58, 138)");
+    await expect(actor.locator(".sr-only")).toHaveText("Kivyn waves hello.");
+    /* The next tap is the next reaction, and a keyboard taps it too. */
+    await actor.focus();
+    await page.keyboard.press("Enter");
+    await expect(kivyn).toHaveAttribute("data-pose", "wink");
+    await expect(actor.locator(".kv-emote")).toHaveAttribute("data-emote", "heart");
+    /* Then it is over: Kivyn as it was, no bubble, and the tap opened nothing. */
+    await expect(kivyn).toHaveAttribute("data-pose", "neutral", { timeout: 5_000 });
+    await expect(actor.locator(".kv-emote")).toHaveCount(0);
+    await expect(page.locator(".ws-about")).toHaveCount(0);
+
+    /* Working: the tap is acknowledged, and the drawing stays the step under way. */
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    await page.route("**/api/drafting/converse", async (route) => { await held; await route.continue(); });
+    const box = page.getByPlaceholder(/Describe the article you want/);
+    await box.fill("I want to write from one of my papers");
+    await box.press("Enter");
+    const working = page.locator(".ch-msg.is-working .kv-actor");
+    await expect(working.locator("svg.kv")).toHaveAttribute("data-pose", "reading");
+    await expect(working).toHaveAccessibleName("Kivyn, working");
+    await working.click();
+    await expect(working.locator(".kv-emote")).toHaveAttribute("data-emote", "wait");
+    await expect(working.locator("svg.kv")).toHaveAttribute("data-pose", "reading");
+    await expect(working.locator(".sr-only")).toHaveText("Kivyn is still working on it.");
+    release();
+    await expect(page.locator(".ch-msg.is-papers")).toBeVisible();
+    await page.unroute("**/api/drafting/converse");
+  });
+
+  test("asked for less motion, Kivyn holds its pose still, and a tap still answers", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/editorial/new");
     const eye = page.locator(".ag-nudge svg.kv .kv-p-eye").first();
     await expect(eye).toHaveCSS("animation-name", "none");
+    await openAgent(page);
+    const actor = page.locator(".ws-right.is-agent .ws-agent-head .kv-actor");
+    await actor.click();
+    /* The reaction's pose and its bubble, without the movement. */
+    await expect(actor.locator("svg.kv")).toHaveAttribute("data-pose", "wave");
+    await expect(actor.locator(".kv-p-arm-wave")).toHaveCSS("animation-name", "none");
+    await expect(actor.locator(".kv-emote")).toHaveCSS("animation-name", "kv-emote-still");
+    /* Once it is over and motion is allowed again, Kivyn blinks as it rests. */
+    await expect(actor.locator("svg.kv")).toHaveAttribute("data-pose", "neutral", { timeout: 5_000 });
     await page.emulateMedia({ reducedMotion: "no-preference" });
-    await expect(eye).toHaveCSS("animation-name", "kv-blink");
+    await expect(actor.locator(".kv-p-eye").first()).toHaveCSS("animation-name", "kv-blink");
   });
 });

@@ -6,6 +6,7 @@ import { HiOutlineArrowUp, HiOutlinePlus } from "react-icons/hi2";
 
 import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, converseWithAgent, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 import Kivyn from "@/components/kivyn/Kivyn";
+import KivynButton from "@/components/kivyn/KivynButton";
 import { useKivynMoment } from "@/components/kivyn/useKivynMoment";
 import { AGENT_NAME, poseForStep } from "@/lib/kivyn/pose.mjs";
 
@@ -643,7 +644,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
           if (m.role === "progress") {
             return (
               <div key={m.id} className="ch-msg is-agent is-working">
-                <Kivyn pose={poseForStep(m.step)} size={56} live />
+                <KivynButton pose={poseForStep(m.step)} busy size={56} />
                 <div className="ag-working" role="status" aria-live="polite"><div className="ag-working-line">{m.text}</div></div>
               </div>
             );

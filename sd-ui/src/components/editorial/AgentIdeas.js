@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import Kivyn from "@/components/kivyn/Kivyn";
+import KivynButton from "@/components/kivyn/KivynButton";
 import { AGENT_NAME, poseForStep } from "@/lib/kivyn/pose.mjs";
 
 import { getAgentIdeas } from "@/lib/drafting";
@@ -53,7 +53,7 @@ export default function AgentIdeas({ storyId = null, version = null, paperKey = 
       <p className="rc-tab-title">Ideas</p>
       <p className="st-muted rc-tab-note">{note || `Things ${AGENT_NAME} could do next, after reading this page. Tap one to put it in the chat; change it before you send.`}</p>
       {loading ? (
-        <div className="ag-working has-kv" role="status" aria-live="polite"><Kivyn pose={poseForStep("ideas")} size={48} live /><div className="ag-working-body"><div className="ag-working-line">Reading the page for ideas…</div></div></div>
+        <div className="ag-working has-kv" role="status" aria-live="polite"><KivynButton pose={poseForStep("ideas")} busy size={48} /><div className="ag-working-body"><div className="ag-working-line">Reading the page for ideas…</div></div></div>
       ) : got.error ? (
         <p className="st-muted rc-tab-note">{got.error}</p>
       ) : !got.groups.length ? (

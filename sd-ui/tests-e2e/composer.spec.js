@@ -159,7 +159,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   expect(proposed.length).toBeGreaterThan(0);
   expect(proposed.length).toBeLessThan(secondBefore.length);
   /* The turn came as a stream of steps; its end is a moment for Kivyn, then rest. */
-  const reviewKivyn = page.locator(".ws-right .ws-identity svg.kv");
+  const reviewKivyn = page.locator(".ws-right .ws-agent-head svg.kv");
   await expect(reviewKivyn).toHaveAttribute("data-pose", "done");
   await expect(reviewKivyn).toHaveAttribute("data-pose", "neutral", { timeout: 10_000 });
   await expect(proposal.locator(".ag-checks .block-chip").first()).toHaveText("1 of 1 written paragraph supported by the paper");
@@ -203,7 +203,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.locator(".sr-claim").first()).toBeVisible();
   await expect(page.locator(".sr-claim-ev").first()).toContainText(/p\d+:/);
   /* Showing where a paragraph came from is Kivyn tracing it. */
-  await expect(page.locator(".ws-right .ws-identity svg.kv")).toHaveAttribute("data-pose", "tracing");
+  await expect(page.locator(".ws-right .ws-agent-head svg.kv")).toHaveAttribute("data-pose", "tracing");
 
   /* Sources, whole story: the article checked by rule and ready to be signed. */
   await page.getByRole("tab", { name: "Sources" }).click();
