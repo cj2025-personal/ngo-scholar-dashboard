@@ -219,7 +219,7 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
               <b>How it will be attributed</b>
               <div className="pc-preview">
                 {author?.name ? (
-                  <div className="st-row"><span className="sc-me sc-me--sm" aria-hidden>{author.initials || ""}</span><div><div style={{ fontWeight: 700 }}>{author.name}</div>{author.affiliation ? <div className="st-todo-detail">{author.affiliation}</div> : null}</div></div>
+                  <div className="st-row"><span className="sc-me sc-me--sm" aria-hidden>{author.initials || ""}</span><div><div className="pc-author">{author.name}</div>{author.affiliation ? <div className="st-todo-detail">{author.affiliation}</div> : null}</div></div>
                 ) : <p className="st-muted">Your byline could not be resolved from your record; the story would publish without one.</p>}
                 {provenance?.line ? <div className="pc-prov">{provenance.line}</div> : null}
                 {provenance?.line ? <div className="st-todo-detail">Readers can open the passage behind any drafted paragraph.</div> : null}

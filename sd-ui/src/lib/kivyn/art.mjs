@@ -239,7 +239,7 @@ const known = (pose) => (POSES.includes(pose) || REACTIONS.includes(pose) ? pose
 /* A speech bubble, its tail down to the left, toward Kivyn. */
 const BUBBLE = "M11 3 H29 A8 8 0 0 1 37 11 V22 A8 8 0 0 1 29 30 H16 L8 37 L10 30 A8 8 0 0 1 3 22 V11 A8 8 0 0 1 11 3 Z";
 /* In the app the stylesheet sets the product's own face; the files name it for design tools. */
-const glyph = (text, size = 17) => n("text", { x: 20, y: 16.5 + size * 0.36, textAnchor: "middle", fontFamily: "Plus Jakarta Sans, Arial, sans-serif", fontSize: size, fontWeight: 800, k: "ink" }, [text]);
+const glyph = (text, size = 17) => n("text", { x: 20, y: 16.5 + size * 0.36, textAnchor: "middle", fontFamily: "Inter, Arial, sans-serif", fontSize: size, fontWeight: 700, k: "ink" }, [text]);
 const EMOTE_ART = {
   hi: () => [glyph("Hi!", 12)],
   heart: () => [path("M20 25 C13.5 20.5 10.5 17.5 10.5 14 C10.5 11 12.8 9 15.3 9 C17.2 9 18.7 10.1 20 12 C21.3 10.1 22.8 9 24.7 9 C27.2 9 29.5 11 29.5 14 C29.5 17.5 26.5 20.5 20 25 Z", "accent")],

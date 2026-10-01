@@ -1,41 +1,29 @@
-import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
+import { Inter } from "next/font/google";
 import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
 
 /*
- * Archivyn type system: Plus Jakarta Sans for UI, Fraunces for editorial
- * headlines and reading surfaces.
+ * Archivyn type system: Inter, for every surface of the product.
  *
- * ── Why this changed ──────────────────────────────────────────────────────
- * This app loaded Geist and put it FIRST in `--sd-sans`, so the canonical
- * `--ark-font-ui` behind it — Plus Jakarta Sans, which the token sheet names
- * and the user dashboard loads — never applied. The two products rendered
- * every piece of interface text in different typefaces while appearing to
- * share a design system.
+ * One family, loaded here once as `--font-inter` and read through
+ * `--font-ui` / `--font-reading` in archivyn-tokens.css; the stack behind it
+ * holds the layout until it arrives. The roles — page titles, sections, cards,
+ * controls, the 16px reading register, AI responses — are the shared ones in
+ * archivyn-tokens.css and archivyn-type.css, the same in every Archivyn app.
  *
- * The weight axis matches what the user dashboard requests (300..800), so a
- * component moved between the two apps renders identically rather than
- * snapping to the nearest available weight.
+ * The variable class sits on <html> so that everything rendered into <body>,
+ * portals and dialogs included, sees the variable.
  *
- * No `weight` here, and that is the point rather than an omission. Naming
- * weights makes next/font fetch static cuts at those six values; leaving it
- * out fetches the variable font and the whole axis between them, which is
- * what the user dashboard gets from `Plus+Jakarta+Sans:wght@300..800` on its
- * Google Fonts link. Nine rules in this sheet ask for 650 — against static
- * cuts that snapped to 600 or 700, so buttons and card headings were a
- * visibly different weight from the same components in the other app.
+ * No `weight`: leaving it out fetches the variable font, one file for the
+ * whole axis, rather than a static cut per weight the sheet uses.
+ *
+ * The Archivyn logo is an image (public/archivyn-full-nav.png) and needs no
+ * face of its own.
  */
-const jakarta = Plus_Jakarta_Sans({
-  variable: "--font-jakarta",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-});
-
-/* Variable font: one file covers the whole weight axis (400 body serif,
-   600/700 headlines) instead of shipping separate static cuts. The user
-   dashboard requests 600 and 700 on the same optical-size axis. */
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata = {
@@ -46,7 +34,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${jakarta.variable} ${fraunces.variable}`}>
+    <html lang="en" className={inter.variable}>
       <body>{children}</body>
     </html>
   );

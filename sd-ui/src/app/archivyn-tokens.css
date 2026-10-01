@@ -91,15 +91,78 @@
   --ark-card-lift: 0 1px 2px rgba(23, 37, 84, 0.04), 0 14px 32px -24px rgba(23, 37, 84, 0.45);
   --ark-card-lift-hover: 0 1px 2px rgba(23, 37, 84, 0.05), 0 18px 38px -22px rgba(23, 37, 84, 0.5);
 
-  /* Type — Plus Jakarta Sans for UI and reading, Fraunces for editorial headlines.
+  /* Type — Inter, for every surface of the product.
    *
-   * Plus Jakarta Sans fits the product between classroom and AI workspace:
-   * geometric enough to feel current, warmer than Inter or Geist, and open
-   * enough at small sizes for navigation, metadata, prompts and dashboards.
-   * It gives Archivyn a sleeker voice without drifting into a cold developer
-   * tool or a childish rounded classroom face. */
-  --ark-font-ui: "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
-  --ark-font-serif: "Fraunces", Georgia, "Times New Roman", serif;
+   * One family, loaded by each app's root layout through next/font as
+   * --font-inter; the stack behind it holds the layout until it arrives.
+   * The Archivyn logo is artwork and keeps its own lettering; code keeps a
+   * monospace face. Two registers from the one face:
+   *   product UI  14px / 1.55  dashboards, menus, controls, filters, tables
+   *   reading     16px / 1.65  articles, scholar work, passages, generated
+   *                            learning material, reading journeys, AI
+   *                            explanations
+   * These are the only sizes and weights the UI uses. archivyn-type.css
+   * applies the roles to plain elements and as .t-* classes.
+   *
+   * Sizes are --fs-*, not --text-*: Tailwind v4 owns --text-* as its own
+   * theme variables, and defining them here would silently re-scale every
+   * text-sm and text-lg in the Tailwind apps. The root font-size is never
+   * changed — rem-based spacing stays on 16px — only body text is 14px. */
+  --font-ui: var(--font-inter, "Inter"), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-reading: var(--font-ui);
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  /* The names used before Inter. Both read as Inter now; new code uses --font-ui. */
+  --ark-font-ui: var(--font-ui);
+  --ark-font-serif: var(--font-ui);
+
+  --fs-xs: 12px;       /* helper, badge, table head */
+  --fs-sm: 13px;       /* label, table content */
+  --fs-base: 14px;     /* UI copy, input, nav, button */
+  --fs-chat: 15px;     /* AI responses */
+  --fs-md: 16px;       /* card heading, body large, reading */
+  --fs-lg: 20px;       /* section heading, small metric */
+  --fs-xl: 24px;       /* compact page title */
+  --fs-2xl: 28px;      /* page title, metric */
+  --fs-display: 36px;  /* display / hero */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Roles, for `font:` (weight size/line-height family), with tracking beside the few that take it. */
+  --type-display: 700 36px/1.2 var(--font-ui);
+  --tracking-display: -0.025em;
+  --type-page-title: 700 28px/1.25 var(--font-ui);
+  --tracking-page-title: -0.02em;
+  --type-page-title-compact: 600 24px/1.3 var(--font-ui);
+  --tracking-page-title-compact: -0.015em;
+  --type-section: 600 20px/1.35 var(--font-ui);
+  --tracking-section: -0.01em;
+  --type-card-title: 600 16px/1.4 var(--font-ui);
+  --type-body-lg: 400 16px/1.6 var(--font-ui);
+  --type-body: 400 14px/1.55 var(--font-ui);
+  --type-body-medium: 500 14px/1.5 var(--font-ui);
+  --type-nav: 500 14px/1.4 var(--font-ui);
+  --type-nav-active: 600 14px/1.4 var(--font-ui);
+  --type-button: 500 14px/1 var(--font-ui);
+  --type-button-strong: 600 14px/1 var(--font-ui);
+  --type-table-head: 600 12px/1.4 var(--font-ui);
+  --tracking-table-head: 0.02em;
+  --type-table: 400 13px/1.5 var(--font-ui);
+  --type-label: 500 13px/1.4 var(--font-ui);
+  --type-input: 400 14px/1.5 var(--font-ui);
+  --type-helper: 400 12px/1.5 var(--font-ui);
+  --type-badge: 500 12px/1 var(--font-ui);
+  --type-overline: 600 12px/1.4 var(--font-ui);
+  --tracking-overline: 0.04em;
+  --type-metric: 600 28px/1.2 var(--font-ui);
+  --tracking-metric: -0.02em;
+  --type-metric-sm: 600 20px/1.25 var(--font-ui);
+  --type-reading: 400 16px/1.65 var(--font-reading);
+  --type-chat: 400 15px/1.6 var(--font-ui);
+  --type-chat-label: 600 13px/1.4 var(--font-ui);
+  --measure-reading: 70ch;
 
   /* Layout constants */
   --ark-sidebar-width: 236px;
@@ -107,4 +170,13 @@
   --ark-width-content: 1200px;  /* dashboards & directories */
   --ark-width-reading: 760px;   /* reading & composing columns */
   --ark-width-wide: 1440px;     /* wide admin tables */
+}
+
+/* Type on a phone: the three largest roles step down; body sizes stay. */
+@media (max-width: 640px) {
+  :root {
+    --type-display: 700 31px/1.2 var(--font-ui);
+    --type-page-title: 700 24px/1.3 var(--font-ui);
+    --type-section: 600 18px/1.35 var(--font-ui);
+  }
 }

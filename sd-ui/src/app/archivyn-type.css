@@ -1,0 +1,93 @@
+/* ============================================================
+   Archivyn Type · v1
+   Canonical sheet, shared verbatim across all four app repos:
+   user-dashboard/frontend · ngo-admin-app/ngo-admin-ui ·
+   scholar-dashboard/sd-ui · ngo-profile-app/frontend
+   Applies the type roles defined in archivyn-tokens.css, which
+   must load first. Change it in every repo or not at all.
+
+   Two layers, so nothing here ever beats an app's own styling:
+   · base       the document and its plain elements. In a Tailwind
+                v4 app this is Tailwind's base layer, after its reset;
+                every utility and every unlayered rule wins over it.
+   · components the .t-* role classes, for markup that has no
+                class of its own yet.
+   The root font-size is left alone, so rem-based spacing is
+   unchanged; only body text is set to 14px.
+   ============================================================ */
+@layer base, components;
+
+@layer base {
+  html {
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    font: var(--type-body);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1 { font: var(--type-page-title); letter-spacing: var(--tracking-page-title); }
+  h2 { font: var(--type-section); letter-spacing: var(--tracking-section); }
+  h3 { font: var(--type-card-title); }
+  h4, h5, h6 { font: var(--type-body-medium); }
+  p { letter-spacing: 0; }
+  small { font-size: var(--fs-xs); }
+  b, strong { font-weight: var(--weight-semibold); }
+
+  /* Controls take the face; their size and weight are their own class's to set. */
+  button, input, select, textarea, optgroup { font-family: inherit; }
+  button { font-weight: var(--weight-medium); }
+  input, select, textarea { font-size: var(--fs-base); line-height: 1.5; }
+  label { font-weight: var(--weight-medium); }
+
+  th { font: var(--type-table-head); letter-spacing: var(--tracking-table-head); }
+  td { font: var(--type-table); }
+
+  /* The `font` shorthand resets font-feature-settings, so every element set
+     through it would lose Inter's character variants (a two-storey "a" in a
+     heading above single-storey body text). They come back from the parent. */
+  h1, h2, h3, h4, h5, h6, th, td, button, input, select, textarea { font-feature-settings: inherit; }
+
+  code, kbd, samp, pre { font-family: var(--font-mono); }
+}
+
+@layer components {
+  .t-display { font: var(--type-display); letter-spacing: var(--tracking-display); }
+  .t-page-title { font: var(--type-page-title); letter-spacing: var(--tracking-page-title); }
+  .t-page-title-compact { font: var(--type-page-title-compact); letter-spacing: var(--tracking-page-title-compact); }
+  .t-section { font: var(--type-section); letter-spacing: var(--tracking-section); }
+  .t-card-title { font: var(--type-card-title); }
+  .t-body-lg { font: var(--type-body-lg); }
+  .t-body { font: var(--type-body); }
+  .t-body-medium { font: var(--type-body-medium); }
+  .t-nav { font: var(--type-nav); }
+  .t-nav-active { font: var(--type-nav-active); }
+  .t-button { font: var(--type-button); }
+  .t-button-strong { font: var(--type-button-strong); }
+  .t-table-head { font: var(--type-table-head); letter-spacing: var(--tracking-table-head); }
+  .t-table { font: var(--type-table); }
+  .t-label { font: var(--type-label); }
+  .t-input { font: var(--type-input); }
+  .t-helper { font: var(--type-helper); }
+  .t-badge { font: var(--type-badge); }
+  /* Small metadata labels: the one place uppercase earns its keep. */
+  .t-overline { font: var(--type-overline); letter-spacing: var(--tracking-overline); text-transform: uppercase; }
+  .t-metric { font: var(--type-metric); letter-spacing: var(--tracking-metric); font-variant-numeric: tabular-nums; }
+  .t-metric-sm { font: var(--type-metric-sm); font-variant-numeric: tabular-nums; }
+
+  /* Reading: relaxed, at a measure the eye can follow. */
+  .t-reading { font: var(--type-reading); letter-spacing: 0; max-width: var(--measure-reading); }
+  .t-reading :where(p, li, blockquote) { font: inherit; }
+  /* AI responses and generated learning material in a conversation. */
+  .t-chat { font: var(--type-chat); }
+  .t-chat-label { font: var(--type-chat-label); }
+  .t-mono { font-family: var(--font-mono); }
+
+  /* As in the base layer: what the `font` shorthand reset comes back from the parent. */
+  .t-display, .t-page-title, .t-page-title-compact, .t-section, .t-card-title, .t-body-lg, .t-body,
+  .t-body-medium, .t-nav, .t-nav-active, .t-button, .t-button-strong, .t-table-head, .t-table,
+  .t-label, .t-input, .t-helper, .t-badge, .t-overline, .t-reading, .t-chat, .t-chat-label { font-feature-settings: inherit; }
+  .t-metric, .t-metric-sm { font-feature-settings: inherit; }
+}
