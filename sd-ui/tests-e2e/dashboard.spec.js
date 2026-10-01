@@ -166,6 +166,16 @@ test("writing has one door: the nudge on the Studio, the bar on Stories, and now
   }
 });
 
+test("the bar's logo is the vector lockup, and it draws", async ({ page }) => {
+  await page.goto("/papers");
+  const logo = page.locator(".nb-brand img");
+  await expect(logo).toHaveAttribute("src", "/brand/archivyn-lockup-compact.svg");
+  await expect(logo).toHaveAttribute("alt", "Archivyn");
+  await expect.poll(() => logo.evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
+  const box = await logo.boundingBox();
+  expect(Math.round(box.height)).toBe(34);
+});
+
 test("the Studio at the sizes it is judged at", async ({ page }) => {
   test.skip(!process.env.SCREENS, "screenshots are captured on demand: SCREENS=1");
   fs.mkdirSync(OUT, { recursive: true });

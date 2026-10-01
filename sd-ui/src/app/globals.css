@@ -1945,9 +1945,9 @@ select {
 
 .nb-brand { display: inline-flex; align-items: center; flex: 0 0 auto; border-radius: 10px; }
 .nb-brand:focus-visible { outline: 2px solid var(--ark-navy); outline-offset: 4px; }
-/* The lockup as the brand supplies it — mark, wordmark and the line beneath —
-   trimmed of its empty canvas by scripts/brand-lockup.js and drawn 40px tall. */
-.nb-lockup { display: block; height: 40px; width: auto; max-width: none; }
+/* The compact lockup, the mark and the word, as vector (public/brand, from
+   scripts/brand/archivyn_logo.py): 34px tall, where the word's cap height is 14px. */
+.nb-lockup { display: block; height: 34px; width: auto; max-width: none; }
 
 /* The places, as pills in a tray: where you are is the one lifted out of it. */
 .nb-nav {
@@ -2099,7 +2099,7 @@ select {
 /* A phone: the brand and the account on top, the places in a swipeable row. */
 @media (max-width: 760px) {
   .nb-bar__inner { flex-wrap: wrap; height: auto; row-gap: 8px; padding: 10px 16px 8px; }
-  .nb-lockup { height: 32px; }
+  .nb-lockup { height: 28px; }
   .nb-iconbtn { display: none; }
   .nb-nav { order: 3; flex: 1 0 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .nb-nav::-webkit-scrollbar { display: none; }

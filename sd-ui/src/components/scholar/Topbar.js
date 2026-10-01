@@ -234,8 +234,10 @@ function AccountMenu({ me }) {
   );
 }
 
-/* The lockup's drawn size, as scripts/brand-lockup.js prints it, and its files by density. */
-const LOCKUP = { width: 127, height: 40, src: (density) => `/archivyn-full-logo-nav@${density}x.png` };
+/* The compact lockup (the mark and the word, no tagline: at bar size the
+   tagline would be 5px tall). Width and height are the file's viewBox, so the
+   box is reserved before it loads; CSS sets the drawn height. */
+const LOCKUP = { src: "/brand/archivyn-lockup-compact.svg", width: 748.5, height: 225.83 };
 
 export default function Topbar({ activeHref = "/", me = { initials: "SC", name: "Scholar" }, write = false }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -262,21 +264,17 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
     <header className="nb-bar">
       <div className="nb-bar__inner">
         <Link href="/" className="nb-brand" aria-label="Archivyn — home">
-          {/* A plain <img> on purpose: next/image re-encodes it lossy and lets
-              the browser shrink a larger file into the box, which is what made
-              the lockup look soft. These are drawn at exactly 1x, 2x and 3x of
-              the box by scripts/brand-lockup.js, so every screen gets one image
-              pixel per screen pixel. */}
+          {/* Vector, from scripts/brand/archivyn_logo.py: sharp at every size
+              and density. A plain <img>, because next/image has nothing to
+              optimise in an SVG. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={LOCKUP.src(1)}
-            srcSet={`${LOCKUP.src(1)} 1x, ${LOCKUP.src(2)} 2x, ${LOCKUP.src(3)} 3x`}
+            src={LOCKUP.src}
             alt="Archivyn"
             width={LOCKUP.width}
             height={LOCKUP.height}
             className="nb-lockup"
             fetchPriority="high"
-            decoding="async"
           />
         </Link>
 

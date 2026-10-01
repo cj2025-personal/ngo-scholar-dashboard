@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:e2e": "playwright test",
-    "brand:lockup": "node scripts/brand-lockup.js",
+    "brand:logo": "python scripts/brand/archivyn_logo.py",
     "brand:kivyn": "node scripts/kivyn-assets.mjs"
   },
   "dependencies": {
