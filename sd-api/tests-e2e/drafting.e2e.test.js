@@ -488,6 +488,30 @@ test("the public reads the story with its byline and its source line, and never 
   assert.match(list[0].text, /Adaptive antenna arrays/);
 });
 
+test("a read of the published story shows on the scholar's chart, day by day, and only the scholar's", async () => {
+  const before = await call("GET", "/api/editorial-stories/reads/daily?days=7");
+  assert.equal(before.status, 200, JSON.stringify(before.data));
+  assert.equal(before.data.days, 7);
+  assert.equal(before.data.series.length, 7, "every day of the window, quiet ones included");
+  assert.ok(before.data.published >= 1);
+
+  const beacon = await fetch(`${base}/api/editorial-stories/public/slug/${state.slug}/read`, { method: "POST" });
+  assert.equal(beacon.status, 204);
+
+  const after = await call("GET", "/api/editorial-stories/reads/daily?days=7");
+  const today = after.data.series[after.data.series.length - 1];
+  assert.equal(today.reads, before.data.series[before.data.series.length - 1].reads + 1, "today's read is today's bar");
+  assert.equal(after.data.total, before.data.total + 1);
+  assert.equal(after.data.top[0].storyId, state.storyId);
+  assert.ok(after.data.top[0].title.length > 0, "the story that drew it, named");
+
+  /* The windows the chart offers; anything else is the default. */
+  assert.equal((await call("GET", "/api/editorial-stories/reads/daily?days=90")).data.series.length, 90);
+  assert.equal((await call("GET", "/api/editorial-stories/reads/daily?days=1000")).data.days, 30);
+  /* Only for the signed-in scholar. */
+  assert.equal((await fetch(`${base}/api/editorial-stories/reads/daily`)).status, 401);
+});
+
 test("the studio agent decides what the scholar means, from their own papers only, and every decision is on the record", async () => {
   const anon = await fetch(`${base}/api/drafting/converse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
   assert.equal(anon.status, 401);

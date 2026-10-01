@@ -12,6 +12,7 @@ const {
   restoreStoryRevision,
   getPublishedStoryBySlug,
   listEditorialStories,
+  storyReadsTimeline,
   streamEditorialImage,
   streamPublishedEditorialImage,
   updateEditorialStory,
@@ -79,6 +80,27 @@ router.get(
       status: req.query.status || "all",
     });
 
+    res.status(200).json(result);
+  }),
+);
+
+/**
+ * Reads of the scholar's work, day by day, for the Studio's chart. `days` is
+ * the window (7, 30 or 90; anything else is 30): the chart offers those three,
+ * and an open-ended window is a scan nobody asked for. Before `/:storyId`, so
+ * the path is never read as a story id.
+ */
+const READ_WINDOWS = new Set([7, 30, 90]);
+router.get(
+  "/reads/daily",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const asked = Number(req.query.days);
+    const result = await storyReadsTimeline({
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
+      days: READ_WINDOWS.has(asked) ? asked : 30,
+    });
     res.status(200).json(result);
   }),
 );

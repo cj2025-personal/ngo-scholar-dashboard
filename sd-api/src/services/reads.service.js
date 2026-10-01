@@ -149,4 +149,61 @@ async function readsForStories(db, storyIds, { windowDays = 7 } = {}) {
   return out;
 }
 
-module.exports = { recordStoryRead, readsForStories, dayKey };
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Reads by day across a set of stories: the trailing `days` days through
+ * today (UTC), every day present — a quiet day is a 0, not a gap, so a chart
+ * drawn from it never closes up the days nobody came — and the window before
+ * it as one total, so "more than last month" is a comparison and not a guess.
+ * Also which stories drew the reads in the window, most first.
+ *
+ * Counts only, as everything here is: reads, not readers.
+ *
+ * @param {import("mongodb").Db} db
+ * @param {import("mongodb").ObjectId[]} storyIds
+ * @param {{ days?: number, now?: Date }} [opts]
+ * @returns {Promise<{days: number, series: {day: string, reads: number}[], total: number, previousTotal: number, byStory: {storyId: string, reads: number}[]}>}
+ */
+async function readsByDay(db, storyIds, { days = 30, now = new Date() } = {}) {
+  const span = Math.max(1, Math.min(365, Math.floor(Number(days) || 30)));
+  const dayList = [];
+  for (let i = span - 1; i >= 0; i -= 1) dayList.push(dayKey(new Date(now.getTime() - i * DAY_MS)));
+  const previousFrom = dayKey(new Date(now.getTime() - (span * 2 - 1) * DAY_MS));
+  const series = dayList.map((day) => ({ day, reads: 0 }));
+  if (!storyIds || storyIds.length === 0) return { days: span, series, total: 0, previousTotal: 0, byStory: [] };
+
+  const rows = await db
+    .collection(COLLECTIONS.storyReads)
+    .aggregate([
+      { $match: { story_id: { $in: storyIds }, day: { $gte: previousFrom, $lte: dayList[dayList.length - 1] } } },
+      { $group: { _id: { day: "$day", story: "$story_id" }, reads: { $sum: "$reads" } } },
+    ])
+    .toArray();
+
+  const first = dayList[0];
+  const byDay = new Map();
+  const byStory = new Map();
+  let previousTotal = 0;
+  for (const row of rows) {
+    const reads = row.reads || 0;
+    if (row._id.day < first) {
+      previousTotal += reads;
+      continue;
+    }
+    byDay.set(row._id.day, (byDay.get(row._id.day) || 0) + reads);
+    const key = String(row._id.story);
+    byStory.set(key, (byStory.get(key) || 0) + reads);
+  }
+  for (const point of series) point.reads = byDay.get(point.day) || 0;
+
+  return {
+    days: span,
+    series,
+    total: series.reduce((sum, point) => sum + point.reads, 0),
+    previousTotal,
+    byStory: [...byStory].map(([storyId, reads]) => ({ storyId, reads })).sort((a, b) => b.reads - a.reads),
+  };
+}
+
+module.exports = { recordStoryRead, readsForStories, readsByDay, dayKey };

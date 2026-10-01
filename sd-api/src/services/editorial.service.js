@@ -16,7 +16,7 @@ const levelsLib = require("../lib/levels");
 const recordLib = require("../lib/record");
 const ledger = require("../lib/evidenceLedger");
 const { AUDIENCES: AUDIENCE_TABLE } = require("../lib/audiences");
-const { readsForStories } = require("./reads.service");
+const { readsForStories, readsByDay } = require("./reads.service");
 const { questionsForStories } = require("./readerQuestions.service");
 const {
   normalizeBlockProvenance,
@@ -1187,7 +1187,7 @@ function mapStorySummary(story) {
     wordCount: mapped.wordCount,
     readingTimeMinutes: mapped.readingTimeMinutes,
     coverImage: mapped.coverImage,
-    provenance: story.provenance ? { sourceId: story.provenance.source_id || null, title: story.provenance.source_title || null } : null,
+    provenance: story.provenance ? { sourceId: story.provenance.source_id || null, title: story.provenance.source_title || null, audience: story.provenance.audience || null } : null,
     /* Enough for a to-do line, not the whole picture. */
     record: mapped.record ? { headline: mapped.record.headline, acknowledgedAt: mapped.record.acknowledgedAt, alerts: mapped.record.alerts.length } : null,
     levels: { written: mapped.levels.length, waiting: mapped.levels.filter((l) => !l.approved && !l.stale).length, stale: mapped.levels.filter((l) => l.stale).length },
@@ -1501,6 +1501,31 @@ async function deleteEditorialStory({ storyId, scholarId, profileId, user }) {
   }
 
   return { ok: true, storyId: String(story._id), previousStatus: story.status };
+}
+
+/**
+ * The scholar's reads, day by day, for the Studio's chart: every story of
+ * theirs that has been in front of readers, the trailing window and the one
+ * before it, and the stories that drew the most in the window, named.
+ * Ownership is the list's own query, so the chart can never count a story
+ * the list would not show.
+ */
+async function storyReadsTimeline({ scholarId, profileId, days = 30 }) {
+  const db = await getDb();
+  const stories = await getStoryCollection(db)
+    .find(buildStoryListQuery({ scholarId, profileId, status: "all" }), { projection: { _id: 1, title: 1, status: 1 } })
+    .toArray();
+  const read = stories.filter((story) => story.status === "published" || story.status === "scheduled");
+  const timeline = await readsByDay(db, read.map((story) => story._id), { days });
+  const titles = new Map(read.map((story) => [String(story._id), story.title || "Untitled story"]));
+  return {
+    days: timeline.days,
+    series: timeline.series,
+    total: timeline.total,
+    previousTotal: timeline.previousTotal,
+    published: read.length,
+    top: timeline.byStory.slice(0, 3).map((row) => ({ storyId: row.storyId, title: titles.get(row.storyId) || "Untitled story", reads: row.reads })),
+  };
 }
 
 async function listEditorialStories({ scholarId, profileId, status = "all" }) {
@@ -2201,6 +2226,7 @@ module.exports = {
   getEditorialStory,
   getPublishedStoryBySlug,
   listEditorialStories,
+  storyReadsTimeline,
   streamEditorialImage,
   streamPublishedEditorialImage,
   updateEditorialStory,
