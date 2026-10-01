@@ -4768,6 +4768,28 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .ch-wrap .ch-msg > .kv-mark { margin-top: 4px; }
 .ag-nudge { padding-left: 8px; gap: 8px; }
 .ag-nudge .kv { margin: -2px 0; }
+
+/* Kivyn's pane, closed, on a wide screen: the strip it leaves on the left
+   edge, where its icon bar stands while it is open. Narrower, the pane is a
+   sheet from the bottom and the nudge in the corner is the way back in. */
+.ws-strip { display: none; }
+.ws-strip-btn { width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 12px; background: none; color: var(--sd-muted); cursor: pointer; transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease; }
+.ws-strip-btn:hover { background: var(--sd-surface); color: var(--sd-heading); box-shadow: var(--sd-sh-sm); }
+.ws-strip-btn:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+.ws-strip-btn.is-kivyn { width: 44px; height: 44px; margin-bottom: 8px; }
+@media (min-width: 1101px) {
+  .ws-strip {
+    position: fixed; z-index: 29; left: 0; top: var(--ag-rail-top, var(--sc-nav-height)); bottom: 0; width: var(--ag-iconbar-w, 56px);
+    display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0;
+    background: var(--sd-surface-2); border-right: 1px solid var(--sd-line-soft);
+  }
+  .sc-writer .ag-nudge { display: none; }
+}
+/* Opened by default, but this is a narrow screen: kept out of sight until the
+   page has loaded and closed it, so it never covers the editor on arrival. */
+@media (max-width: 1100px) {
+  .ws-right.is-agent.ws-agent-rail.is-default-open { transform: translateY(110%); visibility: hidden; }
+}
 /* Working: the figure doing the step, beside the words saying it. */
 .ag-working.has-kv { flex-direction: row; align-items: center; gap: 12px; }
 .ag-working.has-kv .ag-working-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }

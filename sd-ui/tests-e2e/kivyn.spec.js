@@ -60,14 +60,8 @@ test.describe("in the studio", () => {
     await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
   });
 
-  test("one name and one face: the nudge, the pane, and who it is", async ({ page }) => {
+  test("one name and one face: the pane, the strip, the nudge, and who it is", async ({ page }) => {
     await page.goto("/editorial/new");
-    const nudge = page.locator(".ag-nudge");
-    await expect(nudge).toBeVisible();
-    await expect(nudge).toHaveText("Kivyn");
-    await expect(nudge.locator("svg.kv")).toHaveAttribute("data-pose", "neutral");
-    await expect(nudge.locator("svg.kv")).toHaveAttribute("aria-hidden", "true");
-
     await openAgent(page);
     const head = page.locator(".ws-right.is-agent .ws-agent-head");
     await expect(head.locator(".ws-identity b")).toHaveText("Kivyn");
@@ -85,6 +79,16 @@ test.describe("in the studio", () => {
     await expect(about.locator("input, .rc-face-pick, .rc-tone-pick")).toHaveCount(0);
     await about.getByRole("button", { name: "Back to Kivyn" }).click();
     await expect(about).toHaveCount(0);
+
+    /* Closed: the strip keeps Kivyn's face on the left edge; narrower, the nudge says the name. */
+    await page.getByRole("button", { name: "Close Kivyn" }).click();
+    await expect(page.locator(".ws-strip svg.kv")).toBeVisible();
+    await expect(page.locator(".ws-strip svg.kv")).toHaveAttribute("data-pose", "neutral");
+    await page.setViewportSize({ width: 1024, height: 768 });
+    const nudge = page.locator(".ag-nudge");
+    await expect(nudge).toBeVisible();
+    await expect(nudge).toHaveText("Kivyn");
+    await expect(nudge.locator("svg.kv")).toHaveAttribute("aria-hidden", "true");
   });
 
   test("Kivyn is drawn doing the step under way, and rests once it is over", async ({ page }) => {
@@ -171,9 +175,9 @@ test.describe("in the studio", () => {
   test("asked for less motion, Kivyn holds its pose still, and a tap still answers", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/editorial/new");
-    const eye = page.locator(".ag-nudge svg.kv .kv-p-eye").first();
-    await expect(eye).toHaveCSS("animation-name", "none");
     await openAgent(page);
+    const eye = page.locator(".ws-agent-head svg.kv .kv-p-eye").first();
+    await expect(eye).toHaveCSS("animation-name", "none");
     const actor = page.locator(".ws-right.is-agent .ws-agent-head .kv-actor");
     await actor.click();
     /* The reaction's pose and its bubble, without the movement. */

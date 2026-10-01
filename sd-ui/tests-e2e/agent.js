@@ -1,6 +1,6 @@
 /**
- * Open the agent on a story: the nudge if the rail is closed, and the terms
- * the first time. Idempotent, so a spec that runs after another has already
+ * Open the agent on a story: the strip on a wide screen or the nudge on a
+ * narrow one if the rail is closed, and the terms the first time. Idempotent, so a spec that runs after another has already
  * agreed finds the rail open and does nothing.
  */
 
@@ -9,17 +9,18 @@ const { expect } = require("@playwright/test");
 async function openAgent(page) {
   const agree = page.getByRole("button", { name: "I agree" });
   const nudge = page.locator(".ag-nudge");
+  const strip = page.locator(".ws-strip-btn.is-kivyn");
   const rail = page.locator(".ws-right.is-agent");
 
   /* A page opened with a paper or a job in hand asks for the terms at once;
      otherwise the nudge waits in the corner, or the rail is already open. */
   /* The pane stays in the tree while closed, hidden and slid away, so only a
      visible match counts. */
-  await page.locator("[role=dialog]:visible, .ag-nudge:visible, .ws-right.is-agent:visible").first().waitFor();
+  await page.locator("[role=dialog]:visible, .ag-nudge:visible, .ws-strip-btn.is-kivyn:visible, .ws-right.is-agent:visible").first().waitFor();
   if (await agree.isVisible()) {
     await agree.click();
-  } else if (await nudge.isVisible()) {
-    await nudge.click();
+  } else if (await nudge.isVisible() || await strip.isVisible()) {
+    await ((await nudge.isVisible()) ? nudge : strip).click();
     await page.locator("[role=dialog]:visible, .ws-right.is-agent:visible").first().waitFor();
     if (await agree.isVisible()) await agree.click();
   }

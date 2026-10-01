@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { FaXmark } from "react-icons/fa6";
 
+import Kivyn from "@/components/kivyn/Kivyn";
 import KivynButton from "@/components/kivyn/KivynButton";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
@@ -112,6 +113,27 @@ export function AgentTabs({ tabs, tab, onTab, vertical = false }) {
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * Kivyn's pane, closed, on a wide screen: the strip it leaves on the left
+ * edge, in the very place the pane's icon bar stands while it is open, so
+ * closing reads as folding away rather than vanishing. Kivyn's face opens it
+ * on the chat; each section's icon opens it on that section.
+ */
+export function AgentStrip({ tabs, onOpen }) {
+  return (
+    <nav className="ws-strip" aria-label={AGENT_NAME}>
+      <button type="button" className="ws-strip-btn is-kivyn" onClick={() => onOpen("chat")} aria-label={`Open ${AGENT_NAME}`} title={`Open ${AGENT_NAME}`}>
+        <Kivyn variant="mark" size={32} live />
+      </button>
+      {tabs.map((t) => (
+        <button key={t.key} type="button" className="ws-strip-btn" onClick={() => onOpen(t.key)} aria-label={`${AGENT_NAME}: ${t.label}`} title={t.label}>
+          <span className="ws-icon-tab-ic" aria-hidden>{t.icon}</span>
+        </button>
+      ))}
+    </nav>
   );
 }
 

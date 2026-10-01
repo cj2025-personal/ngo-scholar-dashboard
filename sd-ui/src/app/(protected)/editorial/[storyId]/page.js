@@ -3,12 +3,15 @@ import StoryWorkspace from "@/components/editorial/StoryWorkspace";
 import { getEditorialStory } from "@/lib/editorial";
 import { getScholarProfile } from "@/lib/profile";
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
+import { paneClosedIn } from "@/lib/kivyn/pane";
 
 export default async function EditorialStoryPage({ params }) {
   const { storyId } = await params;
-  const [storyResult, profileData] = await Promise.all([
+  const [storyResult, profileData, cookieStore] = await Promise.all([
     getEditorialStory(storyId),
     getScholarProfile(),
+    cookies(),
   ]);
 
   if (!storyResult?.story) {
@@ -26,7 +29,7 @@ export default async function EditorialStoryPage({ params }) {
     <div className="sc-shell">
       <Topbar activeHref="/editorial" me={me} />
       <div className="sc-editorial">
-        <StoryWorkspace initialStory={storyResult.story} me={me} aiTerms={profile.aiTerms || null} />
+        <StoryWorkspace initialStory={storyResult.story} me={me} aiTerms={profile.aiTerms || null} paneClosed={paneClosedIn(cookieStore)} />
       </div>
     </div>
   );

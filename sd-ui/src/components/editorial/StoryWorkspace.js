@@ -29,15 +29,22 @@ import EvidenceRail from "@/components/editorial/EvidenceRail";
 import ReadingLevels from "@/components/editorial/ReadingLevels";
 import RecordBanner from "@/components/editorial/RecordBanner";
 import { HiOutlineChatBubbleLeftRight, HiOutlineLightBulb } from "react-icons/hi2";
-import StudioAgentShell, { AgentAbout, AgentIdentity, AgentTabs, STUDIO_PERMISSIONS } from "@/components/editorial/StudioAgentShell";
+import StudioAgentShell, { AgentAbout, AgentIdentity, AgentStrip, AgentTabs, STUDIO_PERMISSIONS } from "@/components/editorial/StudioAgentShell";
 import AgentIdeas from "@/components/editorial/AgentIdeas";
 import { Toast, ToastStack } from "@/components/editorial/Toasts";
 import DraftStream from "@/components/editorial/DraftStream";
 import Kivyn from "@/components/kivyn/Kivyn";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
+import { rememberPane } from "@/lib/kivyn/pane";
 import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { AUDIENCE_TARGETS, assessForAudience, normaliseAudience } from "@/lib/readability";
+
+/* A new story's sections, as the pane's icon bar and the strip it leaves both show them. */
+const NEW_STORY_TABS = [
+  { key: "chat", label: "Chat", icon: <HiOutlineChatBubbleLeftRight size={20} /> },
+  { key: "ideas", label: "Ideas", icon: <HiOutlineLightBulb size={20} /> },
+];
 
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000";
@@ -234,8 +241,9 @@ function sectionsOf(blocks) {
  * @param {string|null} resumeJobId     a paused draft job to pick up
  * @param {boolean} autoPropose         ask the agent for an angle on the paper
  *                                      in `initialSource`, once the terms allow it
+ * @param {boolean} paneClosed          the scholar closed Kivyn's pane last time, in this browser
  */
-export default function StoryWorkspace({ initialStory = null, me = null, aiTerms = null, initialSource = null, resumeJobId = null, autoPropose = false }) {
+export default function StoryWorkspace({ initialStory = null, me = null, aiTerms = null, initialSource = null, resumeJobId = null, autoPropose = false, paneClosed = false }) {
   const router = useRouter();
   const [form, setForm] = useState(() => (initialStory ? storyToForm(initialStory) : createEmptyForm()));
   const [activeBlockId, setActiveBlockId] = useState(() => (initialStory?.id ? `story-${initialStory.id}-0` : "draft-0"));
@@ -276,9 +284,14 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
      page was opened with a paper or a job in hand. */
   const [terms, setTerms] = useState(aiTerms);
   const consented = Boolean(terms?.current);
-  /* Closed unless the page was opened with a paper or a job in hand: the
-     editor is the page, and the agent is a nudge in the corner until asked. */
-  const [railOpen, setRailOpen] = useState(() => Boolean(aiTerms?.current) && Boolean(initialSource || resumeJobId || autoPropose));
+  /* Open: the editor beside Kivyn is the page as it is meant to look. Closed
+     only if the scholar closed it last time — remembered in a cookie, so the
+     server renders it closed — or before the terms are agreed. A page opened
+     with a paper or a job in hand opens it whatever was remembered. */
+  const handedWork = Boolean(initialSource || resumeJobId || autoPropose);
+  const [railOpen, setRailOpen] = useState(() => Boolean(aiTerms?.current) && (handedWork || !paneClosed));
+  /* Open because it is the default, rather than because it was asked for. */
+  const [railByDefault, setRailByDefault] = useState(() => Boolean(aiTerms?.current) && !handedWork && !paneClosed);
   const [consentOpen, setConsentOpen] = useState(() => Boolean(!aiTerms?.current && (initialSource || resumeJobId)));
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState("");
@@ -333,12 +346,12 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   provenanceRef.current = form.provenance;
   const withKnownProvenance = (story) => (story && !story.provenance && provenanceRef.current ? { ...story, provenance: provenanceRef.current } : story);
 
-  /* The rail is a fixed pane and the top bar is not: it scrolls away. The
-     pane's top follows the bar's lower edge out of view, so there is never a
-     gap above the pane once the bar has gone, and never a pane under it
-     while it is there. */
+  /* The rail is a fixed pane — and closed, the strip it leaves is too — and
+     the top bar is not: it scrolls away. Their top follows the bar's lower
+     edge out of view, so there is never a gap above them once the bar has
+     gone, and never a pane under it while it is there. */
   useEffect(() => {
-    if (reviewMode || !railOpen) return undefined;
+    if (reviewMode) return undefined;
     const root = document.documentElement;
     const bars = [".nb-utility", ".nb-nav"].map((sel) => document.querySelector(sel)).filter(Boolean);
     const place = () => {
@@ -353,7 +366,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
       window.removeEventListener("resize", place);
       root.style.removeProperty("--ag-rail-top");
     };
-  }, [reviewMode, railOpen]);
+  }, [reviewMode]);
 
   useEffect(() => () => { if (stopWatchingRef.current) stopWatchingRef.current(); }, []);
 
@@ -569,8 +582,34 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const openAgent = useCallback(() => {
     if (!consented) { setConsentError(""); setConsentOpen(true); return; }
     setRailOpen(true);
+    setRailByDefault(false);
+    rememberPane(true);
     setRailTab("chat");
   }, [consented]);
+  const closeAgent = useCallback(() => {
+    setRailOpen(false);
+    setRailByDefault(false);
+    rememberPane(false);
+  }, []);
+  /* The strip's icons open the pane on their own section. */
+  const openFromStrip = useCallback((tab) => {
+    openAgent();
+    if (consented) { setNewTab(tab); setNewAbout(false); }
+  }, [openAgent, consented]);
+
+  /* Open by default only where the pane stands beside the sheet. On a narrow
+     screen it is a sheet over the page, and opening it by default would cover
+     the editor on arrival — so there it starts closed, behind the nudge, and
+     closes if the window narrows. Nothing is remembered: the scholar chose
+     nothing. The stylesheet keeps it out of sight until this has run. */
+  useEffect(() => {
+    if (!railByDefault) return undefined;
+    const narrow = window.matchMedia("(max-width: 1100px)");
+    const settle = () => { if (narrow.matches) { setRailOpen(false); setRailByDefault(false); } };
+    const t = setTimeout(settle, 0);
+    narrow.addEventListener("change", settle);
+    return () => { clearTimeout(t); narrow.removeEventListener("change", settle); };
+  }, [railByDefault]);
 
   async function agreeToTerms() {
     setConsentBusy(true);
@@ -581,6 +620,8 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     setTerms(r.data.aiTerms);
     setConsentOpen(false);
     setRailOpen(true);
+    setRailByDefault(false);
+    rememberPane(true);
     setRailTab("chat");
   }
 
@@ -880,7 +921,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
           <div className={outlineStage ? "ws-plan" : "ws-grid is-two"} ref={planRef}>
             {outlineStage ? null : <div className="ws-center">{draftingStage ? <DraftStream title={stream.title} beats={stream.beats} sections={stream.sections} /> : editorColumn}</div>}
             <aside
-              className={outlineStage ? "ws-plan__inner" : `ws-right is-agent ws-agent-rail${railOpen ? "" : " is-closed"}`}
+              className={outlineStage ? "ws-plan__inner" : `ws-right is-agent ws-agent-rail${railOpen ? "" : " is-closed"}${railOpen && railByDefault ? " is-default-open" : ""}`}
               role={outlineStage ? "region" : undefined}
               aria-label={outlineStage ? "The outline, waiting for your approval" : AGENT_NAME}
               aria-hidden={!outlineStage && !railOpen ? true : undefined}
@@ -889,7 +930,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               {/* The pane's head, body and foot are laid around the agent,
                   never wrapped over it, so its place in the tree holds. */}
               {outlineStage ? null : (
-                <AgentIdentity status={agentStatus.text} busy={agentStatus.busy} pose={agentStatus.pose} about={newAbout} onAbout={setNewAbout} onClose={() => setRailOpen(false)} />
+                <AgentIdentity status={agentStatus.text} busy={agentStatus.busy} pose={agentStatus.pose} about={newAbout} onAbout={setNewAbout} onClose={closeAgent} />
               )}
               <div className={`ws-rail-body${!outlineStage && (newTab !== "chat" || newAbout) ? " is-hidden" : ""}`}>
                 {/* The agent is asked for an angle only once the terms are
@@ -905,7 +946,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                 </div>
               ) : null}
               {outlineStage ? null : (
-                <AgentTabs vertical tabs={[{ key: "chat", label: "Chat", icon: <HiOutlineChatBubbleLeftRight size={20} /> }, { key: "ideas", label: "Ideas", icon: <HiOutlineLightBulb size={20} /> }]} tab={newTab} onTab={(k) => { setNewTab(k); setNewAbout(false); }} />
+                <AgentTabs vertical tabs={NEW_STORY_TABS} tab={newTab} onTab={(k) => { setNewTab(k); setNewAbout(false); }} />
               )}
             </aside>
           </div>
@@ -1038,7 +1079,9 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
         />
       ) : null}
 
-      {/* The way in when the rail is closed. */}
+      {/* The way in when the rail is closed: the strip on a wide screen, the
+          nudge on a narrow one. The stylesheet shows whichever fits. */}
+      {!reviewMode && !railOpen && mode !== "preview" ? <AgentStrip tabs={NEW_STORY_TABS} onOpen={openFromStrip} /> : null}
       {!reviewMode && !railOpen && mode !== "preview" ? (
         <button type="button" className="ag-nudge" onClick={openAgent} title={consented ? `Open ${AGENT_NAME}` : `${AGENT_NAME} drafts from your papers — read its terms once`}>
           <Kivyn variant="mark" size={30} tone="on-dark" live /> {AGENT_NAME}

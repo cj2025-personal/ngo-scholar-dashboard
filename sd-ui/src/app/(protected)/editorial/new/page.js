@@ -1,6 +1,9 @@
+import { cookies } from "next/headers";
+
 import Topbar from "@/components/scholar/Topbar";
 import StoryWorkspace from "@/components/editorial/StoryWorkspace";
 import { getScholarProfile } from "@/lib/profile";
+import { paneClosedIn } from "@/lib/kivyn/pane";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +14,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function NewEditorialStoryPage({ searchParams }) {
   const params = await searchParams;
-  const data = await getScholarProfile();
+  const [data, cookieStore] = await Promise.all([getScholarProfile(), cookies()]);
   const profile = data?.profile || {};
   const me = {
     initials: profile.initials || "SC",
@@ -29,7 +32,7 @@ export default async function NewEditorialStoryPage({ searchParams }) {
     <div className="sc-shell">
       <Topbar activeHref="/editorial" me={me} />
       <div className="sc-editorial">
-        <StoryWorkspace me={me} aiTerms={profile.aiTerms || null} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose} />
+        <StoryWorkspace me={me} aiTerms={profile.aiTerms || null} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose} paneClosed={paneClosedIn(cookieStore)} />
       </div>
     </div>
   );
