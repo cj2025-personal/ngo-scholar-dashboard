@@ -4779,3 +4779,78 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .ws-about-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .ws-about-name { font-family: var(--sd-display); font-size: 20px; font-weight: 700; color: var(--sd-heading); }
 .ws-about-intro { margin: 0; font-size: 13px; line-height: 1.5; color: var(--sd-muted); }
+
+/* ══ A new story: the sheet, and Kivyn beside it ════════════════════════════
+   The editor is a sheet on the desk — white, lifted, and as tall as the
+   window — so the page reads as a document, not a column in a void. While
+   Kivyn's pane is closed on a wide screen, Kivyn stands on the left, where
+   the pane opens, with the scholar's papers to start from; narrower, the
+   card gives way to the corner nudge. The review workspace keeps its own
+   three columns and is untouched here.
+   ═══════════════════════════════════════════════════════════════════════ */
+.sc-writer:not(.is-review):not(.has-rail) { max-width: 900px; }
+.sc-writer:not(.is-review) .ws-grid.is-two > .ws-center {
+  background: var(--ark-surface); border: 1px solid var(--ark-card-line); border-radius: 22px;
+  box-shadow: var(--ark-card-lift);
+  padding: 0 clamp(20px, 5vw, 64px);
+  min-height: calc(100dvh - var(--ws-bar-h, 56px) - 64px);
+  margin-bottom: 24px;
+}
+.sc-writer.has-rail .ws-grid.is-two > .ws-center { margin: 4px 24px 24px; }
+.sc-writer:not(.is-review) .ws-grid.is-two > .ws-center .sc-write-canvas { padding-top: 48px; }
+
+.kv-companion { display: none; }
+@media (min-width: 1180px) {
+  .sc-writer.has-companion { max-width: 1260px; }
+  .sc-writer.has-companion .ws-grid.is-two { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 28px; align-items: start; }
+  .sc-writer.has-companion .ag-nudge { display: none; }
+  /* Sticky, and never taller than the window: whatever does not fit scrolls inside it. */
+  .kv-companion { display: block; position: sticky; top: calc(var(--ws-bar-h, 56px) + 12px); max-height: calc(100dvh - var(--ws-bar-h, 56px) - 24px); overflow-y: auto; scrollbar-width: thin; border-radius: 22px; }
+}
+
+.kvc-card {
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 22px 22px 20px; border: 1px solid var(--ark-card-line); border-radius: 22px;
+  background: linear-gradient(180deg, var(--ark-surface) 0%, var(--ark-surface) 55%, var(--ark-surface-2) 100%);
+  box-shadow: var(--ark-card-lift);
+}
+.kvc-hero { display: flex; align-items: center; gap: 12px; }
+.kvc-hero .kv-actor { margin: -8px -4px -6px -10px; }
+.kvc-who { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.kvc-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ark-red); }
+.kvc-name { font-family: var(--sd-display); font-size: 21px; line-height: 1.2; font-weight: 700; color: var(--sd-heading); letter-spacing: -0.01em; }
+.kvc-sub { font-size: 12.5px; color: var(--sd-muted); }
+.kvc-lead { margin: 0; font-size: 14px; line-height: 1.55; color: var(--ink); }
+.kvc-note { margin: 0; font-size: 13px; line-height: 1.55; color: var(--sd-muted); padding: 10px 12px; border-radius: 12px; background: var(--ark-surface-2); }
+.kvc-section { display: flex; flex-direction: column; gap: 8px; }
+.kvc-label { margin: 0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sd-faint); }
+.kvc-papers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.kvc-paper {
+  width: 100%; display: flex; flex-direction: column; gap: 6px; text-align: left;
+  padding: 11px 13px; border: 1px solid var(--sd-line); border-radius: 14px; background: var(--ark-surface);
+  font: inherit; color: inherit; cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease, background 140ms ease;
+}
+.kvc-paper:hover { border-color: var(--navy); box-shadow: 0 8px 20px -14px rgba(30, 58, 138, 0.5); background: var(--ark-surface); }
+.kvc-paper:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+.kvc-paper-title { font-size: 13.5px; font-weight: 600; line-height: 1.4; color: var(--sd-heading); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.kvc-paper-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sd-faint); }
+.kvc-paper-go { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--navy); opacity: 0.75; transition: opacity 140ms ease, gap 140ms ease; }
+.kvc-paper:hover .kvc-paper-go, .kvc-paper:focus-visible .kvc-paper-go { opacity: 1; gap: 7px; }
+.kvc-papers.is-loading { gap: 8px; }
+.kvc-papers.is-loading > span { height: 58px; border-radius: 14px; background: linear-gradient(90deg, var(--ark-surface-2), var(--ark-surface), var(--ark-surface-2)); background-size: 200% 100%; }
+.kvc-more { align-self: flex-start; font-size: 12.5px; }
+.kvc-cta { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 11px 16px; font-size: 14px; border-radius: 12px; }
+/* The three steps, side by side: a number, and a line each. */
+.kvc-steps { margin: 0; padding: 14px 0 0; border-top: 1px solid var(--ark-border-soft); list-style: none; counter-reset: kvc; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.kvc-steps li { counter-increment: kvc; display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; line-height: 1.4; color: var(--sd-muted); }
+.kvc-steps li::before { content: counter(kvc); width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center; background: var(--ark-navy-soft); color: var(--navy); font-size: 11px; font-weight: 800; }
+.kvc-steps b { display: block; color: var(--sd-heading); font-weight: 700; }
+.kvc-or { margin: -4px 0 0; font-size: 12px; color: var(--sd-faint); text-align: center; }
+.kv-companion.is-compact .kvc-card { gap: 12px; }
+.kv-companion.is-compact .kvc-name { font-size: 17px; }
+@media (prefers-reduced-motion: no-preference) {
+  .kvc-paper:hover { transform: translateY(-1px); }
+  .kvc-papers.is-loading > span { animation: kvc-shimmer 1.4s ease-in-out infinite; }
+}
+@keyframes kvc-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }

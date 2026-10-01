@@ -33,6 +33,7 @@ import StudioAgentShell, { AgentAbout, AgentIdentity, AgentTabs, STUDIO_PERMISSI
 import AgentIdeas from "@/components/editorial/AgentIdeas";
 import { Toast, ToastStack } from "@/components/editorial/Toasts";
 import DraftStream from "@/components/editorial/DraftStream";
+import KivynCompanion from "@/components/editorial/KivynCompanion";
 import Kivyn from "@/components/kivyn/Kivyn";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
@@ -264,6 +265,12 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const [newPrefill, setNewPrefill] = useState("");
   const [proposeNow, setProposeNow] = useState(0);
   const [newPaper, setNewPaper] = useState(null);
+  /* What the scholar may draft from, as the pane loaded it, for the companion
+     beside the page; and a paper chosen there, for the pane to take up. A
+     choice made before the terms were agreed waits for them. */
+  const [newInventory, setNewInventory] = useState(null);
+  const [startWith, setStartWith] = useState(null);
+  const pendingStartRef = useRef(null);
   const [passages, setPassages] = useState(null);
   const [showPublishCheck, setShowPublishCheck] = useState(false);
   const [proposalPending, setProposalPending] = useState(false);
@@ -582,6 +589,17 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     setConsentOpen(false);
     setRailOpen(true);
     setRailTab("chat");
+    if (pendingStartRef.current) { setNewTab("chat"); setStartWith(pendingStartRef.current); pendingStartRef.current = null; }
+  }
+
+  /* From the companion: open the pane on a paper, or on the list of them. */
+  function startFromCompanion(paper) {
+    const ask = { seq: Date.now(), paperKey: paper ? `${paper.origin}:${paper.id}` : null };
+    if (!consented) { pendingStartRef.current = ask; setConsentError(""); setConsentOpen(true); return; }
+    setRailOpen(true);
+    setNewTab("chat");
+    setNewAbout(false);
+    setStartWith(ask);
   }
 
   /* ── a draft placed into the page ─────────────────────────────────────── */
@@ -733,6 +751,11 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     ? { cls: "sc-write-status is-review", text: "Machine draft · in review" }
     : { cls: "sc-write-status", text: form.id ? `Editing ${form.status}` : "New draft" };
 
+  /* Kivyn's companion stands beside a new story's sheet while its pane is
+     closed and the page is being written: not over an outline, a draft being
+     typed in, or the preview. */
+  const showCompanion = !reviewMode && !railOpen && !outlineStage && !draftingStage && mode === "write";
+
   const editorColumn = (
     <div className="sc-write-canvas">
       {hasCover ? (
@@ -778,7 +801,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   );
 
   return (
-    <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}${!reviewMode && railOpen && !outlineStage ? " has-rail" : ""}`}>
+    <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}${!reviewMode && railOpen && !outlineStage ? " has-rail" : ""}${showCompanion ? " has-companion" : ""}`}>
       <div ref={barRef} className={stuck ? "sc-write-bar is-stuck" : "sc-write-bar"}>
         <div className="sc-write-bar-left">
           <Link href="/editorial" className="sc-write-back"><FaArrowLeft size={12} aria-hidden /> Stories</Link>
@@ -878,6 +901,9 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
           /* The pane stays in the tree while closed, slid off to the left and
              inert, so opening it again finds the conversation where it was. */
           <div className={outlineStage ? "ws-plan" : "ws-grid is-two"} ref={planRef}>
+            {/* Kivyn beside the sheet while its pane is closed. Its slot is
+                always here, empty or not, so the pane's place never moves. */}
+            {showCompanion ? <KivynCompanion inventory={newInventory} me={me} hasText={totalWords > 0} onOpen={openAgent} onStart={startFromCompanion} /> : null}
             {outlineStage ? null : <div className="ws-center">{draftingStage ? <DraftStream title={stream.title} beats={stream.beats} sections={stream.sections} /> : editorColumn}</div>}
             <aside
               className={outlineStage ? "ws-plan__inner" : `ws-right is-agent ws-agent-rail${railOpen ? "" : " is-closed"}`}
@@ -895,7 +921,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                 {/* The agent is asked for an angle only once the terms are
                     settled — `terms`, which the consent sheet updates, not the
                     `aiTerms` this page was rendered with. */}
-                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} prefill={newPrefill} onPrefillTaken={() => setNewPrefill("")} proposeNow={proposeNow} onStatus={setAgentStatus} onPaperChange={setNewPaper} onDraftingStart={handleDraftingStart} onSection={handleSection} />
+                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} prefill={newPrefill} onPrefillTaken={() => setNewPrefill("")} proposeNow={proposeNow} startWith={startWith} onInventory={setNewInventory} onStatus={setAgentStatus} onPaperChange={setNewPaper} onDraftingStart={handleDraftingStart} onSection={handleSection} />
               </div>
               {outlineStage ? null : newAbout ? (
                 <AgentAbout onClose={() => setNewAbout(false)} permissions={STUDIO_PERMISSIONS} termsVersion={terms?.version || null} onTerms={() => { setConsentError(""); setConsentOpen(true); }} activity={<p className="st-muted">Nothing yet: this story is not saved. Once a draft lands, every version and who made it is listed here.</p>} />
