@@ -50,7 +50,9 @@
      heading above single-storey body text). They come back from the parent. */
   h1, h2, h3, h4, h5, h6, th, td, button, input, select, textarea { font-feature-settings: inherit; }
 
-  code, kbd, samp, pre { font-family: var(--font-mono); }
+  /* Code keeps a monospace face. Keyboard hints (kbd) are interface text
+     ("Ctrl K"), so they stay in Inter. */
+  code, samp, pre { font-family: var(--font-mono); }
 }
 
 @layer components {
