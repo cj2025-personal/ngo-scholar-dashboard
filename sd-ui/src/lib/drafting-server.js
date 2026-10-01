@@ -35,3 +35,13 @@ export async function getDraftSourcesServer() {
 export async function getDraftJobsServer(limit = 20) {
   return (await read(`/api/drafting/jobs?limit=${limit}`)) || { jobs: [] };
 }
+
+/**
+ * Reads of the scholar's published work, day by day, over the trailing
+ * `days` (7, 30 or 90), with the window before it as one total and the
+ * stories that drew the most. Null when it cannot be had: the chart says so
+ * rather than drawing a flat line that looks like nobody read anything.
+ */
+export async function getReadsTimelineServer(days = 30) {
+  return read(`/api/editorial-stories/reads/daily?days=${encodeURIComponent(days)}`);
+}

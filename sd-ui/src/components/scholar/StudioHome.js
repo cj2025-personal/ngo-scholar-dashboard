@@ -1,29 +1,33 @@
 import Link from "next/link";
-import { HiOutlineArrowRight, HiOutlineArrowUpTray } from "react-icons/hi2";
+import { HiOutlineArrowRight, HiOutlineArrowUpTray, HiOutlineCheck } from "react-icons/hi2";
 
-import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
-import WaitingQueue from "@/components/scholar/WaitingQueue";
+import Kivyn from "@/components/kivyn/Kivyn";
+import WriteWithKivyn from "@/components/kivyn/WriteWithKivyn";
+import StoriesTable from "@/components/scholar/StoriesTable";
+import WaitingQueue, { QueueClear } from "@/components/scholar/WaitingQueue";
+import { DRAFT_AUDIENCES } from "@/lib/drafting";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
- * Studio: what is waiting on you, then what you have written.
+ * Studio: the scholar's dashboard.
  *
- * ── Why it is arranged this way ────────────────────────────────────────────
- * In the order the eye takes them:
+ * ── What is on it, in the order the eye takes it ───────────────────────────
+ *   1. Five numbers, each with a picture of itself: what needs you, papers
+ *      you can draft from, what is published, reads, and Legacy.
+ *   2. Needs you — the ranked queue, as rows to act on — beside reads over
+ *      time. On a laptop these two are what shows without scrolling.
+ *   3. The pipeline: every piece of work, from a paper to a published story,
+ *      counted at the stage it is in.
+ *   4. Your stories as a table, beside Legacy and your papers.
  *
- *   1. The date and the greeting, as a heading rather than a card. They say
- *      where you are, and that is all they are for.
- *   2. What is waiting, ranked by how much it matters — so a paper withdrawn
- *      from the scientific record is the first row and an upload still being
- *      scanned is the last. Tone is what does that ranking, not size.
- *   3. Your stories, and the rail.
+ * Writing starts from one door, "Write a story with Kivyn". Here it is a
+ * nudge at the head of the page, over the Legacy number, and the bar leaves
+ * its own copy out; on every other page it is in the bar. Who you are is the
+ * bar's account menu and Profile, so this page does not repeat that either.
  *
- * There used to be a fourth thing, at the top and taller than any of these:
- * the head of the queue promoted into a headline with its own buttons, beside
- * four counts of the work. It was removed because it restated the list below
- * it — the same item, the same action, one screen higher — and the counts it
- * sat next to were the rail's, printed twice. Rank alone is enough to say
- * what to deal with first.
+ * Every figure is one the page already loads — jobs, stories, the drafting
+ * inventory and its standing, and reads by day — drawn rather than written
+ * out as sentences. Nothing is estimated and nothing is decoration.
  *
  * ── Tone is load-bearing ──────────────────────────────────────────────────
  * `grave` is for the two states where the right response might be to stop
@@ -53,7 +57,7 @@ function timeAgo(value) {
   const m = Math.round(ms / 60000);
   if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
-  if (h < 36) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  if (h < 36) return `${h} h ago`;
   return formatDate(value);
 }
 
@@ -66,30 +70,10 @@ function today() {
   return new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
 }
 
-/**
- * What a story's reads say, in a phrase.
- *
- * "Reads", never "readers": the count is of readings recorded by a browser
- * that stayed with the article, and the same person on two days counts twice.
- * The data to tell readers apart was deliberately never collected, so the
- * word that would imply otherwise is not available to this line.
- */
-function readsLine({ total, recent }) {
-  if (!total) return "not read yet";
-  const all = `${total.toLocaleString()} read${total === 1 ? "" : "s"}`;
-  /* The trailing week only when it is not simply the whole story again. */
-  return recent && recent < total ? `${all} · ${recent.toLocaleString()} this week` : all;
-}
-
-/**
- * What readers asked the companion, in a phrase. Counts only: the questions
- * themselves are the readers' own. The ones the story could not answer are
- * named, because they are the ones that tell a scholar what to add.
- */
-function questionsLine({ total, notHere }) {
-  if (!total) return "";
-  const all = `${total.toLocaleString()} question${total === 1 ? "" : "s"} asked`;
-  return notHere ? `${all} · ${notHere.toLocaleString()} the story couldn't answer` : all;
+/** A day of the reads series ("2026-09-18", UTC) as "Sep 18". */
+function dayLabel(day) {
+  const d = new Date(`${day}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? day : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d);
 }
 
 function shortTitle(title, max = 70) {
@@ -97,16 +81,12 @@ function shortTitle(title, max = 70) {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
-export default function StudioHome({ me, sources, jobs, stories, episodes }) {
-  const firstName = (me.name || "").split(/\s+/)[0] || "there";
-  const inventory = sources || null;
-  const draftable = inventory?.draftable || [];
-  const counts = inventory?.counts || { draftable: 0, citable: 0, pending: 0 };
-  const all = stories || [];
-  /* Carried on the drafting inventory, so the rail costs no extra request. */
-  const standing = inventory?.standing || null;
+const plural = (n, one, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+const audienceLabel = (value) => DRAFT_AUDIENCES.find((a) => a.value === value)?.label || null;
 
-  /* What needs the scholar. Built in any order; ranked by tone below. */
+/* ── What needs the scholar ────────────────────────────────────────────────
+   Built in any order; ranked by tone. Each row is one thing with its way out. */
+function buildTodos({ jobs, all, draftable, episodes, standing, inventory }) {
   const todos = [];
   for (const job of jobs || []) {
     if (job.status === "awaiting_outline") {
@@ -114,8 +94,8 @@ export default function StudioHome({ me, sources, jobs, stories, episodes }) {
     } else if (job.status === "awaiting_review" && !job.storyId) {
       todos.push({ tone: "warn", kind: "Draft", group: "job-draft", lead: "A draft is waiting for you", title: shortTitle(job.source?.title), meta: `Drafted from your paper · ${timeAgo(job.finishedAt)}`, detail: `From “${shortTitle(job.source?.title)}” · ${timeAgo(job.finishedAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Open", remove: { kind: "job", jobId: job.id } });
     } else if (job.status === "running" || job.status === "queued") {
-      todos.push({ tone: "info", kind: "In progress", group: "running", lead: "A draft is being written", title: shortTitle(job.source?.title), meta: `Started ${timeAgo(job.createdAt)}`, detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, /* A job still running cannot be discarded; one still queued can. */
-        cta: "Watch", remove: job.status === "queued" ? { kind: "job", jobId: job.id } : null });
+      /* A job still running cannot be discarded; one still queued can. */
+      todos.push({ tone: "info", kind: "In progress", group: "running", lead: "A draft is being written", title: shortTitle(job.source?.title), meta: `Started ${timeAgo(job.createdAt)}`, detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Watch", remove: job.status === "queued" ? { kind: "job", jobId: job.id } : null });
     }
   }
   /* The record moved against a source. Before anything else, always. */
@@ -125,26 +105,14 @@ export default function StudioHome({ me, sources, jobs, stories, episodes }) {
   for (const s of all.filter((st) => st.levels?.waiting > 0)) {
     todos.push({ tone: "warn", kind: "Reading ages", group: "levels", lead: `${s.levels.waiting} reading level${s.levels.waiting === 1 ? "" : "s"} waiting for your approval`, title: shortTitle(s.title, 60), meta: `${s.levels.waiting} level${s.levels.waiting === 1 ? "" : "s"} written for other ages, not yet shown to readers`, detail: `“${shortTitle(s.title, 60)}” · written for other ages, not yet shown to readers`, href: `/editorial/${s.id}`, cta: "Review levels", remove: { kind: "levels", storyId: s.id, count: s.levels.waiting } });
   }
-  const reviewing = all.filter((s) => s.status === "draft" && s.provenance);
-  /* All of them. This used to take the first two, which meant a scholar with
-     seven drafts in review saw two and had no way to reach the other five
-     from here — the count in the rail said seven and the list showed a pair.
-     A draft waiting on a decision is an obligation, and the list of
-     obligations is not somewhere to sample from. What keeps the card short is
-     the display cap in WaitingQueue, which hides nothing permanently. */
-  for (const s of reviewing) {
+  /* Every draft in review: a draft waiting on a decision is an obligation,
+     and the list of obligations is not somewhere to sample from. The display
+     cap in the queue keeps the card short and hides nothing permanently. */
+  for (const s of all.filter((st) => st.status === "draft" && st.provenance)) {
     todos.push({ tone: "warn", kind: "Draft", group: "review", lead: "A draft is waiting for your review", title: shortTitle(s.title, 64), meta: `Drafted from ${s.provenance?.title ? `“${shortTitle(s.provenance.title, 44)}”` : "your paper"} · ${timeAgo(s.updatedAt)}`, detail: `“${shortTitle(s.title)}” · drafted from ${s.provenance?.title ? `“${shortTitle(s.provenance.title, 50)}”` : "your paper"} · ${timeAgo(s.updatedAt)}`, href: `/editorial/${s.id}`, cta: "Review", remove: { kind: "story", storyId: s.id, title: s.title } });
   }
-  /* One, deliberately, and unlike the drafts above this cap stays. A paper
-     you could write about is an invitation, not a thing waiting on you, and a
-     scholar with forty of them does not have forty items outstanding. The
-     rail carries the full count; this row carries the suggestion. */
-  const readyNotDrafted = draftable.filter((p) => !all.some((s) => s.provenance?.sourceId === p.id)).slice(0, 1);
-  for (const p of readyNotDrafted) {
-    /* It used to say a paper was *ready* — a fact about its licence, not a
-       reason to write today — and offer a blank conversation. It now names
-       the paper and offers to bring back an angle for it, because the thing
-       a scholar is short of here is the framing, not the permission. */
+  /* One paper not yet drafted, as an invitation rather than an obligation. */
+  for (const p of draftable.filter((d) => !all.some((s) => s.provenance?.sourceId === d.id)).slice(0, 1)) {
     todos.push({
       tone: "info",
       kind: "A paper",
@@ -153,24 +121,17 @@ export default function StudioHome({ me, sources, jobs, stories, episodes }) {
       href: `/editorial/new?source=${encodeURIComponent(`${p.origin}:${p.id}`)}`,
       cta: "I'll say what to write",
       propose: { origin: p.origin, sourceId: p.id },
-      spark: true,
     });
   }
-  /* A conversation generated in the scholar's name that has not been released.
-     This outranks the drafting rows and sits with the record alerts for the
-     same reason: it is speech attributed to a living person, it goes out
-     whether or not they look, and once it is published the thing a listener
-     heard cannot be unheard. A turn of theirs citing nothing makes it grave;
-     otherwise it is a warning. */
+  /* A conversation generated in the scholar's name, not yet released: speech
+     attributed to a living person. Grave when a turn of theirs cites nothing. */
   for (const ep of (episodes || []).filter((e) => e.state === "pending")) {
     const bare = ep.voice?.myTurnsWithoutEvidence || 0;
     todos.push({
       tone: bare > 0 ? "grave" : "warn",
       kind: "Podcast",
       group: "episode",
-      lead: bare > 0
-        ? `A conversation speaks as you with ${bare} unsourced ${bare === 1 ? "turn" : "turns"}`
-        : "A conversation in your name has not been released yet",
+      lead: bare > 0 ? `A conversation speaks as you with ${bare} unsourced ${bare === 1 ? "turn" : "turns"}` : "A conversation in your name has not been released yet",
       title: shortTitle(ep.title, 64),
       meta: `With ${ep.with?.name || "the archive"} · ${ep.voice?.myTurns || 0} of ${ep.voice?.turns || 0} turns spoken as you`,
       detail: `“${shortTitle(ep.title, 60)}” · with ${ep.with?.name || "the archive"} · ${ep.voice?.myTurns || 0} of ${ep.voice?.turns || 0} turns spoken as you`,
@@ -178,203 +139,357 @@ export default function StudioHome({ me, sources, jobs, stories, episodes }) {
       cta: "Read it",
     });
   }
-  /* One mark short of Legacy, and only then.
-     `nextStep` is the standing engine's own answer to "what is left", so the
-     queue cannot drift from the Where you stand page — there is one
-     definition and both read it. Two marks short is not a queue row: that is
-     a conversation the standing page has room for and this list does not.
-
-     `info`, never `warn`. Nothing is waiting on the scholar here and nothing
-     goes wrong if they ignore it; it sorts below every real obligation for
-     that reason. It is also absent once Legacy is held, grandfathered
-     included — a scholar who already has the thing has no mark to finish. */
+  /* One mark short of Legacy, and only then: the standing engine's own nextStep. */
   if (standing?.standing === "approaching" && standing.nextStep) {
-    todos.push({
-      tone: "info",
-      kind: "Legacy",
-      lead: `One mark left before Legacy: ${standing.nextStep.title.toLowerCase()}`,
-      title: standing.nextStep.title,
-      meta: standing.nextStep.blockers.join(" · "),
-      detail: standing.nextStep.blockers.join(" · "),
-      href: "/standing",
-      cta: "Where you stand",
-    });
+    todos.push({ tone: "info", kind: "Legacy", lead: `One mark left before Legacy: ${standing.nextStep.title.toLowerCase()}`, title: standing.nextStep.title, meta: standing.nextStep.blockers.join(" · "), detail: standing.nextStep.blockers.join(" · "), href: "/standing", cta: "Where you stand" });
   }
-
-  const pending = (inventory?.unusable || []).filter((s) => s.pending).slice(0, 1);
-  for (const p of pending) {
+  for (const p of (inventory?.unusable || []).filter((s) => s.pending).slice(0, 1)) {
     todos.push({ tone: "faint", kind: "Upload", lead: "Your upload is being checked", detail: `“${shortTitle(p.title)}” · ${p.reason}`, href: "/papers", cta: "Track" });
   }
-  todos.sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]);
+  return todos.sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]);
+}
 
-  const published = all.filter((s) => s.status === "published").length;
-  /* The end of the loop. Publishing is where this product used to stop
-     talking: a scholar wrote the article, put their name on it, and the
-     portal went quiet. Nothing in a scholar's career rewards this work, so
-     the reach of it is the only thing the product has to offer back, and
-     until it could count a read it was offering nothing. */
+/* ── Pictures of the numbers ─────────────────────────────────────────────── */
+
+function Tile({ label, value, unit = null, sub, href, children, className = "" }) {
+  return (
+    <Link href={href} className={`dash-tile${className ? ` ${className}` : ""}`}>
+      <span className="dash-tile__label">{label}</span>
+      <span className="dash-tile__row">
+        <span className="dash-tile__value">{value}{unit ? <small>{unit}</small> : null}</span>
+        {children}
+      </span>
+      <span className="dash-tile__sub">{sub}</span>
+    </Link>
+  );
+}
+
+/** A ring: how far round a part of a whole is. */
+function Ring({ part, whole, size = 40 }) {
+  const r = 16;
+  const c = 2 * Math.PI * r;
+  const share = whole > 0 ? Math.min(1, part / whole) : 0;
+  return (
+    <svg className="dash-ring" width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <circle cx="20" cy="20" r={r} className="dash-ring__track" />
+      {share > 0 ? <circle cx="20" cy="20" r={r} className="dash-ring__arc" strokeDasharray={`${(share * c).toFixed(1)} ${c.toFixed(1)}`} transform="rotate(-90 20 20)" /> : null}
+    </svg>
+  );
+}
+
+/** A sparkline of bars: the last days of a series, the latest marked. */
+function Spark({ series, days = 14 }) {
+  const tail = series.slice(-days);
+  const max = Math.max(1, ...tail.map((p) => p.reads));
+  return (
+    <span className="dash-spark" aria-hidden>
+      {/* A day nobody read is a stub, not a bar scaled to look like something. */}
+      {tail.map((p, i) => (
+        <i key={p.day} className={i === tail.length - 1 ? "is-today" : undefined} style={p.reads ? { height: `${Math.max(12, Math.round((p.reads / max) * 100))}%` } : undefined} />
+      ))}
+    </span>
+  );
+}
+
+/* ── Reads, day by day ───────────────────────────────────────────────────── */
+
+function ReadsCard({ reads, range, ranges, publishedCount }) {
+  const series = reads?.series || [];
+  const max = Math.max(1, ...series.map((p) => p.reads));
+  const diff = reads ? reads.total - reads.previousTotal : 0;
+  const nothingOut = publishedCount === 0 && !(reads?.published > 0);
+  return (
+    <section className="st-card dash-card dash-reads-card" id="dash-reads" aria-labelledby="dash-reads-title">
+      <div className="dash-card__head">
+        <h2 id="dash-reads-title" className="dash-h2">Reads</h2>
+        <nav className="dash-seg" aria-label="Reads over">
+          {ranges.map((d) => (
+            <Link key={d} href={d === 30 ? "/" : `/?range=${d}`} scroll={false} className={d === range ? "dash-seg__opt on" : "dash-seg__opt"} aria-current={d === range ? "true" : undefined}>
+              {d}d
+            </Link>
+          ))}
+        </nav>
+      </div>
+      {nothingOut ? (
+        <div className="dash-reads-empty">
+          <p className="dash-clear__lead">Reads show here once a story is published.</p>
+          <p className="dash-muted">A read is counted when someone stays with the article, not when the page loads.</p>
+        </div>
+      ) : !reads ? (
+        <p className="dash-muted dash-reads-empty">Reads could not be loaded just now.</p>
+      ) : (
+        <>
+          <div className="dash-reads-total">
+            <span className="dash-metric">{reads.total.toLocaleString()}</span>
+            <span className={`dash-delta${diff > 0 ? " is-up" : diff < 0 ? " is-down" : ""}`}>
+              {diff === 0 ? `Same as the ${range} days before` : `${diff > 0 ? "+" : "−"}${Math.abs(diff).toLocaleString()} vs the ${range} days before`}
+            </span>
+          </div>
+          <div className="dash-chart" data-n={series.length} role="img" aria-label={`${plural(reads.total, "read")} over the last ${range} days`}>
+            {series.map((p, i) => (
+              <span key={p.day} className={`dash-chart__bar${i === series.length - 1 ? " is-today" : ""}${p.reads ? "" : " is-zero"}`} title={`${dayLabel(p.day)} · ${plural(p.reads, "read")}`}>
+                <i style={{ height: p.reads ? `${Math.max(6, Math.round((p.reads / max) * 100))}%` : undefined }} />
+              </span>
+            ))}
+          </div>
+          <div className="dash-chart__axis" aria-hidden>
+            <span>{series.length ? dayLabel(series[0].day) : ""}</span>
+            <span>Today</span>
+          </div>
+          {/* The one that drew the most, by name: the rest are in the table below. */}
+          {reads.top?.length ? (
+            <p className="dash-top">
+              <span className="dash-top__label">Most read</span>
+              <Link href={`/editorial/${reads.top[0].storyId}`} title={reads.top[0].title}>{reads.top[0].title}</Link>
+              <b>{reads.top[0].reads.toLocaleString()}</b>
+            </p>
+          ) : (
+            <p className="dash-top dash-faint">No reads in these {range} days.</p>
+          )}
+        </>
+      )}
+      <p className="dash-footnote">Reads, not readers: someone who comes back on another day is counted again.</p>
+    </section>
+  );
+}
+
+/* ── The pipeline ────────────────────────────────────────────────────────── */
+
+function Pipeline({ stages }) {
+  const max = Math.max(1, ...stages.map((s) => s.count));
+  return (
+    <section className="st-card dash-card dash-pipeline" aria-labelledby="dash-pipeline-title">
+      <div className="dash-card__head">
+        <h2 id="dash-pipeline-title" className="dash-h2">Your pipeline</h2>
+        <span className="dash-muted">From a paper to a published story</span>
+      </div>
+      <ol className="dash-stages">
+        {stages.map((s, i) => (
+          <li key={s.key} className={`dash-stage${s.action && s.count > 0 ? " is-action" : ""}${s.count === 0 ? " is-empty" : ""}`}>
+            <Link href={s.href} className="dash-stage__link">
+              <span className="dash-stage__label"><em>{i + 1}</em>{s.label}</span>
+              <span className="dash-stage__count">{s.count.toLocaleString()}</span>
+              <span className="dash-stage__bar" aria-hidden><i style={{ width: `${s.count ? Math.max(6, Math.round((s.count / max) * 100)) : 0}%` }} /></span>
+              <span className="dash-stage__hint">{s.hint}</span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/* ── The side column ─────────────────────────────────────────────────────── */
+
+function LegacyCard({ standing }) {
+  if (!standing) return null;
+  const held = standing.standing === "legacy";
+  return (
+    <section className="st-card dash-card dash-side-card" aria-labelledby="dash-legacy-title">
+      <div className="dash-card__head">
+        <h3 id="dash-legacy-title" className="dash-h3">Legacy</h3>
+        <span className={`dash-pill ${held ? "is-ok" : standing.nextStep ? "is-warn" : "is-info"}`}>{held ? (standing.grandfathered ? "Held" : "Met") : standing.nextStep ? "One mark left" : "In progress"}</span>
+      </div>
+      <div className="dash-legacy-sum">
+        <Ring part={standing.met} whole={standing.total} size={44} />
+        <div>
+          <p className="dash-legacy-count">{standing.met} of {standing.total} marks met</p>
+          <p className="dash-muted">{held ? (standing.grandfathered ? "You hold Legacy. The marks show what the benchmark now asks." : "You have met the benchmark. Drafting from your research is open.") : standing.nextStep ? `Left: ${standing.nextStep.title}.` : "Legacy opens drafting from your own research."}</p>
+        </div>
+      </div>
+      {standing.gates?.length ? (
+        <ul className="dash-gates">
+          {standing.gates.map((g) => (
+            <li key={g.key} className={g.met ? "is-met" : ""}>
+              <span className="dash-gate__mark" aria-hidden>{g.met ? <HiOutlineCheck size={12} /> : null}</span>
+              <span>{g.title}</span>
+              <span className="sr-only">{g.met ? "met" : "not met"}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <Link href="/standing" className="dash-link">Where you stand <HiOutlineArrowRight size={12} aria-hidden /></Link>
+    </section>
+  );
+}
+
+function PapersCard({ counts, inventory }) {
+  const parts = [
+    { key: "ready", label: "ready to draft", n: counts.draftable || 0 },
+    { key: "quote", label: "quotable only", n: counts.citable || 0 },
+    { key: "check", label: "being checked", n: counts.pending || 0 },
+  ];
+  const sum = parts.reduce((a, p) => a + p.n, 0);
+  return (
+    <section className="st-card dash-card dash-side-card" aria-labelledby="dash-papers-title">
+      <div className="dash-card__head">
+        <h3 id="dash-papers-title" className="dash-h3">Your papers</h3>
+        <span className="dash-faint">{plural(sum, "paper")}</span>
+      </div>
+      <div className="dash-split" aria-hidden>
+        {parts.filter((p) => p.n > 0).map((p) => <i key={p.key} className={`is-${p.key}`} style={{ flexGrow: p.n }} />)}
+      </div>
+      <ul className="dash-legend">
+        {parts.map((p) => <li key={p.key}><i className={`is-${p.key}`} aria-hidden /><b>{p.n}</b> {p.label}</li>)}
+      </ul>
+      {counts.citable > 0 && counts.draftable > 0 ? (
+        <p className="dash-muted">Adding a version you hold the rights to lets {AGENT_NAME} build on a quotable paper.</p>
+      ) : inventory?.nudge ? (
+        <p className="dash-muted">{inventory.nudge}</p>
+      ) : null}
+      <div className="dash-links">
+        <Link href="/papers" className="dash-link">All papers <HiOutlineArrowRight size={12} aria-hidden /></Link>
+        <a href={DOCS_PORTAL_URL} target="_blank" rel="noreferrer" className="dash-link"><HiOutlineArrowUpTray size={12} aria-hidden /> Add a paper</a>
+      </div>
+    </section>
+  );
+}
+
+/* ── First visit: nothing written yet ────────────────────────────────────── */
+
+function FirstStory({ inventory, draftable }) {
+  return (
+    <section className="st-card dash-card dash-first" aria-labelledby="dash-first-title">
+      <Kivyn pose="neutral" size={132} />
+      <div className="dash-first__body">
+        <h2 id="dash-first-title" className="dash-h2">Start your first story from one of your papers</h2>
+        <p className="dash-muted">Choose a paper. {AGENT_NAME} plans the article, you approve the plan, and the draft lands in your editor with every paragraph tied to the passage it came from.</p>
+        {!inventory?.eligible && inventory ? (
+          <p className="dash-note">{inventory.gateReason || "Drafting from your papers is not open to you yet."}</p>
+        ) : draftable.length ? (
+          <ul className="dash-first__papers">
+            {draftable.slice(0, 3).map((p) => (
+              <li key={`${p.origin}:${p.id}`}>
+                <span title={p.title}>{p.title}</span>
+                <Link href={`/editorial/new?source=${encodeURIComponent(`${p.origin}:${p.id}`)}`} className="dash-link">Start <HiOutlineArrowRight size={12} aria-hidden /></Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="dash-note">{inventory?.nudge || "Nothing is ready to draft from yet. Add a paper you hold the rights to."}</p>
+        )}
+        {/* Writing without a paper is the nudge at the head of the page; this card only adds one. */}
+        <div className="dash-links">
+          <a href={DOCS_PORTAL_URL} target="_blank" rel="noreferrer" className="dash-btn"><HiOutlineArrowUpTray size={14} aria-hidden /> Add a paper</a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── The page ────────────────────────────────────────────────────────────── */
+
+export default function StudioHome({ me, sources, jobs, stories, episodes, reads = null, range = 30, ranges = [7, 30, 90] }) {
+  const firstName = (me.name || "").split(/\s+/)[0] || "there";
+  const inventory = sources || null;
+  const draftable = inventory?.draftable || [];
+  const counts = inventory?.counts || { draftable: 0, citable: 0, pending: 0 };
+  const all = stories || [];
+  const standing = inventory?.standing || null;
+
+  const todos = buildTodos({ jobs, all, draftable, episodes, standing, inventory });
+
+  const published = all.filter((s) => s.status === "published");
+  const scheduled = all.filter((s) => s.status === "scheduled");
+  const inReview = all.filter((s) => s.status === "draft" && s.provenance);
+  const outlines = (jobs || []).filter((j) => j.status === "awaiting_outline");
+  const writing = (jobs || []).filter((j) => j.status === "running" || j.status === "queued");
+  const draftsWaiting = (jobs || []).filter((j) => j.status === "awaiting_review" && !j.storyId);
   const readsTotal = all.reduce((sum, s) => sum + (s.reads?.total || 0), 0);
   const readsRecent = all.reduce((sum, s) => sum + (s.reads?.recent || 0), 0);
+  const firstVisit = all.length === 0 && (jobs || []).length === 0;
+
+  /* What needs you, by tone, for the tile's bar; and in words, by kind. */
+  const byTone = ["grave", "warn", "info", "faint"].map((tone) => ({ tone, n: todos.filter((t) => t.tone === tone).length })).filter((x) => x.n);
+  const draftCount = todos.filter((t) => ["Draft", "Outline", "In progress"].includes(t.kind)).length;
+  const otherCount = todos.length - draftCount;
+  const needsSub = todos.length === 0 ? "You're all caught up" : [draftCount ? plural(draftCount, "draft") : null, otherCount ? `${otherCount.toLocaleString()} other` : null].filter(Boolean).join(" · ");
+
+  const stages = [
+    { key: "papers", label: "Papers ready", count: counts.draftable || 0, href: "/papers", hint: "to draft from" },
+    { key: "outline", label: "Outlines to approve", count: outlines.length, href: outlines.length === 1 ? `/editorial/new?job=${outlines[0].id}` : "/editorial", hint: outlines.length ? "waiting on you" : "none waiting", action: true },
+    { key: "writing", label: "Being written", count: writing.length, href: writing.length === 1 ? `/editorial/new?job=${writing[0].id}` : "/editorial", hint: writing.length ? `${AGENT_NAME} is drafting` : "nothing drafting" },
+    { key: "review", label: "In review", count: inReview.length + draftsWaiting.length, href: "/editorial?tab=drafts", hint: inReview.length + draftsWaiting.length ? "waiting on you" : "none waiting", action: true },
+    { key: "published", label: "Published", count: published.length + scheduled.length, href: "/editorial", hint: scheduled.length ? `${scheduled.length} scheduled` : "live for readers" },
+  ];
+
+  const rows = all.map((s) => {
+    const group = s.status === "published" || s.status === "scheduled" ? "published" : s.provenance ? "review" : "draft";
+    return {
+      id: s.id,
+      href: `/editorial/${s.id}`,
+      title: s.title || "Untitled story",
+      from: s.provenance?.title ? shortTitle(s.provenance.title, 60) : null,
+      group,
+      statusLabel: s.status === "published" ? "Published" : s.status === "scheduled" ? "Scheduled" : s.provenance ? "In review" : "Draft",
+      audience: audienceLabel(s.provenance?.audience),
+      levelsWritten: s.levels?.written || 0,
+      levelsWaiting: s.levels?.waiting || 0,
+      reads: s.reads || null,
+      questions: s.questions?.total ? s.questions : null,
+      updated: s.status === "published" ? formatDate(s.publishedAt || s.updatedAt) : s.status === "scheduled" ? `For ${formatDate(s.scheduledFor)}` : timeAgo(s.updatedAt),
+    };
+  });
 
   return (
-    <div className="st-page">
-      <div className="st-main">
-        {/* ── 1 · Who and when ─────────────────────────────────────────── */}
-        {/* Not a card. The date and the greeting are orientation, not work,
-            and the hero that used to carry them was carrying a great deal
-            else: the head of the queue promoted to a headline, its buttons,
-            a count of what it had pushed below it, and four figures repeating
-            what the rail already says. It cost the top third of the screen to
-            restate the list underneath it. The list is now the page. */}
-        <header className="st-hello">
-          <p className="st-hello__date">{today()}</p>
-          <h1 className="st-hello__greet">{greeting()}, {firstName}</h1>
-        </header>
+    <div className="dash">
+      <header className="dash-head">
+        <div>
+          <p className="dash-date">{today()}</p>
+          <h1 className="dash-greet">{firstVisit ? `Welcome to your Studio, ${firstName}` : `${greeting()}, ${firstName}`}</h1>
+        </div>
+        <WriteWithKivyn variant="nudge" />
+      </header>
 
-        {/* ── 2 · What is waiting ────────────────────────────── */}
-        {todos.length ? (
-          <WaitingQueue todos={todos} />
-        ) : (
-          <section className="st-card" aria-labelledby="st-queue-title">
-            <div className="st-card-head">
-              <h2 id="st-queue-title" className="st-h2">Waiting on you</h2>
-            </div>
-            <div className="st-clear">
-              <p className="st-clear__lead">Nothing is waiting on you.</p>
-              <p className="st-muted">
-                {counts.draftable > 0
-                  ? `${counts.draftable} of your papers can be built on. A story is one click from any of them.`
-                  : "When a paper you hold the rights to lands here, you can draft from it."}
-              </p>
-              <div className="st-actions">
-                <Link href={counts.draftable > 0 ? "/editorial/new" : "/papers"} className="sc-write-secondary st-btn-primary">
-                  {counts.draftable > 0 ? "Start a story" : "See your papers"}
-                  <HiOutlineArrowRight size={13} aria-hidden />
-                </Link>
-              </div>
-            </div>
-          </section>
-        )}
-
-          <section className="st-card" aria-labelledby="st-stories-title">
-            <div className="st-card-head">
-              <h2 id="st-stories-title" className="st-h2">Your stories</h2>
-              <Link href="/editorial" className="st-link">All stories <HiOutlineArrowRight size={12} aria-hidden /></Link>
-            </div>
-            {all.length === 0 ? (
-              <p className="st-muted">No stories yet. The first one is a paper and a click away.</p>
-            ) : (
-              all.slice(0, 6).map((s) => (
-                <div key={s.id} className="st-story">
-                  <div className="st-story-main">
-                    <Link href={`/editorial/${s.id}`} className="st-story-title">{s.title || "Untitled story"}</Link>
-                    <div className="st-todo-detail">
-                      {s.status === "published" ? `Published ${formatDate(s.publishedAt || s.updatedAt)}` : s.status === "scheduled" ? `Scheduled for ${formatDate(s.scheduledFor)}` : `Draft · ${timeAgo(s.updatedAt)}`}
-                      {s.provenance?.title ? ` · drawn from “${shortTitle(s.provenance.title, 48)}”` : " · written by hand"}
-                      {/* What came of it. Only a published story carries this,
-                          and a published story with none says so rather than
-                          leaving the line off — "no one yet" is an answer, and
-                          the silence it replaces was the whole complaint. */}
-                      {s.reads ? ` · ${readsLine(s.reads)}` : ""}
-                      {s.questions?.total ? ` · ${questionsLine(s.questions)}` : ""}
-                    </div>
-                  </div>
-                  <span className="st-story-actions">
-                    <span className={`sc-status is-${s.status === "draft" && s.provenance ? "draft" : s.status}`}>
-                      {s.status === "draft" && s.provenance ? "In review" : s.status === "draft" ? "Draft" : s.status === "scheduled" ? "Scheduled" : "Published"}
-                    </span>
-                    <DeleteStoryButton storyId={s.id} title={s.title} compact />
-                  </span>
-                </div>
-              ))
-            )}
-          </section>
-      </div>
-
-      {/* ── 3 · The rail, the length of the page ─────────────────── */}
-      <aside className="st-rail">
-        <section className="st-card">
-          <span className="sc-kicker">Your papers</span>
-          <p className="st-rail__big">
-            <b>{counts.draftable}</b> {counts.draftable === 1 ? "paper is ready to draft from" : "papers are ready to draft from"}
-          </p>
-          <div className="st-shape__links">
-            <Link href="/papers" className="st-link">All papers <HiOutlineArrowRight size={12} aria-hidden /></Link>
-            <a href={DOCS_PORTAL_URL} target="_blank" rel="noreferrer" className="st-link">
-              <HiOutlineArrowUpTray size={12} aria-hidden /> Add a paper
-            </a>
-          </div>
-          {counts.citable > 0 && counts.draftable > 0 ? (
-            <p className="st-shape__note">
-              {counts.citable} of your papers can be quoted but not built on. Adding a version you hold the rights to changes that.
-            </p>
-          ) : inventory?.nudge ? (
-            <p className="st-shape__note">{inventory.nudge}</p>
+      <section className="dash-kpis" aria-label="At a glance">
+        <Tile label="Needs you" value={todos.length.toLocaleString()} sub={needsSub} href="#st-queue" className={todos.length ? "" : "is-calm"}>
+          {byTone.length ? (
+            <span className="dash-tonebar" aria-hidden>{byTone.map((x) => <i key={x.tone} className={`is-${x.tone}`} style={{ flexGrow: x.n }} />)}</span>
           ) : null}
-        </section>
-        {/* Reach. Only once there is something published to have reach, and
-            deliberately plain about what the number is not: a count of
-            readings, not of people, because nothing that could tell one
-            reader from another was ever collected. */}
-        {published > 0 ? (
-          <section className="st-card">
-            <span className="sc-kicker">Reach</span>
-            <p className="st-rail__big">
-              <b>{readsTotal.toLocaleString()}</b> {readsTotal === 1 ? "read of your published work" : "reads of your published work"}
-            </p>
-            {/* The trailing week only when it says something the line above
-                did not. All of them being recent is the common case early on,
-                and printing the same number twice is noise dressed as detail. */}
-            {readsTotal > 0 && readsRecent < readsTotal ? (
-              <p className="st-todo-detail">
-                {readsRecent > 0 ? `${readsRecent.toLocaleString()} in the last seven days.` : "None in the last seven days."}
-              </p>
-            ) : null}
-            <p className="st-shape__note">
-              Reads, not readers: someone who comes back on another day is counted again.
-              Nothing that would tell one reader from another is recorded.
-            </p>
-          </section>
-        ) : null}
-        {/* Where they stand against the Legacy benchmark. Always shown, met or
-            not: a benchmark a scholar cannot see is a verdict, and the one
-            thing this card must never be is the first time someone learns
-            that a feature was closed to them. */}
-        {standing ? (
-          <section className="st-card">
-            <span className="sc-kicker">Legacy</span>
-            <p className="st-rail__big">
-              <b>{standing.met}</b> of {standing.total} marks met
-            </p>
-            {standing.standing === "legacy" ? (
-              <p className="st-todo-detail">
-                {standing.grandfathered
-                  ? "You hold Legacy. The marks show what the benchmark now asks."
-                  : "You have met the benchmark. Drafting from your research is open."}
-              </p>
-            ) : standing.nextStep ? (
-              <p className="st-todo-detail">One mark left: {standing.nextStep.title}.</p>
-            ) : (
-              <p className="st-todo-detail">Legacy opens drafting from your own research.</p>
-            )}
-            <div className="st-shape__links">
-              <Link href="/standing" className="st-link">
-                Where you stand <HiOutlineArrowRight size={12} aria-hidden />
-              </Link>
-            </div>
-          </section>
-        ) : null}
+        </Tile>
+        <Tile label="Papers ready" value={(counts.draftable || 0).toLocaleString()} sub={counts.pending ? `to draft from · ${counts.pending.toLocaleString()} being checked` : counts.citable ? `to draft from · ${counts.citable.toLocaleString()} quotable only` : "to draft from"} href="/papers">
+          <span className="dash-blocks" aria-hidden>
+            {Array.from({ length: Math.min(6, counts.draftable || 0) }).map((_, i) => <i key={`d${i}`} />)}
+            {Array.from({ length: Math.min(3, counts.pending || 0) }).map((_, i) => <i key={`p${i}`} className="is-pending" />)}
+          </span>
+        </Tile>
+        <Tile label="Published" value={published.length.toLocaleString()} sub={published.length === 1 ? "story live for readers" : "stories live for readers"} href="/editorial">
+          <span className="dash-pill is-info">{scheduled.length} scheduled</span>
+        </Tile>
+        <Tile label="Reads" value={readsTotal.toLocaleString()} sub={readsTotal ? `${readsRecent.toLocaleString()} this week` : published.length ? "not read yet" : "once a story is published"} href="#dash-reads">
+          {reads?.series?.length ? <Spark series={reads.series} /> : null}
+        </Tile>
+        <Tile label="Legacy" value={standing ? standing.met : "—"} unit={standing ? ` / ${standing.total}` : null} sub={!standing ? "standing unavailable" : standing.standing === "legacy" ? "marks met · Legacy held" : standing.nextStep ? "marks met · one left" : "marks met"} href="/standing">
+          {standing ? <Ring part={standing.met} whole={standing.total} /> : null}
+        </Tile>
+      </section>
 
-        <section className="st-card">
-          <span className="sc-kicker">Profile</span>
-          <div className="st-profile-name">{me.name}</div>
-          {me.institution ? <div className="st-todo-detail">{me.institution}</div> : null}
-          <div className="st-actions" style={{ marginTop: 12 }}>
-            <Link href="/profile" className="st-link">Your record</Link>
-            <Link href="/content" className="st-link">What Archivyn says about you</Link>
-          </div>
+      {firstVisit ? (
+        <section className="dash-grid">
+          <div className="dash-col-main"><FirstStory inventory={inventory} draftable={draftable} /></div>
+          <aside className="dash-col-side st-rail">
+            <PapersCard counts={counts} inventory={inventory} />
+            <LegacyCard standing={standing} />
+          </aside>
         </section>
-      </aside>
+      ) : (
+        <>
+          <section className="dash-grid is-top">
+            <div className="dash-col-main">{todos.length ? <WaitingQueue todos={todos} /> : <QueueClear draftable={counts.draftable || 0} />}</div>
+            <div className="dash-col-side"><ReadsCard reads={reads} range={range} ranges={ranges} publishedCount={published.length + scheduled.length} /></div>
+          </section>
+
+          <Pipeline stages={stages} />
+
+          <section className="dash-grid">
+            <div className="dash-col-main"><StoriesTable rows={rows} total={all.length} /></div>
+            <aside className="dash-col-side st-rail">
+              <LegacyCard standing={standing} />
+              <PapersCard counts={counts} inventory={inventory} />
+            </aside>
+          </section>
+        </>
+      )}
     </div>
   );
 }

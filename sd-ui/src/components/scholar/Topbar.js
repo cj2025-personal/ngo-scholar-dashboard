@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,44 +14,42 @@ import {
   HiOutlineUser,
 } from "react-icons/hi2";
 
+import WriteWithKivyn from "@/components/kivyn/WriteWithKivyn";
+
 /**
- * The bar, matched to the learner dashboard's.
+ * The bar: one row, 64px, the brand on the left and the work on the right.
  *
- * ── What it is copied from ─────────────────────────────────────────────────
- * `user-dashboard/frontend`: `K12TopBar` + `PlatformIdentity` for the utility
- * row, `DashboardTopNav` for the navigation row, and the CSS behind them.
- * Both apps sit under one brand and a scholar who moves between them should
- * not feel they have changed product.
+ * ── Why one row ────────────────────────────────────────────────────────────
+ * It used to be two stacked rows, 112px together — a utility row for the
+ * lockup, search and account, and a navigation row under it. On a laptop the
+ * page shows about 600px without scrolling, and a fifth of that went to
+ * chrome before a single card. One row holds the same things: the lockup,
+ * the five places a scholar goes as pills, and at the end the search and the
+ * account. On a phone the pills move to a second, swipeable row of their own.
  *
- * Two rows, because the learner dashboard has two and they do different jobs.
- * The utility row is who you are and what you are looking for: the lockup, the
- * platform and the mode it is in, one search, and the account. The navigation
- * row is where you can go. Putting both in one strip is what makes a bar look
- * like a toolbar.
+ * ── The door to writing ────────────────────────────────────────────────────
+ * "Write a story with Kivyn" (WriteWithKivyn) is in the bar only where a page
+ * passes `write`, which today is Stories alone: the list of what you have
+ * written has no other way to start the next one. Everywhere else it would
+ * be in the way. The Studio carries it as a nudge in the page; the new story
+ * and a story's own page are already the editor; Papers starts a story from
+ * each paper's row; Podcasts, Profile, what Archivyn says about you and Where
+ * you stand are not about writing.
  *
- * Neither row is pinned. They scroll away with the page, as the reference's do
- * — on a reading and writing surface the header is chrome you pass on the way
- * in, not a permanent shelf over every card.
- *
- * ── Where it differs, and why it has to ────────────────────────────────────
- * The learner's bar names the platform and the mode it is running in beside
- * the lockup, because that mode decides what its search returns. A scholar
- * has no such scope, so there is nothing for it to say and it is not here:
- * the lockup stands alone.
- *
- * The learner's navigation row ends with Help. This one ends with the action
- * that starts work, because that is the thing a scholar comes here to do.
+ * It is not pinned. It scrolls away with the page — on a reading and writing
+ * surface the header is chrome you pass on the way in, and the editor's own
+ * bar is the one that stays.
  *
  * ── The search ─────────────────────────────────────────────────────────────
- * Closed, it is a trigger. Opened, the trigger becomes a live field in the
- * same place and the results hang from it — a dropdown at the search bar, not
- * a palette floating in the middle of the screen, because it is a list of
- * what you are typing at rather than a separate place you have gone to.
+ * Closed, it is a compact trigger (just the glass on a narrow screen).
+ * Opened, a field and its results drop from it over the page, so nothing in
+ * the bar moves under the pointer. It searches the places a scholar can go
+ * and says so: it is deliberately not a box that looks like it searches your
+ * papers and does nothing.
  *
- * The reference searches the whole archive through its own service; this one
- * searches what this app can answer for without one: the places a scholar can
- * go, and it says so. It is deliberately not a box that looks like it searches
- * your papers and does nothing, which is what used to sit here.
+ * ── The bell ───────────────────────────────────────────────────────────────
+ * There are no notifications yet, so it carries no unread dot. A dot that is
+ * always lit says "something is waiting" when nothing is.
  */
 
 const AUTH_API_URL =
@@ -237,7 +234,10 @@ function AccountMenu({ me }) {
   );
 }
 
-export default function Topbar({ activeHref = "/", me = { initials: "SC", name: "Scholar" } }) {
+/* The lockup's drawn size, as scripts/brand-lockup.js prints it, and its files by density. */
+const LOCKUP = { width: 127, height: 40, src: (density) => `/archivyn-full-logo-nav@${density}x.png` };
+
+export default function Topbar({ activeHref = "/", me = { initials: "SC", name: "Scholar" }, write = false }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef(null);
   const closeSearch = useCallback(() => setSearchOpen(false), []);
@@ -259,48 +259,28 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
   }, []);
 
   return (
-    <>
-      {/* ── Utility row: who you are, what you are looking for ── */}
-      <header className="nb-utility">
-        <div className="nb-utility__inner">
-          <div className="nb-identity">
-            <Link href="/" className="nb-brand" aria-label="Archivyn — home">
-              <Image
-                src="/archivyn-full-nav.png"
-                alt="Archivyn"
-                width={518}
-                height={138}
-                className="nb-lockup"
-                priority
-              />
-            </Link>
-          </div>
+    <header className="nb-bar">
+      <div className="nb-bar__inner">
+        <Link href="/" className="nb-brand" aria-label="Archivyn — home">
+          {/* A plain <img> on purpose: next/image re-encodes it lossy and lets
+              the browser shrink a larger file into the box, which is what made
+              the lockup look soft. These are drawn at exactly 1x, 2x and 3x of
+              the box by scripts/brand-lockup.js, so every screen gets one image
+              pixel per screen pixel. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={LOCKUP.src(1)}
+            srcSet={`${LOCKUP.src(1)} 1x, ${LOCKUP.src(2)} 2x, ${LOCKUP.src(3)} 3x`}
+            alt="Archivyn"
+            width={LOCKUP.width}
+            height={LOCKUP.height}
+            className="nb-lockup"
+            fetchPriority="high"
+            decoding="async"
+          />
+        </Link>
 
-          <div className={searchOpen ? "nb-search is-open" : "nb-search"} ref={searchRef}>
-            {searchOpen ? (
-              <SearchOpen onClose={closeSearch} />
-            ) : (
-              <button type="button" className="nb-search__trigger" onClick={() => setSearchOpen(true)}>
-                <HiOutlineMagnifyingGlass size={16} aria-hidden />
-                <span>Search your work…</span>
-                <kbd>Ctrl K</kbd>
-              </button>
-            )}
-          </div>
-
-          <div className="nb-actions">
-            <button type="button" className="nb-iconbtn" aria-label="Notifications">
-              <HiOutlineBell size={18} aria-hidden />
-              <span className="nb-dot" aria-hidden />
-            </button>
-            <AccountMenu me={me} />
-          </div>
-        </div>
-      </header>
-
-      {/* ── Navigation row: where you can go ── */}
-      <nav className="nb-nav" aria-label="Sections">
-        <div className="nb-nav__inner">
+        <nav className="nb-nav" aria-label="Sections">
           {NAV.map((item) => (
             <Link
               key={item.href}
@@ -308,19 +288,33 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
               className={item.href === activeHref ? "nb-nav__link is-active" : "nb-nav__link"}
               aria-current={item.href === activeHref ? "page" : undefined}
             >
-              <item.icon size={17} aria-hidden />
-              {item.label}
+              <item.icon size={16} aria-hidden />
+              <span>{item.label}</span>
             </Link>
           ))}
-          <div className="nb-nav__end">
-            <Link href="/editorial/new" className="nb-nav__cta">
-              <HiOutlinePencilSquare size={16} aria-hidden />
-              New story
-            </Link>
-          </div>
-        </div>
-      </nav>
+        </nav>
 
-    </>
+        <div className="nb-end">
+          <div className={searchOpen ? "nb-search is-open" : "nb-search"} ref={searchRef}>
+            <button type="button" className="nb-search__trigger" onClick={() => setSearchOpen(true)} aria-label="Search" aria-expanded={searchOpen}>
+              <HiOutlineMagnifyingGlass size={16} aria-hidden />
+              <span className="nb-search__label">Search</span>
+              <kbd>Ctrl K</kbd>
+            </button>
+            {searchOpen ? (
+              <div className="nb-search__pop">
+                <SearchOpen onClose={closeSearch} />
+              </div>
+            ) : null}
+          </div>
+          <button type="button" className="nb-iconbtn" aria-label="Notifications">
+            <HiOutlineBell size={18} aria-hidden />
+          </button>
+          {/* Only where a page asks for it: see `write` above. */}
+          {write ? <WriteWithKivyn /> : null}
+          <AccountMenu me={me} />
+        </div>
+      </div>
+    </header>
   );
 }

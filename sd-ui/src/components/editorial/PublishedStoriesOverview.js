@@ -31,9 +31,9 @@ import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
  * twelve stories is no longer a list of thirty-six links.
  *
  * ── One "New story" ────────────────────────────────────────────────────────
- * The bar above carries it on every page. A second one at the top of this
- * page was the same button twice on one screen. It survives only in the empty
- * state, where there is nothing else to press.
+ * The bar above carries it on this page, as "Write a story with Kivyn". A
+ * second one at the top of this page, or in the empty state, was the same
+ * door twice on one screen, so there is none here.
  */
 
 const IMG_BASE = process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
@@ -215,11 +215,6 @@ export default function PublishedStoriesOverview({
                   ? `A story starts from one of your papers. ${AGENT_NAME} proposes an outline before it writes a word.`
                   : "Nothing in this state right now."}
             </p>
-            {tab === "all" || tab === "drafts" ? (
-              <Link href="/editorial/new" className="el-empty__cta">
-                <HiOutlinePencilSquare size={15} aria-hidden /> Start a story
-              </Link>
-            ) : null}
           </div>
         )}
       </div>

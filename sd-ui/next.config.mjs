@@ -17,6 +17,11 @@ const nextConfig = {
      now uses — the agent's nudge bottom-left, the pane's tabs bottom-right —
      and covered whatever was there, in the browser suite as well as by hand. */
   devIndicators: false,
+  /* Where the build goes. `.next` everywhere except the browser suite, which
+     sets NEXT_DIST_DIR=.next-e2e: Next allows one `next dev` per directory,
+     and with the suite in its own the local app on :3000 keeps running while
+     the tests do — before, running them took the platform down. */
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   /* Cloud Run runs the server Next emits, not `next start`.
    *
    * `standalone` writes .next/standalone with a server.js and only the

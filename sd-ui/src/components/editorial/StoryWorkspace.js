@@ -353,7 +353,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   useEffect(() => {
     if (reviewMode) return undefined;
     const root = document.documentElement;
-    const bars = [".nb-utility", ".nb-nav"].map((sel) => document.querySelector(sel)).filter(Boolean);
+    const bars = [".nb-bar"].map((sel) => document.querySelector(sel)).filter(Boolean);
     const place = () => {
       const bottom = Math.max(0, ...bars.map((el) => el.getBoundingClientRect().bottom));
       root.style.setProperty("--ag-rail-top", `${Math.round(bottom)}px`);

@@ -46,6 +46,8 @@ module.exports = defineConfig({
       NEXT_PUBLIC_AUTH_API_URL: API_URL,
       NEXT_PUBLIC_SITE_URL: `http://localhost:${UI_PORT}`,
       AUTH_COOKIE_NAME: "sd_session",
+      /* Its own build directory, so the suite runs beside `npm run dev` (see next.config.mjs). */
+      NEXT_DIST_DIR: ".next-e2e",
     },
   },
 });

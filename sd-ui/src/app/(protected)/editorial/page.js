@@ -20,7 +20,8 @@ export default async function EditorialPage() {
 
   return (
     <div className="sc-shell">
-      <Topbar activeHref="/editorial" me={me} />
+      {/* `write`: this list has no other way to start the next story. */}
+      <Topbar activeHref="/editorial" me={me} write />
       <div className="sc-editorial">
         <PublishedStoriesOverview
           publishedStories={publishedResult?.stories || []}

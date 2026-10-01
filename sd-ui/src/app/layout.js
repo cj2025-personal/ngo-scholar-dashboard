@@ -17,8 +17,8 @@ import "./globals.css";
  * No `weight`: leaving it out fetches the variable font, one file for the
  * whole axis, rather than a static cut per weight the sheet uses.
  *
- * The Archivyn logo is an image (public/archivyn-full-nav.png) and needs no
- * face of its own.
+ * The Archivyn logo is an image (public/archivyn-full-logo-nav@{1,2,3}x.png, from archivyn-full-logo.png) and
+ * needs no face of its own.
  */
 const inter = Inter({
   variable: "--font-inter",

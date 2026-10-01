@@ -7,6 +7,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // The browser suite's own build (playwright.config.js).
+    ".next-e2e/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

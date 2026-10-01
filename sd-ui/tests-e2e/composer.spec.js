@@ -35,7 +35,7 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* Studio: the front door names the next step and the Papers shelf. */
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "New story" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Write a story with Kivyn" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Papers", exact: true })).toBeVisible();
 
   /* Papers: every paper with what it may be used for; only the ones we hold in full can start a story. */

@@ -2,7 +2,20 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { HiChevronDown, HiChevronUp } from "react-icons/hi2";
+import {
+  HiChevronDown,
+  HiChevronUp,
+  HiOutlineAcademicCap,
+  HiOutlineArrowUpTray,
+  HiOutlineCheckCircle,
+  HiOutlineDocumentText,
+  HiOutlineExclamationTriangle,
+  HiOutlineListBullet,
+  HiOutlineMicrophone,
+  HiOutlinePencil,
+  HiOutlineSparkles,
+  HiOutlineTrophy,
+} from "react-icons/hi2";
 
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
 import DiscardJobButton from "@/components/editorial/DiscardJobButton";
@@ -10,15 +23,22 @@ import DiscardLevelsButton from "@/components/editorial/DiscardLevelsButton";
 import ProposeButton from "@/components/scholar/ProposeButton";
 
 /**
- * The way out of a queue row.
+ * Needs you: what is waiting on the scholar, as rows to act on.
  *
- * Every row here nags about something, and until this existed only a draft
- * job could be dismissed: a story in review, or reading levels the scholar
- * never wanted, stayed on the list for as long as they existed. Each row now
- * says what removing it means — discard the job, delete the story, throw away
- * the levels — except the two that belong to the Documents portal, where this
- * page has no business deleting anything.
+ * ── What it keeps from the list it replaced ────────────────────────────────
+ * The ranking (the record moving under a claim first, an upload being
+ * scanned last), the folding of three or more of a kind into one counted
+ * line, a way out of every row the dashboard owns, and a cap on how much it
+ * shows before asking whether you want the rest — applied after the sort, so
+ * nothing grave can fall off the bottom.
+ *
+ * ── What it adds ──────────────────────────────────────────────────────────
+ * Each row is a thing to do with its icon, its tone and one button, not a
+ * paragraph; and when the queue holds more than one kind of thing, chips
+ * narrow it to one. The first three rows fit above the fold on a laptop.
  */
+
+/** The way out of a row: discard the job, delete the story, throw away the levels. */
 function RemoveAction({ remove }) {
   if (!remove) return null;
   if (remove.kind === "job") return <DiscardJobButton jobId={remove.jobId} />;
@@ -29,73 +49,68 @@ function RemoveAction({ remove }) {
 
 /** How many of one kind before the card says the number instead of listing it. */
 const FOLD_AT = 3;
-/** How many blocks the card shows before it asks whether you want the rest. */
-const GLIMPSE = 4;
+/** How many rows the card shows before it asks whether you want the rest. */
+const GLIMPSE = 3;
 
-/**
- * What a fold of one kind is called, and what a scholar does about all of
- * them at once. The count is always the subject: the dashboard's job is to
- * say how much of a thing is outstanding, and the list surface holds the
- * things themselves.
- */
 const FOLDS = {
   record: { lead: (n) => `${n} papers behind your stories have changed on the record`, cta: "See them", href: "/editorial" },
   outline: { lead: (n) => `${n} outlines are waiting for your approval`, cta: "See them", href: "/editorial" },
   "job-draft": { lead: (n) => `${n} drafts are waiting for you`, cta: "See them", href: "/editorial" },
-  review: { lead: (n) => `${n} drafts are waiting for your review`, cta: "All drafts", href: "/editorial?tab=drafts" },
+  review: { lead: (n) => `${n} drafts are waiting for your review`, cta: "Review", href: "/editorial?tab=drafts" },
   levels: { lead: (n) => `${n} stories have reading levels waiting for your approval`, cta: "All stories", href: "/editorial" },
   running: { lead: (n) => `${n} drafts are being written`, cta: "Watch them", href: "/editorial" },
-  /* Conversations generated in the scholar's name that no listener has
-     reached yet. The destination is the podcast list, where they are shown
-     unreleased-first for the same reason they are in this queue at all. */
   episode: { lead: (n) => `${n} conversations in your name have not been released`, cta: "All conversations", href: "/podcasts" },
 };
 
-/**
- * What is waiting on the scholar.
- *
- * ── Why repeats fold ──────────────────────────────────────────────────────
- * The queue's rows are built one per thing, and one per thing is right for a
- * list. It is wrong for a dashboard. Nine drafts from the same paper produced
- * nine rows whose bold line was the same eight words — "A draft is waiting
- * for your review" — nine times, with the only thing that told them apart,
- * the story's own title, set small and grey underneath and truncated. The
- * card was long, it was loud, and it was unreadable: a wall of the same
- * sentence says "something is wrong" and nothing about what.
- *
- * So three or more of a kind fold into one line that gives the count and a
- * way to all of them. Below three they stay as themselves, because "2 drafts
- * are waiting" is a worse line than the two titles.
- *
- * ── And why an unfolded row leads with its title ──────────────────────────
- * Whatever is on the bold line is what the eye compares between rows, so it
- * has to be the thing that differs. Inside a fold the kind has already been
- * said by the line above, so the row can be what it actually is: a story,
- * named, with when it arrived underneath.
- *
- * ── Why the cap is not "the latest four" ──────────────────────────────────
- * The obvious reading of a dashboard glimpse is "the most recent handful".
- * That is right for a feed and wrong here. This list is ranked by how much
- * each row matters — a paper withdrawn from the scientific record first, an
- * upload still being scanned last — and a cap applied to a feed's ordering
- * would let the gravest thing on the page fall off the bottom because three
- * drafts arrived after it. The sort happens first and the cap second.
- */
+/* What each kind of row is, drawn and filed. */
+const KINDS = {
+  "The record": { icon: HiOutlineExclamationTriangle, chip: "The record" },
+  Podcast: { icon: HiOutlineMicrophone, chip: "Podcasts" },
+  Outline: { icon: HiOutlineListBullet, chip: "Drafts" },
+  Draft: { icon: HiOutlineDocumentText, chip: "Drafts" },
+  "In progress": { icon: HiOutlinePencil, chip: "Drafts" },
+  "Reading ages": { icon: HiOutlineAcademicCap, chip: "Reading ages" },
+  "A paper": { icon: HiOutlineSparkles, chip: "Papers" },
+  Legacy: { icon: HiOutlineTrophy, chip: "Legacy" },
+  Upload: { icon: HiOutlineArrowUpTray, chip: "Uploads" },
+};
+const kindOf = (t) => KINDS[t.kind] || { icon: HiOutlineDocumentText, chip: "Other" };
+
+function KindIcon({ t }) {
+  const Icon = kindOf(t).icon;
+  return (
+    <span className={`dash-kind is-${t.tone}`} aria-hidden>
+      <Icon size={17} />
+    </span>
+  );
+}
+
 export default function WaitingQueue({ todos }) {
   const [open, setOpen] = useState(false);
   const [openFolds, setOpenFolds] = useState({});
+  const [chip, setChip] = useState("All");
 
-  /* Folds keep the position of their first member, so the tone ranking
-     survives: a fold of drafts sits where the first draft sat. */
+  /* The chips, in the order their first row ranks, each with its count. */
+  const chips = [];
+  for (const t of todos) {
+    const c = kindOf(t).chip;
+    const found = chips.find((x) => x.name === c);
+    if (found) found.count += 1;
+    else chips.push({ name: c, count: 1 });
+  }
+  const showChips = chips.length > 1;
+  const visible = chip === "All" ? todos : todos.filter((t) => kindOf(t).chip === chip);
+
+  /* Folds keep the position of their first member, so the tone ranking survives. */
   const blocks = [];
   const folded = new Set();
-  for (const t of todos) {
+  for (const t of visible) {
     if (!t.group) {
       blocks.push({ kind: "one", todo: t });
       continue;
     }
     if (folded.has(t.group)) continue;
-    const members = todos.filter((x) => x.group === t.group);
+    const members = visible.filter((x) => x.group === t.group);
     folded.add(t.group);
     if (members.length >= FOLD_AT) blocks.push({ kind: "fold", group: t.group, members });
     else members.forEach((m) => blocks.push({ kind: "one", todo: m }));
@@ -105,15 +120,31 @@ export default function WaitingQueue({ todos }) {
   const shown = open || hidden === 0 ? blocks : blocks.slice(0, GLIMPSE);
 
   return (
-    <section className="st-card" id="st-queue" aria-labelledby="st-queue-title">
-      <div className="st-card-head">
-        <h2 id="st-queue-title" className="st-h2">Waiting on you</h2>
-        {/* The count of things, not of rows: the card may show four lines for
-            nine obligations, and the header is where that is admitted. */}
-        <span className="st-todo-detail">{todos.length} item{todos.length === 1 ? "" : "s"}</span>
+    <section className="st-card dash-card dash-queue" id="st-queue" aria-labelledby="st-queue-title">
+      <div className="dash-card__head">
+        <div className="dash-card__title">
+          <h2 id="st-queue-title" className="dash-h2">Needs you</h2>
+          {/* The count of things, not of rows: four lines may stand for nine obligations. */}
+          <span className="dash-count" aria-label={`${todos.length} item${todos.length === 1 ? "" : "s"}`}>{todos.length}</span>
+        </div>
+        {showChips ? (
+          <div className="dash-chips" role="group" aria-label="Show">
+            {[{ name: "All", count: todos.length }, ...chips].map((c) => (
+              <button
+                key={c.name}
+                type="button"
+                className={chip === c.name ? "dash-chip on" : "dash-chip"}
+                aria-pressed={chip === c.name}
+                onClick={() => { setChip(c.name); setOpen(false); }}
+              >
+                {c.name} <span>{c.count}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
-      <div className="st-todos">
+      <div className="st-todos dash-rows">
         {shown.map((b, i) =>
           b.kind === "one" ? (
             <Row key={`one-${i}`} t={b.todo} />
@@ -129,14 +160,31 @@ export default function WaitingQueue({ todos }) {
       </div>
 
       {hidden > 0 ? (
-        <button type="button" className="st-more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-          {open ? (
-            <>Show fewer <HiChevronUp size={14} aria-hidden /></>
-          ) : (
-            <>Show {hidden} more <HiChevronDown size={14} aria-hidden /></>
-          )}
+        <button type="button" className="st-more dash-more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {open ? <>Show fewer <HiChevronUp size={14} aria-hidden /></> : <>Show {hidden} more <HiChevronDown size={14} aria-hidden /></>}
         </button>
       ) : null}
+    </section>
+  );
+}
+
+/** Nothing waiting: said plainly, with the way to start. */
+export function QueueClear({ draftable }) {
+  return (
+    <section className="st-card dash-card dash-queue is-clear" id="st-queue" aria-labelledby="st-queue-title">
+      <div className="dash-card__head">
+        <div className="dash-card__title"><h2 id="st-queue-title" className="dash-h2">Needs you</h2><span className="dash-count is-zero">0</span></div>
+      </div>
+      <div className="dash-clear">
+        <span className="dash-clear__icon" aria-hidden><HiOutlineCheckCircle size={26} /></span>
+        <div>
+          <p className="dash-clear__lead">Nothing is waiting on you.</p>
+          <p className="dash-muted">
+            {draftable > 0 ? `${draftable} of your papers can be built on. A story is one click from any of them.` : "When a paper you hold the rights to lands here, you can draft from it."}
+          </p>
+        </div>
+        <Link href={draftable > 0 ? "/editorial/new" : "/papers"} className="dash-btn is-primary">{draftable > 0 ? "Start a story" : "See your papers"}</Link>
+      </div>
     </section>
   );
 }
@@ -144,24 +192,19 @@ export default function WaitingQueue({ todos }) {
 /** One thing, on its own terms. */
 function Row({ t, inFold = false }) {
   return (
-    <div className={`st-todo is-${t.tone}${inFold ? " is-child" : ""}`}>
-      <span className={`st-dot is-${t.tone}`} aria-hidden />
+    <div className={`st-todo dash-row is-${t.tone}${inFold ? " is-child" : ""}${t.propose ? " is-invite" : ""}`}>
+      {inFold ? <span className={`st-dot is-${t.tone}`} aria-hidden /> : <KindIcon t={t} />}
       <div className="st-todo-body">
-        {/* Inside a fold the kind is already said, so the title leads. */}
-        <span className="st-todo-lead">{inFold ? t.title || t.lead : t.lead}</span>
-        <div className="st-todo-detail">{inFold ? t.meta || t.detail : t.detail}</div>
+        {/* Inside a fold the kind is already said, so the title leads. One
+            line each on a wide screen; the whole of it is on hover. */}
+        <span className="st-todo-lead" title={inFold ? t.title || t.lead : t.lead}>{inFold ? t.title || t.lead : t.lead}</span>
+        <div className="st-todo-detail" title={inFold ? t.meta || t.detail : t.detail}>{inFold ? t.meta || t.detail : t.detail}</div>
       </div>
-      <RemoveAction remove={t.remove} />
-      {/* When the agent can offer an angle, that is the lead action and saying
-          what to write is the quiet one beside it. The blank page is the
-          obstacle; the scholar who already knows their angle has lost nothing
-          by it being one click over. */}
-      {t.propose ? (
-        <ProposeButton origin={t.propose.origin} sourceId={t.propose.sourceId} className="sc-write-secondary st-btn" />
-      ) : null}
-      <Link href={t.href} className={t.tone === "grave" ? "sc-write-secondary st-btn-primary" : "sc-write-secondary st-btn"}>
-        {t.cta}
-      </Link>
+      <div className="dash-row__actions">
+        <RemoveAction remove={t.remove} />
+        {t.propose ? <ProposeButton origin={t.propose.origin} sourceId={t.propose.sourceId} className="dash-btn" /> : null}
+        <Link href={t.href} className={t.tone === "grave" || (!t.propose && !inFold) ? "dash-btn is-primary" : "dash-btn"}>{t.cta}</Link>
+      </div>
     </div>
   );
 }
@@ -174,34 +217,25 @@ function Fold({ block, open, onToggle }) {
   const n = members.length;
 
   return (
-    <div className={`st-fold is-${tone}${open ? " is-open" : ""}`}>
-      <div className={`st-todo is-${tone} st-fold__head`}>
-        <span className={`st-dot is-${tone}`} aria-hidden />
+    <div className={`st-fold dash-fold is-${tone}${open ? " is-open" : ""}`}>
+      <div className={`st-todo dash-row is-${tone} st-fold__head`}>
+        <KindIcon t={members[0]} />
         <div className="st-todo-body">
           <span className="st-todo-lead">{spec ? spec.lead(n) : `${n} things are waiting on you`}</span>
-          <div className="st-todo-detail">
-            {/* The newest one, named — enough to recognise the pile without
-                printing it. The rest are one click away. */}
-            {members[0].title ? <>Most recent: “{members[0].title}”</> : null}
-          </div>
+          <div className="st-todo-detail">{members[0].title ? <>Most recent: “{members[0].title}”</> : null}</div>
         </div>
-        <button type="button" className="st-fold__toggle" aria-expanded={open} onClick={onToggle}>
-          {open ? (
-            <>Hide <HiChevronUp size={13} aria-hidden /></>
-          ) : (
-            <>Show {n} <HiChevronDown size={13} aria-hidden /></>
-          )}
-        </button>
-        {spec ? (
-          <Link href={spec.href} className="sc-write-secondary st-btn">{spec.cta}</Link>
-        ) : null}
+        <div className="dash-row__actions">
+          <span className="dash-stack" aria-hidden><i /><i /><i /></span>
+          <button type="button" className="st-fold__toggle dash-btn is-ghost" aria-expanded={open} onClick={onToggle}>
+            {open ? <>Hide <HiChevronUp size={13} aria-hidden /></> : <>Show {n} <HiChevronDown size={13} aria-hidden /></>}
+          </button>
+          {spec ? <Link href={spec.href} className="dash-btn is-primary">{spec.cta}</Link> : null}
+        </div>
       </div>
 
       {open ? (
         <div className="st-fold__items">
-          {members.map((m, i) => (
-            <Row key={i} t={m} inFold />
-          ))}
+          {members.map((m, i) => <Row key={i} t={m} inFold />)}
         </div>
       ) : null}
     </div>
