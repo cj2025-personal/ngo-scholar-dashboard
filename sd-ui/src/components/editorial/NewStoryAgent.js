@@ -148,7 +148,7 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, momen
  *                                    `initialSource` rather than describing one
  * @param {(stage: "outline"|null) => void} [p.onStageChange]   what the rail is asking for, so the page can give it the room it needs
  */
-export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, startWith = null, onInventory, onStatus, onPaperChange, onDraftingStart, onSection }) {
+export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, onStatus, onPaperChange, onDraftingStart, onSection }) {
   const [inventory, setInventory] = useState(null);
   /* A finished piece of work, for a moment: an outline in, a draft landed. */
   const [moment, showMoment] = useKivynMoment();
@@ -250,7 +250,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
 
   useEffect(() => {
     let alive = true;
-    getDraftSources().then((r) => { if (alive && r.ok) { setInventory(r.data); onInventory?.(r.data); greet(r.data); } });
+    getDraftSources().then((r) => { if (alive && r.ok) { setInventory(r.data); greet(r.data); } });
     return () => { alive = false; if (stopRef.current) stopRef.current(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -361,24 +361,6 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposeNow]);
-
-  /* A paper chosen on the companion beside the page, taken as if it were
-     tapped here: Kivyn notes it and asks what the article should be. No
-     paper means "show me all of them". Nothing is started while a job is in
-     hand. */
-  const startSeenRef = useRef(startWith?.seq || 0);
-  useEffect(() => {
-    if (!startWith || startWith.seq === startSeenRef.current) return undefined;
-    startSeenRef.current = startWith.seq;
-    const t = setTimeout(() => {
-      if (busy || locked || !ready) return;
-      const chosen = startWith.paperKey ? draftable.find((p) => paperKey(p) === startWith.paperKey) : null;
-      if (chosen) pickPaper(chosen);
-      else askWhichPaper();
-    }, 0);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startWith]);
 
   /* A brief handed in from the Ideas tab: in the box, to change before sending. */
   useEffect(() => {

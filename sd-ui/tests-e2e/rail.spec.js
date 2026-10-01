@@ -15,33 +15,15 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
 });
 
-test("on a narrow screen the nudge waits bottom-left, and Kivyn's card gives way to it", async ({ page }) => {
-  await page.setViewportSize({ width: 1024, height: 768 });
+test("the pane opens from the bottom-left nudge, moves the editor over, and closes back", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/editorial/new");
+  /* The editor is the page; the nudge waits bottom-left. */
   const nudge = page.locator(".ag-nudge");
   await expect(nudge).toBeVisible();
   const nb = await nudge.boundingBox();
   expect(nb.x).toBeLessThan(60);
-  expect(nb.y + nb.height).toBeGreaterThan(768 - 60);
-  await expect(page.locator(".kv-companion")).toBeHidden();
-  /* The editor is a sheet that reaches the foot of the window. */
-  const sheet = await page.locator(".ws-grid.is-two > .ws-center").boundingBox();
-  expect(sheet.y + sheet.height).toBeGreaterThan(768 - 40);
-});
-
-test("on a wide screen Kivyn stands beside the sheet; the pane opens in its place, moves the editor over, and closes back", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/editorial/new");
-  /* Kivyn's card on the left, where the pane opens; the sheet beside it; no nudge. */
-  const card = page.locator(".kv-companion");
-  await expect(card).toBeVisible();
-  await expect(page.locator(".ag-nudge")).toBeHidden();
-  const cb = await card.boundingBox();
-  const sb = await page.locator(".ws-grid.is-two > .ws-center").boundingBox();
-  expect(cb.x + cb.width).toBeLessThan(sb.x);
-  expect(Math.abs(cb.y - sb.y)).toBeLessThan(4);
-  /* The pair is centred on the desk rather than pinned to one side. */
-  expect(Math.abs(cb.x - (1440 - (sb.x + sb.width)))).toBeLessThan(40);
+  expect(nb.y + nb.height).toBeGreaterThan(900 - 60);
   await expect(page.locator(".ws-right.is-agent")).toBeHidden();
   const grid = page.locator(".ws-grid.is-two");
   const paddingBefore = await grid.evaluate((el) => getComputedStyle(el).paddingLeft);
@@ -55,7 +37,7 @@ test("on a wide screen Kivyn stands beside the sheet; the pane opens in its plac
   /* The editor leaves exactly the pane's width free. */
   const railWidth = await rail.evaluate((el) => getComputedStyle(el).width);
   await expect.poll(async () => grid.evaluate((el) => getComputedStyle(el).paddingLeft)).toBe(railWidth);
-  await expect(card).toHaveCount(0);
+  await expect(nudge).toHaveCount(0);
 
   /* Something said, then closed: the editor is back where it was. */
   const box = page.getByPlaceholder(/Describe the article you want/);
@@ -65,10 +47,10 @@ test("on a wide screen Kivyn stands beside the sheet; the pane opens in its plac
   await page.getByRole("button", { name: "Close Kivyn" }).click();
   await expect(rail).toBeHidden();
   await expect.poll(async () => grid.evaluate((el) => getComputedStyle(el).paddingLeft)).toBe("0px");
-  await expect(card).toBeVisible();
+  await expect(nudge).toBeVisible();
 
   /* Reopened: the conversation is where it was. */
-  await card.getByRole("button", { name: "Tell Kivyn what to write" }).click();
+  await nudge.click();
   await expect(rail).toBeVisible();
   await expect(page.locator(".ch-msg.is-papers .ch-paper")).toHaveCount(3);
 });

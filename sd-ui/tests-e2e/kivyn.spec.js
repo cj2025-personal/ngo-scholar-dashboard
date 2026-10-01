@@ -60,20 +60,13 @@ test.describe("in the studio", () => {
     await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
   });
 
-  test("one name and one face: the card, the nudge, the pane, and who it is", async ({ page }) => {
+  test("one name and one face: the nudge, the pane, and who it is", async ({ page }) => {
     await page.goto("/editorial/new");
-    /* Wide: Kivyn's card, greeting the scholar by name. */
-    const card = page.locator(".kv-companion");
-    await expect(card.locator(".kvc-name")).toContainText("I’m Kivyn");
-    await expect(card.locator(".kv-actor svg.kv")).toHaveAttribute("data-pose", "neutral");
-    /* Narrow: the nudge says the same name with the same face. */
-    await page.setViewportSize({ width: 1024, height: 768 });
     const nudge = page.locator(".ag-nudge");
     await expect(nudge).toBeVisible();
     await expect(nudge).toHaveText("Kivyn");
     await expect(nudge.locator("svg.kv")).toHaveAttribute("data-pose", "neutral");
     await expect(nudge.locator("svg.kv")).toHaveAttribute("aria-hidden", "true");
-    await page.setViewportSize({ width: 1280, height: 720 });
 
     await openAgent(page);
     const head = page.locator(".ws-right.is-agent .ws-agent-head");
@@ -175,36 +168,10 @@ test.describe("in the studio", () => {
     await page.unroute("**/api/drafting/converse");
   });
 
-  test("a paper chosen on Kivyn's card opens the pane on it, and writing by hand steps the card back", async ({ page }) => {
-    test.setTimeout(120_000);
-    await page.goto("/editorial/new");
-    const card = page.locator(".kv-companion");
-    const paper = card.locator(".kvc-paper").first();
-    await expect(paper).toBeVisible();
-    const title = (await paper.locator(".kvc-paper-title").innerText()).trim();
-    await paper.click();
-    const agree = page.getByRole("button", { name: "I agree" });
-    if (await agree.isVisible().catch(() => false)) await agree.click();
-    /* The pane opens in the card's place, with the paper said as if tapped there, and Kivyn takes it up. */
-    await expect(page.locator(".ws-right.is-agent")).toBeVisible();
-    await expect(card).toHaveCount(0);
-    await expect(page.locator(".ch-msg.is-user").last()).toContainText(`Use “${title.replace(/…$/, "")}`);
-    await expect(page.locator(".ch-msg.is-agent").last()).toContainText("Working from");
-    await expect(page.locator(".ch-context")).toContainText(title.replace(/…$/, "").slice(0, 20));
-    await page.getByRole("button", { name: "Close Kivyn" }).click();
-
-    /* Writing by hand: the card steps back to a line and a button. */
-    await expect(card).toBeVisible();
-    await page.locator(".block-editor-surface").first().click();
-    await page.keyboard.type("A paragraph written by hand.");
-    await expect(page.locator(".kv-companion.is-compact")).toBeVisible();
-    await expect(page.locator(".kv-companion.is-compact .kvc-cta")).toHaveText(/Ask Kivyn/);
-  });
-
   test("asked for less motion, Kivyn holds its pose still, and a tap still answers", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/editorial/new");
-    const eye = page.locator(".kv-companion svg.kv .kv-p-eye").first();
+    const eye = page.locator(".ag-nudge svg.kv .kv-p-eye").first();
     await expect(eye).toHaveCSS("animation-name", "none");
     await openAgent(page);
     const actor = page.locator(".ws-right.is-agent .ws-agent-head .kv-actor");
