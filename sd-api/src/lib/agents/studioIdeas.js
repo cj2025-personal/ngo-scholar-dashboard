@@ -16,12 +16,12 @@
 
 const { AUDIENCES, normaliseAudience } = require("../audiences");
 
-const IDEAS_VERSION = "studio-ideas-2026.1";
+const IDEAS_VERSION = "studio-ideas-2026.2";
 const MARKER_STORY = "DRAFT TO SUGGEST EDITS FOR:";
 const MARKER_NEW = "PAPERS TO SUGGEST ARTICLES FROM:";
 
 const ACTIONS = ["prefill", "propose"];
-const SCHEMA = {
+const schemaFor = (actions) => ({
   type: "OBJECT",
   properties: {
     groups: {
@@ -30,21 +30,26 @@ const SCHEMA = {
         type: "OBJECT",
         properties: {
           title: { type: "STRING" },
-          ideas: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, action: { type: "STRING", enum: ACTIONS } }, required: ["text", "action"] } },
+          ideas: { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, action: { type: "STRING", enum: actions } }, required: ["text", "action"] } },
         },
         required: ["title", "ideas"],
       },
     },
   },
   required: ["groups"],
-};
+});
+const SCHEMA = schemaFor(ACTIONS);
+/* A story in review is changed by instruction; proposing what a paper could become is for a new story. */
+const STORY_SCHEMA = schemaFor(["prefill"]);
 
 const STORY_SYSTEM = [
   "You suggest what an editing agent could do next to a scholar's draft article about their own paper.",
-  "Read the draft and the fact-checkers' notes. Put first what most needs doing: paragraphs the checkers flagged,",
-  "a notice if the paper's record changed, the paragraph the scholar is on. Then improvements for this reader.",
-  "Each idea is an instruction the scholar could send as written, naming paragraphs by number. Never suggest adding",
-  "facts from outside the paper; suggest implications drawn from it, said as implications. All with action prefill.",
+  "Every idea is an instruction to change the draft that the agent can carry out, written so the scholar could send",
+  "it as it stands, naming paragraphs by number: \"Rewrite paragraph 3 so ...\", \"Shorten the opening to ...\".",
+  "Never write a status report, a notice to the scholar, or that nothing needs doing: if nothing needs doing first,",
+  "leave that group out. Put first what most needs doing — paragraphs the checkers flagged; a short notice to readers",
+  "at the top, only when the paper's record has changed; the paragraph the scholar is on — then improvements for this",
+  "reader. Never suggest adding facts from outside the paper; suggest implications drawn from it, said as implications.",
 ].join("\n");
 
 const NEW_SYSTEM = [
@@ -96,7 +101,7 @@ async function ideasForStory({ title, blocks, record = null, audience, focusInde
     `${MARKER_STORY} ${title || "(untitled)"}`,
     ...blocks.map(blockLine),
   ].join("\n");
-  const r = await generate({ prompt, systemInstruction: STORY_SYSTEM, responseSchema: SCHEMA });
+  const r = await generate({ prompt, systemInstruction: STORY_SYSTEM, responseSchema: STORY_SCHEMA });
   return { groups: parseGroups(r.text, count), usage: r.usage || null, model: r.model || null };
 }
 
@@ -113,4 +118,4 @@ async function ideasForNewStory({ papers, chosen = null, count, generate }) {
   return { groups: parseGroups(r.text, count), usage: r.usage || null, model: r.model || null };
 }
 
-module.exports = { IDEAS_VERSION, MARKER_STORY, MARKER_NEW, ACTIONS, SCHEMA, ideasForStory, ideasForNewStory, parseGroups };
+module.exports = { IDEAS_VERSION, MARKER_STORY, MARKER_NEW, ACTIONS, SCHEMA, STORY_SCHEMA, ideasForStory, ideasForNewStory, parseGroups };

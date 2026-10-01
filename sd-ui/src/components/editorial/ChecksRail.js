@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 
 import { AUDIENCE_TARGETS, normaliseAudience } from "@/lib/readability";
-import { checkStoryRecord, getStoryReadingLevel } from "@/lib/drafting";
+import { FaCheck, FaCircleInfo, FaTriangleExclamation } from "react-icons/fa6";
+
+import { DRAFT_AUDIENCES, checkStoryRecord, getStoryReadingLevel } from "@/lib/drafting";
 
 /**
  * The checks on this draft, as it stands right now.
@@ -77,7 +79,18 @@ function Meter({ assessment }) {
   );
 }
 
-export default function ChecksRail({ blocks, assessment, audience, warnings, draftChecks = null, record = null, storyId = null, version = null, dirty = false, levels = [], onGoTo, onStoryChanged, onOpenEvidence, onVerify = null }) {
+/** One line of a check: its state, what it says, and where to go. */
+function Item({ tone, children, action = null }) {
+  return (
+    <div className="ck-item">
+      <span className={`st-dot is-${tone}`} />
+      <span>{children}</span>
+      {action}
+    </div>
+  );
+}
+
+export default function ChecksRail({ blocks, assessment, audience, warnings, draftChecks = null, record = null, storyId = null, version = null, dirty = false, voice = null, onAskAgent = null, levels = [], onGoTo, onStoryChanged, onOpenEvidence, onVerify = null }) {
   const s = summariseBlocks(blocks);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState("");
@@ -111,52 +124,87 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
     const alerts = r.data.story?.record?.alerts?.length || 0;
     onStoryChanged?.(r.data.story, alerts ? "The record has moved against this article's source. See the notice at the top." : "Checked against the record: nothing registered against the paper.");
   }
-  const target = AUDIENCE_TARGETS[normaliseAudience(audience)];
+  const key = normaliseAudience(audience);
+  const local = AUDIENCE_TARGETS[key];
+  /* The band the server judged against wins over this page's copy of the table. */
+  const target = { ...local, grade: ruled?.targetGrade ?? local.grade };
+  const band = DRAFT_AUDIENCES.find((a) => a.value === key)?.label || local.label;
   const firstAttention = blocks.findIndex(needsAttention);
+  const ruling = dirty || !storyId ? "live" : level.key !== levelKey ? "reading" : !ruled ? "unread" : ruled.verdict === "pass" ? "fits" : ruled.verdict === "fail" ? (ruled.judged?.verdict === "too_simple" ? "simple" : "hard") : "unread";
+  const attention = s.partial + s.unsupported + s.reachPartial + s.overreach + s.contextAttention;
+  const authorVoice = voice === "author";
+  const goFirst = (i, label = "Go to first") => (i >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(i)}>{label}</button> : null);
   return (
-    <div className="ck-wrap">
-      <span className="sc-kicker">Reading level</span>
-      {assessment?.fkGrade !== null && assessment?.fkGrade !== undefined ? (
-        <>
-          <div className="ck-row"><span>Measured grade <b>{assessment.fkGrade}</b></span><span className="st-todo-detail">target {target.grade} for {target.label}</span></div>
-          <Meter assessment={assessment} />
-          <div className="st-todo-detail">
-            {dirty || !storyId
-              ? "Measured as you type. Once saved, the article is read again for its reader."
-              : level.key !== levelKey
-                ? "Reading it as its reader would…"
-                : !ruled
-                  ? `The reading level could not be judged just now${level.error ? `: ${level.error}` : "."}`
-                  : ruled.verdict === "pass"
-                    ? `Read as right for ${target.label}.${ruled.judged?.reason ? ` ${ruled.judged.reason}` : ""}`
-                    : ruled.verdict === "fail"
-                      ? `Reads too ${ruled.judged?.verdict === "too_simple" ? "simple" : "hard"} for ${target.label}: ${ruled.judged?.reason || ""} Ask the agent to rewrite it for them, or edit.`
-                      : `Not judged: ${ruled.reason || "the reading level could not be read"}.`}
-          </div>
-        </>
-      ) : <p className="st-muted">Nothing to measure yet.</p>}
+    <div className="ck-wrap ck-cards">
+      <section className={`ck-card ck-level is-${ruling}`} aria-labelledby="ck-level-title">
+        <header className="ck-card-head">
+          <span id="ck-level-title" className="ck-card-title">Reading level</span>
+          <span className="ck-chip">{band}</span>
+        </header>
+        {assessment?.fkGrade !== null && assessment?.fkGrade !== undefined ? (
+          <>
+            <div className="ck-figures">
+              <div className="ck-figure"><b>{assessment.fkGrade}</b><span>measured grade</span></div>
+              <div className="ck-figure is-target"><b>{target.grade}</b><span>target for {target.label}</span></div>
+            </div>
+            <Meter assessment={{ ...assessment, target }} />
+            <div className="ck-ruling" role="status" aria-live="polite">
+              <span className="ck-ruling-ic" aria-hidden>
+                {ruling === "reading" ? <span className="ag-spinner" /> : ruling === "fits" ? <FaCheck size={11} /> : ruling === "hard" || ruling === "simple" ? <FaTriangleExclamation size={11} /> : <FaCircleInfo size={11} />}
+              </span>
+              <div className="ck-ruling-text">
+                <b>
+                  {ruling === "live" ? "Measured as you type" : ruling === "reading" ? "Reading it as its reader would…" : ruling === "fits" ? `Reads right for ${target.label}` : ruling === "hard" ? `Too hard for ${target.label}` : ruling === "simple" ? `Too simple for ${target.label}` : "Not judged just now"}
+                </b>
+                <span>
+                  {ruling === "live" ? "Once saved, an editor model reads the article again for its reader."
+                    : ruling === "reading" ? "An editor model is reading the saved version."
+                      : ruling === "unread" ? (ruled?.reason || level.error || "The reading level could not be judged. Read it for this reader yourself.")
+                        : ruled?.judged?.reason || ""}
+                </span>
+              </div>
+            </div>
+            {(ruling === "hard" || ruling === "simple") && onAskAgent ? (
+              <button
+                type="button"
+                className="ck-cta"
+                onClick={() => onAskAgent(`Rewrite the article so it reads right for ${target.label}${ruled?.judged?.guidance ? `: ${ruled.judged.guidance}` : "."} Keep every fact and add none.`)}
+              >
+                Ask the agent to fit it to {band.toLowerCase()}
+              </button>
+            ) : null}
+          </>
+        ) : <p className="st-muted">Nothing to measure yet.</p>}
+      </section>
 
-      <div className="sc-divider" />
-      <span className="sc-kicker">Checks on this draft</span>
-      <div className="ck-list">
-        <div className="ck-item"><span className="st-dot is-ok" /><span>{s.supported} paragraph{s.supported === 1 ? "" : "s"} supported by {s.supported === 1 ? "its" : "their"} passages</span></div>
-        {s.partial ? <div className="ck-item"><span className="st-dot is-warn" /><span>{s.partial} partly supported · claims marked on the block</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
-        {s.unsupported ? <div className="ck-item"><span className="st-dot is-bad" /><span>{s.unsupported} not supported by the paper · rewrite or remove</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
-        {s.extension ? <div className="ck-item"><span className={`st-dot ${s.follows === s.extension ? "is-ok" : "is-faint"}`} /><span>{s.follows} of {s.extension} paragraph{s.extension === 1 ? "" : "s"} beyond the paper follow{s.follows === 1 ? "s" : ""} from it · implications only</span></div> : null}
-        {s.reachPartial ? <div className="ck-item"><span className="st-dot is-warn" /><span>{s.reachPartial} partly follow{s.reachPartial === 1 ? "s" : ""} from the paper · the claims that go too far are marked</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
-        {s.overreach ? <div className="ck-item"><span className="st-dot is-bad" /><span>{s.overreach} go{s.overreach === 1 ? "es" : ""} beyond what the paper supports · rewrite or remove</span>{firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
-        {s.edited ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.edited} paragraph{s.edited === 1 ? "" : "s"} rewritten by you beyond {s.edited === 1 ? "its" : "their"} source</span></div> : null}
-        {s.context ? <div className="ck-item"><span className={`st-dot ${s.contextAttention ? "is-warn" : "is-ok"}`} /><span>{s.context} paragraph{s.context === 1 ? "" : "s"} of your own context{s.contextAttention ? ` · ${s.contextAttention} present${s.contextAttention === 1 ? "s" : ""} it as the paper's finding` : " · said as yours, not the paper's"}</span>{s.contextAttention && firstAttention >= 0 ? <button type="button" className="st-link" onClick={() => onGoTo?.(firstAttention)}>Go to first</button> : null}</div> : null}
-        {s.ownView > s.context ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.ownView - s.context} marked as your own view</span></div> : null}
-        {s.uncited ? <div className="ck-item"><span className="st-dot is-faint" /><span>{s.uncited} paragraph{s.uncited === 1 ? "" : "s"} written by hand, citing nothing</span></div> : null}
-        <div className="ck-item"><span className="st-dot is-ok" /><span>Written about you, never as you</span></div>
-      </div>
+      <section className="ck-card" aria-labelledby="ck-draft-title">
+        <header className="ck-card-head">
+          <span id="ck-draft-title" className="ck-card-title">Checks on this draft</span>
+          <span className={`ck-chip ${attention ? "is-warn" : "is-ok"}`}>{attention ? `${attention} need${attention === 1 ? "s" : ""} a look` : "All clear"}</span>
+        </header>
+        <div className="ck-list">
+          <Item tone="ok">{s.supported} paragraph{s.supported === 1 ? "" : "s"} supported by {s.supported === 1 ? "its" : "their"} passages</Item>
+          {s.partial ? <Item tone="warn" action={goFirst(firstAttention)}>{s.partial} partly supported · claims marked on the block</Item> : null}
+          {s.unsupported ? <Item tone="bad" action={goFirst(firstAttention)}>{s.unsupported} not supported by the paper · rewrite or remove</Item> : null}
+          {s.extension ? <Item tone={s.follows === s.extension ? "ok" : "faint"}>{s.follows} of {s.extension} paragraph{s.extension === 1 ? "" : "s"} beyond the paper follow{s.follows === 1 ? "s" : ""} from it · implications only</Item> : null}
+          {s.reachPartial ? <Item tone="warn" action={goFirst(firstAttention)}>{s.reachPartial} partly follow{s.reachPartial === 1 ? "s" : ""} from the paper · the claims that go too far are marked</Item> : null}
+          {s.overreach ? <Item tone="bad" action={goFirst(firstAttention)}>{s.overreach} go{s.overreach === 1 ? "es" : ""} beyond what the paper supports · rewrite or remove</Item> : null}
+          {s.edited ? <Item tone="faint">{s.edited} paragraph{s.edited === 1 ? "" : "s"} rewritten by you beyond {s.edited === 1 ? "its" : "their"} source</Item> : null}
+          {s.context ? <Item tone={s.contextAttention ? "warn" : "ok"} action={s.contextAttention ? goFirst(firstAttention) : null}>{s.context} paragraph{s.context === 1 ? "" : "s"} of your own context{s.contextAttention ? ` · ${s.contextAttention} present${s.contextAttention === 1 ? "s" : ""} it as the paper's finding` : " · said as yours, not the paper's"}</Item> : null}
+          {s.ownView > s.context ? <Item tone="faint">{s.ownView - s.context} marked as your own view</Item> : null}
+          {s.uncited ? <Item tone="faint">{s.uncited} paragraph{s.uncited === 1 ? "" : "s"} written by hand, citing nothing</Item> : null}
+          {/* What the voice judge held each section to when it was drafted. */}
+          <Item tone="ok">{authorVoice ? "Your own account: read at draft time for any sentence speaking as you or naming you" : "About you: read at draft time for any sentence speaking as you"}</Item>
+        </div>
+      </section>
 
       {s.toVerify ? (
-        <>
-          <div className="sc-divider" />
-          <span className="sc-kicker">To verify</span>
-          <p className="st-muted">The agent brought these in from outside the paper, in your own context. Tick each once you have checked it, or cut it from the paragraph. Nothing it invented reaches a reader without your eyes on it; the story cannot be published while any is unticked.</p>
+        <section className="ck-card" aria-labelledby="ck-verify-title">
+          <header className="ck-card-head">
+            <span id="ck-verify-title" className="ck-card-title">To verify</span>
+            <span className={`ck-chip ${s.unverified ? "is-warn" : "is-ok"}`}>{s.unverified ? `${s.unverified} of ${s.toVerify} left` : "All verified"}</span>
+          </header>
+          <p className="ck-card-note">The agent brought these in from outside the paper, in your own context. Tick each once you have checked it, or cut it. The story cannot be published while any is unticked.</p>
           <div className="ck-verify">
             {verifyItems(blocks).map((v) => (
               <label key={`${v.blockId}-${v.itemIndex}`} className={v.verified ? "ck-verify__row is-done" : "ck-verify__row"}>
@@ -166,70 +214,53 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
               </label>
             ))}
           </div>
-          <div className="ck-item" style={{ marginTop: 8 }}><span className={`st-dot ${s.unverified ? "is-warn" : "is-ok"}`} /><span>{s.unverified ? `${s.unverified} of ${s.toVerify} still to verify` : `All ${s.toVerify} verified by you`}</span></div>
-        </>
+          <Item tone={s.unverified ? "warn" : "ok"}>{s.unverified ? `${s.unverified} of ${s.toVerify} still to verify` : `All ${s.toVerify} verified by you`}</Item>
+        </section>
       ) : null}
 
-      <div className="sc-divider" />
-      <span className="sc-kicker">From the rules</span>
-      <div className="ck-list">
-        <div className="ck-item">
-          <span className={`st-dot ${numbers ? (numbers.ok ? "is-ok" : "is-bad") : "is-faint"}`} />
-          <span>{numbers ? (numbers.ok ? `Every number in the draft was in the paper (${numbers.numbers} checked)` : `${numbers.misses.length} number${numbers.misses.length === 1 ? "" : "s"} in the draft not in the passages cited`) : "Numbers: not checked at draft time"}</span>
-          {numbers && !numbers.ok ? <button type="button" className="st-link" onClick={() => onGoTo?.(numbers.misses[0].block - 1)}>Go to first</button> : null}
+      <section className="ck-card" aria-labelledby="ck-rules-title">
+        <header className="ck-card-head">
+          <span id="ck-rules-title" className="ck-card-title">Across the article</span>
+          <button type="button" className="ck-card-link" onClick={onOpenEvidence}>Check the current text</button>
+        </header>
+        <div className="ck-list">
+          <Item tone={numbers ? (numbers.ok ? "ok" : "bad") : "faint"} action={numbers && !numbers.ok ? goFirst(numbers.misses[0].block - 1) : null}>
+            {numbers ? (numbers.ok ? `Every number in the draft was in the paper (${numbers.numbers} checked)` : `${numbers.misses.length} number${numbers.misses.length === 1 ? "" : "s"} in the draft not in the passages cited`) : "Numbers: not checked at draft time"}
+          </Item>
+          <Item tone={limitations?.ok === true ? "ok" : limitations?.ok === false ? "warn" : "faint"}>
+            {limitations?.ok === true ? "Carries the paper's own caveats" : limitations?.ok === false ? "Cites none of the passages where the paper states its limitations" : limitations?.judged === false ? "The paper's caveats could not be read at draft time" : "The paper states no caveats of its own"}
+          </Item>
+          {pronouns && pronouns.ok === false ? <Item tone="bad" action={pronouns.blocks?.length ? goFirst(pronouns.blocks[0] - 1) : null}>{pronouns.sentence}</Item> : null}
+          {budget && budget.ok !== null ? <Item tone={budget.ok ? "ok" : "warn"}>{budget.sentence}</Item> : null}
+          {worldClaims && worldClaims.ok !== null ? (
+            <Item tone={worldClaims.ok ? "ok" : "warn"} action={!worldClaims.ok ? goFirst(worldClaims.hits[0].block - 1) : null}>
+              {worldClaims.ok ? "Nothing beyond the paper reads as a claim about the world" : `${worldClaims.hits.length} sentence${worldClaims.hits.length === 1 ? "" : "s"} beyond the paper read${worldClaims.hits.length === 1 ? "s" : ""} as a claim about the world, not an implication`}
+            </Item>
+          ) : null}
+          <p className="ck-card-note">From draft time. The current text is checked when you open the evidence.</p>
         </div>
-        <div className="ck-item">
-          <span className={`st-dot ${limitations?.ok === true ? "is-ok" : limitations?.ok === false ? "is-warn" : "is-faint"}`} />
-          <span>{limitations?.ok === true ? "Carries the paper's own caveats" : limitations?.ok === false ? "Cites none of the passages where the paper states its limitations" : "No limitations found in the paper by wording"}</span>
-        </div>
-        {pronouns && pronouns.ok === false ? (
-          <div className="ck-item">
-            <span className="st-dot is-bad" />
-            <span>{pronouns.sentence}</span>
-            {pronouns.blocks?.length ? <button type="button" className="st-link" onClick={() => onGoTo?.(pronouns.blocks[0] - 1)}>Go to first</button> : null}
-          </div>
-        ) : null}
-        {budget && budget.ok !== null ? (
-          <div className="ck-item">
-            <span className={`st-dot ${budget.ok ? "is-ok" : "is-warn"}`} />
-            <span>{budget.sentence}</span>
-          </div>
-        ) : null}
-        {worldClaims && worldClaims.ok !== null ? (
-          <div className="ck-item">
-            <span className={`st-dot ${worldClaims.ok ? "is-ok" : "is-warn"}`} />
-            <span>{worldClaims.ok ? "Nothing beyond the paper reads as a claim about the world" : `${worldClaims.hits.length} sentence${worldClaims.hits.length === 1 ? "" : "s"} beyond the paper read${worldClaims.hits.length === 1 ? "s" : ""} as a claim about the world, not an implication`}</span>
-            {!worldClaims.ok ? <button type="button" className="st-link" onClick={() => onGoTo?.(worldClaims.hits[0].block - 1)}>Go to first</button> : null}
-          </div>
-        ) : null}
-        <div className="ck-item"><span className="st-dot is-faint" /><span>These are from draft time.</span><button type="button" className="st-link" onClick={onOpenEvidence}>Check the current text</button></div>
-      </div>
+      </section>
 
-      <div className="sc-divider" />
-      <span className="sc-kicker">Reading levels</span>
-      <div className="ck-list">
-        <div className="ck-item">
-          <span className={`st-dot ${levelsStale ? "is-warn" : levelsLive ? "is-ok" : levelsWritten ? "is-navy" : "is-faint"}`} />
-          <span>{levelsWritten ? `${levelsWritten} written · ${levelsLive} live for readers${levelsStale ? ` · ${levelsStale} out of date` : ""}` : "Not yet written for other reading ages"}</span>
+      <section className="ck-card ck-card--split" aria-label="Reading levels and the record">
+        <div className="ck-list">
+          <Item tone={levelsStale ? "warn" : levelsLive ? "ok" : levelsWritten ? "navy" : "faint"}>
+            {levelsWritten ? `${levelsWritten} reading level${levelsWritten === 1 ? "" : "s"} written · ${levelsLive} live for readers${levelsStale ? ` · ${levelsStale} out of date` : ""}` : "Not yet written for other reading ages"}
+          </Item>
+          <Item tone={record?.alerts?.length ? "bad" : record ? "ok" : "faint"} action={storyId ? <button type="button" className="st-link" disabled={checking} onClick={checkRecord}>{checking ? "Checking…" : "Check now"}</button> : null}>
+            {record?.alerts?.length ? record.headline : record ? `Nothing registered against the paper · checked ${record.checkedAt ? new Date(record.checkedAt).toLocaleDateString() : "recently"}` : "Not yet checked against the record"}
+          </Item>
+          {checkError ? <p className="sc-write-msg is-error">{checkError}</p> : null}
         </div>
-      </div>
+      </section>
 
-      <div className="sc-divider" />
-      <span className="sc-kicker">The record</span>
-      <div className="ck-list">
-        <div className="ck-item">
-          <span className={`st-dot ${record?.alerts?.length ? "is-bad" : record ? "is-ok" : "is-faint"}`} />
-          <span>{record?.alerts?.length ? record.headline : record ? `Nothing registered against the paper · checked ${record.checkedAt ? new Date(record.checkedAt).toLocaleDateString() : "recently"}` : "Not yet checked against the record"}</span>
-          {storyId ? <button type="button" className="st-link" disabled={checking} onClick={checkRecord}>{checking ? "Checking…" : "Check now"}</button> : null}
-        </div>
-        {checkError ? <p className="sc-write-msg is-error">{checkError}</p> : null}
-      </div>
       {warnings?.length ? (
-        <>
-          <div className="sc-divider" />
-          <span className="sc-kicker">From the drafter</span>
+        <details className="ck-card ck-fold">
+          <summary className="ck-card-head">
+            <span className="ck-card-title">From the drafter</span>
+            <span className="ck-chip">{warnings.length} note{warnings.length === 1 ? "" : "s"}</span>
+          </summary>
           <ul className="ag-warnings">{warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-        </>
+        </details>
       ) : null}
     </div>
   );

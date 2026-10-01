@@ -32,6 +32,7 @@ import RecordBanner from "@/components/editorial/RecordBanner";
 import { HiOutlineChatBubbleLeftRight, HiOutlineLightBulb } from "react-icons/hi2";
 import StudioAgentShell, { AgentAbout, AgentIdentity, AgentTabs, STUDIO_PERMISSIONS } from "@/components/editorial/StudioAgentShell";
 import AgentIdeas from "@/components/editorial/AgentIdeas";
+import { Toast, ToastStack } from "@/components/editorial/Toasts";
 import DraftStream from "@/components/editorial/DraftStream";
 import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
@@ -239,6 +240,8 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const [activeBlockId, setActiveBlockId] = useState(() => (initialStory?.id ? `story-${initialStory.id}-0` : "draft-0"));
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
+  const dismissFeedback = useCallback(() => setFeedback(""), []);
+  const dismissError = useCallback(() => setError(""), []);
   const [recheckingId, setRecheckingId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [draftProgress, setDraftProgress] = useState("");
@@ -821,18 +824,23 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
         </div>
       </div>
 
-      {conflict ? (
-        <p className="sc-write-msg is-error">
-          {conflict}{" "}
-          {/* Recovery, not destruction — it wore the delete confirmation's red
-              button until that component grew a dialog of its own. */}
-          <button type="button" className="cf-btn is-inline" onClick={() => window.location.reload()}>Reload the current version</button>
-        </p>
-      ) : null}
-      {error ? <p className="sc-write-msg is-error">{error}</p> : null}
-      {feedback ? <p className="sc-write-msg is-ok">{feedback}</p> : null}
-      {draftProgress ? <p className="sc-write-msg is-ok" role="status">{draftProgress}</p> : null}
-      {proposalPending ? <p className="sc-write-msg is-ok">The agent has proposed a change. Accept or reject it in the Agent tab before saving.</p> : null}
+      {/* What the page has to say floats above it, rather than pushing the
+          article down: a save or a publish fades once read; what went wrong
+          stays until dismissed; what is still happening stays until done. */}
+      <ToastStack>
+        {conflict ? (
+          <Toast kind="error" text={conflict}>
+            {" "}
+            {/* Recovery, not destruction — it wore the delete confirmation's red
+                button until that component grew a dialog of its own. */}
+            <button type="button" className="cf-btn is-inline" onClick={() => window.location.reload()}>Reload the current version</button>
+          </Toast>
+        ) : null}
+        {error ? <Toast kind="error" text={error} onDismiss={dismissError} /> : null}
+        {feedback ? <Toast kind="ok" text={feedback} onDismiss={dismissFeedback} autoHide /> : null}
+        {draftProgress ? <Toast kind="info" text={draftProgress} busy /> : null}
+        {proposalPending ? <Toast kind="info" text="The agent has proposed a change. Accept or reject it in the Agent tab before saving." /> : null}
+      </ToastStack>
       {reviewMode && form.record?.alerts?.length ? (
         <RecordBanner storyId={form.id} record={form.record} status={form.status} onAskAgent={askAgent} onUnpublish={() => submitStory("draft")} onAcknowledged={(story) => handleStoryChanged(story, "Noted. The alert stays on the story until the record changes.")} />
       ) : null}
@@ -979,7 +987,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                     : <EvidenceRail storyId={form.id} version={form.version} status={form.status} slug={initialStory?.slug} onGoTo={(i) => goToBlock(i, "source")} />}
                 </div>
               ) : null}
-              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} version={form.version} dirty={dirty} warnings={initialStory?.draftWarnings} onVerify={verifySpecific} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => showRail("evidence")} /> : null}
+              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} version={form.version} dirty={dirty} voice={form.provenance?.voice || null} onAskAgent={askAgent} warnings={initialStory?.draftWarnings} onVerify={verifySpecific} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => showRail("evidence")} /> : null}
               {railTab === "ideas" ? (
                 <AgentIdeas
                   storyId={form.id}

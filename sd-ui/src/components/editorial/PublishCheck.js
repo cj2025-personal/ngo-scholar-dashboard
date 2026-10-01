@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { FaCheck, FaEye, FaTriangleExclamation } from "react-icons/fa6";
+import { useEffect, useRef, useState } from "react";
+import { FaCheck, FaEye, FaTriangleExclamation, FaXmark } from "react-icons/fa6";
 
 import { getStoryEvidence, getStoryReadingLevel } from "@/lib/drafting";
 
@@ -19,6 +19,9 @@ import { needsAttention, summariseBlocks } from "@/components/editorial/ChecksRa
  */
 export default function PublishCheck({ blocks, assessment, audience, author, provenance, storyId = null, levels = [], record = null, draftChecks = null, onClose, onPublish, onSchedule, onGoTo, busy }) {
   const s = summariseBlocks(blocks);
+  /* Focus moves into the dialog when it opens, so Escape and the keyboard work at once. */
+  const modalRef = useRef(null);
+  useEffect(() => { modalRef.current?.focus(); }, []);
   /* The rule checks on the text as it is now, not as it was drafted. */
   const [fresh, setFresh] = useState(null);
   useEffect(() => {
@@ -151,18 +154,47 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
     },
   ];
   /* A check still being read holds publishing until it has an answer. */
-  const blocking = items.some((i) => !i.ok && !i.warn);
+  const blocking = items.some((i) => !i.ok && !i.warn && !i.pending);
   const pending = items.some((i) => i.pending);
+  const needs = items.filter((i) => !i.ok && !i.warn && !i.pending).length;
+  const looks = items.filter((i) => !i.ok && i.warn).length;
+  const clear = items.filter((i) => i.ok).length;
+  const holdReason = pending
+    ? "Waiting on a check that is still reading the article."
+    : needs
+      ? `${needs} item${needs === 1 ? "" : "s"} must be resolved before this can be published.`
+      : looks
+        ? "Worth a look first; nothing stops you publishing."
+        : "Everything the machine checks is clear.";
 
   return (
-    <div className="pc-scrim" role="dialog" aria-modal="true" aria-labelledby="pc-title">
-      <div className="pc-modal">
-        <span className="sc-kicker">Before it goes out under your name</span>
-        <h2 id="pc-title" className="st-h2" style={{ fontSize: 22, marginTop: 6 }}>Publish check</h2>
-        <p className="st-sub">{pending ? "Still reading it…" : blocking ? "Something still needs you." : "The machine's part is done. The rest is yours."}</p>
+    <div
+      className="pc-scrim"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pc-title"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+    >
+      <div className="pc-modal" ref={modalRef} tabIndex={-1}>
+        <header className="pc-head">
+          <div className="pc-head-text">
+            <span className="sc-kicker">Before it goes out under your name</span>
+            <h2 id="pc-title" className="st-h2 pc-title">Publish check</h2>
+            <p className="st-sub">{pending ? "Still reading it…" : blocking ? "Something still needs you." : "The machine's part is done. The rest is yours."}</p>
+          </div>
+          <button type="button" className="pc-close" aria-label="Close the publish check" onClick={onClose}><FaXmark size={14} aria-hidden /></button>
+          <div className="pc-summary">
+            {needs ? <span className="pc-count is-bad">{needs} need{needs === 1 ? "s" : ""} you</span> : null}
+            {looks ? <span className="pc-count is-warn">{looks} worth a look</span> : null}
+            {pending ? <span className="pc-count is-info">still reading</span> : null}
+            <span className="pc-count is-ok">{clear} of {items.length} clear</span>
+            <span className="pc-meter" aria-hidden><span style={{ width: `${Math.round((clear / Math.max(1, items.length)) * 100)}%` }} /></span>
+          </div>
+        </header>
         <div className="pc-items">
           {items.map((it, i) => (
-            <div key={i} className="pc-item">
+            <div key={i} className={`pc-item ${it.pending ? "is-pending" : it.ok ? "is-ok" : it.warn ? "is-warn" : "is-bad"}`}>
               {it.pending
                 ? <span className="pc-ic is-info" aria-hidden><span className="ag-spinner" /></span>
                 : <span className={`pc-ic ${it.ok ? "is-ok" : it.warn ? "is-warn" : "is-bad"}`} aria-hidden>{it.ok ? <FaCheck size={11} /> : <FaTriangleExclamation size={11} />}</span>}
@@ -173,14 +205,14 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
               </div>
             </div>
           ))}
-          <div className="pc-item">
+          <div className="pc-item is-info">
             <span className="pc-ic is-info" aria-hidden><FaCheck size={11} /></span>
             <div>
               <b>What goes on the record</b>
               <p>{fresh ? fresh.summary : "Every claim, the passage it rests on, and your approval are recorded and signed with the article, for anyone to verify."}</p>
             </div>
           </div>
-          <div className="pc-item">
+          <div className="pc-item is-info">
             <span className="pc-ic is-info" aria-hidden><FaEye size={11} /></span>
             <div style={{ flex: 1 }}>
               <b>How it will be attributed</b>
@@ -196,7 +228,8 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
         </div>
         <div className="pc-actions">
           <button type="button" className="sc-write-ghost" onClick={onClose}>Back to the draft</button>
-          <div style={{ display: "flex", gap: 8 }}>
+          <span className={`pc-hold${needs || pending ? " is-held" : ""}`}>{holdReason}</span>
+          <div className="pc-actions-go">
             {onSchedule ? <button type="button" className="sc-write-secondary" disabled={busy} onClick={onSchedule}>Schedule…</button> : null}
             <button type="button" className="sc-write-publish pc-publish" disabled={busy || blocking || pending} onClick={onPublish}>{busy ? "Publishing…" : "Publish now"}</button>
           </div>

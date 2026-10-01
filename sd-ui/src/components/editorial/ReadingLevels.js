@@ -124,9 +124,12 @@ export default function ReadingLevels({ story, viewLevel, onView, onChanged, dir
     return (
       <div className="lv-wrap is-folded">
         <button type="button" className="lv-fold" onClick={() => setOpen(true)} aria-expanded="false">
-          <FaWandMagicSparkles size={11} aria-hidden />
-          Also write this for other reading ages
-          <span className="lv-fold__hint">{bands.map((a) => a.label).join(" · ")}</span>
+          <span className="lv-fold__ic" aria-hidden><FaWandMagicSparkles size={12} /></span>
+          <span className="lv-fold__text">
+            <b>Also write this for other reading ages</b>
+            <span className="lv-fold__own">Written for {(DRAFT_AUDIENCES.find((a) => a.value === own)?.label || "adults").toLowerCase()}</span>
+          </span>
+          <span className="lv-fold__hint">{bands.map((a) => <span key={a.value} className="lv-fold__chip">{a.label}</span>)}</span>
         </button>
       </div>
     );
