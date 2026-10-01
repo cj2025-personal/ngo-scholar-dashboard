@@ -3,6 +3,7 @@ import { HiOutlineArrowRight, HiOutlineArrowUpTray } from "react-icons/hi2";
 
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
 import WaitingQueue from "@/components/scholar/WaitingQueue";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
  * Studio: what is waiting on you, then what you have written.
@@ -148,7 +149,7 @@ export default function StudioHome({ me, sources, jobs, stories, episodes }) {
       tone: "info",
       kind: "A paper",
       lead: `“${shortTitle(p.title, 64)}” could become an article`,
-      detail: `${p.year ? `${p.year} · ` : ""}${Number(p.words || 0).toLocaleString()} words · ${p.reason}. The agent can read it and propose one, or you can say what it should be.`,
+      detail: `${p.year ? `${p.year} · ` : ""}${Number(p.words || 0).toLocaleString()} words · ${p.reason}. ${AGENT_NAME} can read it and propose one, or you can say what it should be.`,
       href: `/editorial/new?source=${encodeURIComponent(`${p.origin}:${p.id}`)}`,
       cta: "I'll say what to write",
       propose: { origin: p.origin, sourceId: p.id },

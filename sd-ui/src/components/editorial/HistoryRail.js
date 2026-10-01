@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FaClockRotateLeft } from "react-icons/fa6";
 
 import { listStoryRevisions, restoreStoryRevision } from "@/lib/drafting";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
  * Every version of this story, newest first.
@@ -19,7 +20,7 @@ import { listStoryRevisions, restoreStoryRevision } from "@/lib/drafting";
 
 const SOURCE_LABEL = {
   scholar: "You",
-  agent: "The agent",
+  agent: AGENT_NAME,
   drafter: "The drafter",
   restore: "Restored",
   levels: "Reading levels",

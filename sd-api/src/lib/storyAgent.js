@@ -33,10 +33,11 @@
 
 const { AUDIENCES, normaliseAudience } = require("./audiences");
 const composer = require("./draftComposer");
-const AGENT_VERSION = "story-agent-2026.3";
+const AGENT_VERSION = "story-agent-2026.4";
 /* Step and tool budgets come from the studio policy (edit); the baseline is read when none is passed. */
 const { defaultsFor } = require("./policyDefaults");
 const voiceJudge = require("./agents/voiceJudge");
+const { introduce } = require("./agents/identity");
 
 /* ── tools ───────────────────────────────────────────────────────────────── */
 
@@ -126,7 +127,7 @@ function buildSystem({ voice = composer.VOICE.ABOUT, scholarName = null } = {}) 
   const name = scholarName || "the scholar";
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
   return [
-  "You are an editing assistant for a scholar's article about their own research paper, on Archivyn.",
+  introduce("the editing assistant for a scholar's article about their own research paper"),
   "The scholar tells you what to change. You change the draft ONLY by calling the tools. Do not answer with prose except through `finish`.",
   "",
   "Rules, checked after you finish:",
@@ -331,6 +332,11 @@ function diffStates(before, after) {
  * @param {(req:object)=>Promise<{text:string,functionCalls:object[],parts:object[],usage?:object}>} p.generate
  * @param {boolean} [p.imagesAllowed]
  * @param {(text:string, passageId:string)=>boolean} [p.isVerbatim]
+ * @param {(e:{phase:"think"|"start"|"done", round?:number, tool?:string, result?:string})=>Promise<void>} [p.onProgress]
+ *        what the loop is doing as it does it: about to ask the model what to
+ *        do next ("think"), about to run a tool ("start"), and what the tool
+ *        said ("done"). Said before the work, so a page showing it never shows
+ *        a step that has already finished as the one under way.
  */
 /**
  * The prose a write would put on the page, for the voice judge to read
@@ -393,6 +399,7 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
   let summary = null;
 
   for (let step = 0; step < limits.maxSteps; step += 1) {
+    await onProgress({ phase: "think", round: step + 1 });
     const r = await generate({ contents, systemInstruction: buildSystem({ voice, scholarName }), tools: [{ functionDeclarations: TOOL_DECLARATIONS }], toolConfig: { functionCallingConfig: { mode: "ANY" } }, temperature: 0.2, maxOutputTokens: 2048 });
     if (r.usage) usage.push(r.usage);
     const fcs = r.functionCalls || [];
@@ -407,6 +414,7 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
     for (const fc of fcs) {
       if (calls.length >= limits.maxToolCalls) { responses.push({ functionResponse: { name: fc.name, response: { result: "refused: too many changes in one instruction; call finish" } } }); continue; }
       let out;
+      await onProgress({ phase: "start", tool: fc.name });
       if (fc.name === "search_passages" && search) {
         /* By meaning: the passages closest to what the agent described, with their similarity. */
         const q = String(fc.args?.query || "").trim();
@@ -422,7 +430,7 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
       }
       working = out.state;
       calls.push({ name: fc.name, args: fc.args, result: out.result });
-      await onProgress({ tool: fc.name, result: out.result });
+      await onProgress({ phase: "done", tool: fc.name, result: out.result });
       responses.push({ functionResponse: { name: fc.name, response: { result: out.result } } });
       if (out.finished) { finished = true; summary = out.summary || "Done."; }
     }

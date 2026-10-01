@@ -15,7 +15,8 @@
  * expected action; `fields`, the share of the paper, reader, brief and reply
  * expectations met. The rows come from walking the real agent through the
  * conversations the composer's browser specs drive, plus the ones a scholar
- * types that no button covers: approving in words, asking it to publish.
+ * types that no button covers: approving in words, asking it to publish,
+ * asking who it is — Kivyn, a program, never a person.
  *
  * Papers are two fixed titles, so rows name them by key. Needs Vertex
  * configured. Touches no database.
@@ -83,6 +84,7 @@ const main = async () => {
     if ("paper" in e) fields.push(["paper", d?.paperKey === e.paper || (!d?.paperKey && row.state?.paperKey === e.paper)]);
     if ("audience" in e) fields.push(["audience", e.audience.includes(d?.audience ?? null)]);
     for (const w of e.briefHas || []) fields.push([`brief~${w}`, new RegExp(w, "i").test(d?.brief || "")]);
+    for (const w of e.replyHas || []) fields.push([`reply~${w}`, new RegExp(w, "i").test(d?.reply || "")]);
     for (const w of e.replyLacks || []) fields.push([`reply!~${w}`, !new RegExp(w, "i").test(d?.reply || "")]);
     results.push({ id: row.id, ms, error, actionOk, fields, decision: d });
     const miss = fields.filter(([, ok]) => !ok).map(([k]) => k);

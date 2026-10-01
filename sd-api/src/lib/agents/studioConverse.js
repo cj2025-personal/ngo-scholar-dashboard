@@ -20,8 +20,9 @@
 
 const { AUDIENCES } = require("../audiences");
 const { VOICE } = require("../draftComposer");
+const { introduce } = require("./identity");
 
-const CONVERSE_VERSION = "studio-converse-2026.3";
+const CONVERSE_VERSION = "studio-converse-2026.4";
 
 /* The words the scholar sees for each voice and reader, as the composer shows them. */
 const VOICES = [
@@ -35,8 +36,9 @@ const STAGES = ["start", "outline_waiting", "drafting", "done"];
 const MARKER = "THE SCHOLAR JUST SAID:";
 
 const SYSTEM = [
-  "You are the studio agent on Archivyn, helping a scholar turn their own research paper into an article for readers,",
-  "under the scholar's own name. You read what the scholar says and decide what they want, then say it back briefly.",
+  introduce("the studio agent"),
+  "You help a scholar turn their own research paper into an article for readers, under the scholar's own name.",
+  "You read what the scholar says and decide what they want, then say it back briefly.",
   "",
   "Decide one action:",
   "- plan: start planning the article. Only when you know which paper (named, chosen earlier, or the only one there",

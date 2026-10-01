@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 
+import Kivyn from "@/components/kivyn/Kivyn";
+import { useKivynMoment } from "@/components/kivyn/useKivynMoment";
 import { askStoryAgent, listStoryTurns, resolveStoryTurn } from "@/lib/drafting";
-import AgentFace from "./AgentFace";
-import { useStudioPersona } from "./StudioAgentShell";
+import { AGENT_NAME, poseForStep } from "@/lib/kivyn/pose.mjs";
 
 /**
  * The agent console: a thread with the agent, and a composer docked at the
@@ -27,7 +28,8 @@ const EXAMPLES = [
   "Delete the last section",
 ];
 
-const WORKING_PHASES = ["Reading the draft", "Searching the paper", "Writing the change", "Checking it against the passages"];
+/* Kivyn beside each reply: still, so a thread does not blink at the reader from every line. */
+const Face = () => <Kivyn variant="mark" size={28} />;
 
 function stepLabel(call) {
   const refused = /^refused/.test(call.result || "");
@@ -114,26 +116,38 @@ function Proposal({ turn, onAccept, onReject, busy, blocked = false }) {
   );
 }
 
-function Working() {
+/**
+ * The turn under way: the step the agent is on, said as the server said it
+ * and drawn as Kivyn doing it, and the steps already done beneath. Every line
+ * here is a frame the agent sent; nothing advances on a clock but the
+ * seconds.
+ */
+function Working({ activity }) {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setSeconds((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
-  const phase = WORKING_PHASES[Math.min(WORKING_PHASES.length - 1, Math.floor(seconds / 3))];
+  const done = activity.done.filter((c) => c.name !== "finish");
   return (
-    <div className="ag-working" role="status" aria-live="polite">
-      <div className="ag-working-line"><span className="ag-spinner" aria-hidden /> Working on it… <span className="ag-elapsed">{seconds}s</span></div>
-      <div className="ag-step"><span className="ag-step-ic" aria-hidden>…</span><span>{phase}</span></div>
+    <div className="ag-working has-kv" role="status" aria-live="polite">
+      <Kivyn pose={activity.pose} size={60} live />
+      <div className="ag-working-body">
+        <div className="ag-working-line">{activity.message}… <span className="ag-elapsed">{seconds}s</span></div>
+        {done.length ? <Steps calls={done} /> : null}
+      </div>
     </div>
   );
 }
 
+const STARTING = { pose: "reading", message: "Sending your instruction", done: [] };
+
 export default function AgentPanel({ storyId, context = null, dirty = false, prefill = "", onPrefillTaken, onStoryChanged, onProposalPending, onStatus }) {
-  const [persona] = useStudioPersona();
   const [turns, setTurns] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
+  const [activity, setActivity] = useState(STARTING);
+  const [moment, showMoment] = useKivynMoment();
   const [error, setError] = useState("");
   const [useContext, setUseContext] = useState(true);
   const threadRef = useRef(null);
@@ -151,10 +165,14 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
 
   const pending = turns.find((t) => t.status === "proposed" && t.changes?.length);
   useEffect(() => { onProposalPending?.(Boolean(pending)); }, [pending, onProposalPending]);
-  /* The line under the agent's name, in the pane's head. */
+  /* The line under Kivyn's name, in the pane's head, and what it is drawn doing. */
   useEffect(() => {
-    onStatus?.({ text: busy ? "Working on your change" : pending ? "A change is waiting for your decision" : turns.length ? `${turns.length} change${turns.length === 1 ? "" : "s"} discussed` : "Ready to edit what you ask", busy });
-  }, [busy, pending, turns.length, onStatus]);
+    onStatus?.({
+      text: busy ? activity.message : pending ? "A change is waiting for your decision" : turns.length ? `${turns.length} change${turns.length === 1 ? "" : "s"} discussed` : "Ready to edit what you ask",
+      busy,
+      pose: busy ? activity.pose : moment || "neutral",
+    });
+  }, [busy, activity, moment, pending, turns.length, onStatus]);
 
   const grow = useCallback(() => {
     const el = inputRef.current;
@@ -188,13 +206,23 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
     if (!ask || busy) return;
     if (text === undefined && contextUsable && useContext && !mentionsBlock(ask)) ask = `${ask} (paragraph ${context.index})`;
     setError("");
+    setActivity(STARTING);
+    showMoment(null);
     setBusy(true);
     setInstruction("");
     if (inputRef.current) inputRef.current.style.height = "auto";
-    const r = await askStoryAgent(storyId, ask);
+    const r = await askStoryAgent(storyId, ask, {
+      onProgress: (e) => setActivity((cur) => {
+        /* A tool's result: one more step done, and the agent still on it until it says what is next. */
+        if (e.step === "tool_done") return { ...cur, done: [...cur.done, { name: e.tool, result: `${e.refused ? "refused" : "ok"}: ${e.detail || ""}` }] };
+        return { ...cur, pose: poseForStep(e.step, e.tool), message: e.message || cur.message };
+      }),
+    });
     setBusy(false);
     if (!r.ok) { setError(r.error); setInstruction(text ?? ask); return; }
     setTurns((cur) => [...cur, r.data.turn]);
+    /* Done when there is a change to read; open hands when there is nothing it could change. */
+    showMoment(r.data.turn?.changes?.length ? "done" : "cant-answer");
   }
 
   async function resolve(turn, action) {
@@ -204,7 +232,7 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
     setBusy(false);
     if (!r.ok) { setError(r.error); return; }
     setTurns((cur) => cur.map((t) => (t.id === turn.id ? r.data.turn : t)));
-    if (action === "accept" && r.data.story) onStoryChanged?.(r.data.story);
+    if (action === "accept" && r.data.story) { onStoryChanged?.(r.data.story); showMoment("done"); }
     inputRef.current?.focus();
   }
 
@@ -213,7 +241,7 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
       <div className="ag-thread" ref={threadRef}>
         {turns.length === 0 && !busy ? (
           <div className="ag-reply rc-intro">
-            <AgentFace persona={persona} />
+            <Face />
             <div className="ag-reply-body ag-empty">
               <p className="ag-empty-title">What should change?</p>
               <p className="st-muted">Say it in plain words. I read the draft and the paper, make the change, check it against the passages, and show it to you before it lands. Nothing changes until you accept. Try one of these:</p>
@@ -225,7 +253,7 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
           <div key={t.id} className="ag-turn">
             <div className="ag-ask">{t.instruction}</div>
             <div className="ag-reply">
-              <AgentFace persona={persona} />
+              <Face />
               <div className="ag-reply-body">
                 <Steps calls={t.calls} />
                 {t.summary ? <div className="ag-summary">{t.summary}</div> : null}
@@ -234,14 +262,14 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
             </div>
           </div>
         ))}
-        {busy ? <Working /> : null}
+        {busy ? <Working activity={activity} /> : null}
         {error ? <p className="sc-write-msg is-error">{error}</p> : null}
       </div>
 
       <form className="ag-composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
         {contextUsable ? (
           <div className="ag-ctx">
-            <button type="button" className={useContext ? "ag-ctx-chip on" : "ag-ctx-chip"} onClick={() => setUseContext((v) => !v)} aria-pressed={useContext} title={useContext ? "The agent will apply your instruction to this paragraph unless you name another" : "Click to point the agent at this paragraph"}>
+            <button type="button" className={useContext ? "ag-ctx-chip on" : "ag-ctx-chip"} onClick={() => setUseContext((v) => !v)} aria-pressed={useContext} title={useContext ? `${AGENT_NAME} will apply your instruction to this paragraph unless you name another` : `Click to point ${AGENT_NAME} at this paragraph`}>
               <span>¶ {context.index}</span>
               <span className="ag-ctx-text">{context.text}</span>
             </button>
@@ -253,7 +281,7 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
             ref={inputRef}
             className="ag-input"
             rows={1}
-            placeholder={blocked ? "Save your edits first, so the agent works from the current text" : pending ? "Accept or reject the proposal above first" : "What should change?"}
+            placeholder={blocked ? `Save your edits first, so ${AGENT_NAME} works from the current text` : pending ? "Accept or reject the proposal above first" : "What should change?"}
             value={instruction}
             disabled={busy || Boolean(pending) || blocked}
             onChange={(e) => { setInstruction(e.target.value); grow(); }}

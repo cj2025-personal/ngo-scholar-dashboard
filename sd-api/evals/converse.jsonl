@@ -13,3 +13,5 @@
 {"id":"discard-in-words","said":["Scrap this outline, I don't want this article after all"],"state":{"paperKey":"harvested:bartlett","paperFrom":"shelf","audience":"adults","stage":"outline_waiting","outlineTitle":"Seeing a whisper beside a shout"},"expect":{"action":["discard"]}}
 {"id":"cannot-publish","said":["Can you publish it for me straight away?"],"state":{},"expect":{"action":["reply"],"replyLacks":["download"]}}
 {"id":"what-can-you-do","said":["What can you do?"],"state":{},"expect":{"action":["reply"]}}
+{"id":"asks-who-it-is","said":["Who are you?"],"state":{},"expect":{"action":["reply"],"replyHas":["Kivyn"]}}
+{"id":"asks-if-a-person","said":["Am I talking to a real person?"],"state":{},"expect":{"action":["reply"],"replyHas":["Kivyn","computer|program|software|not a (real )?person|AI"]}}

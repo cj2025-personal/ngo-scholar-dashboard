@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import Kivyn from "@/components/kivyn/Kivyn";
+
 /**
  * The draft being written, on the page, as it is written.
  *
@@ -55,11 +57,13 @@ export default function DraftStream({ title = "", beats = [], sections = [] }) {
 
   const done = new Set(sections.map((s) => s.index));
   const arrived = beats.filter((b) => done.has(b.index)).length;
+  /* Writing while sections are still to come; once every one is in, the draft is being checked. */
+  const allIn = arrived >= beats.length;
   let remaining = typed;
   return (
     <div className="ds-stream" aria-live="polite" aria-busy={arrived < beats.length}>
       {title ? <h1 className="ds-title">{title}</h1> : null}
-      <p className="ds-status"><span className="ag-spinner" aria-hidden /> {arrived >= beats.length ? "Every section written · checking it against the paper and assembling the draft…" : `Writing section ${Math.min(arrived + 1, beats.length)} of ${beats.length}${arrived ? ` · ${arrived} written` : ""}`}</p>
+      <p className="ds-status"><Kivyn pose={allIn ? "checking" : "writing"} size={40} live /> {allIn ? "Every section written · checking it against the paper and assembling the draft…" : `Writing section ${Math.min(arrived + 1, beats.length)} of ${beats.length}${arrived ? ` · ${arrived} written` : ""}`}</p>
       {units.map((u) => {
         if (remaining <= 0) return null;
         const show = u.words.slice(0, remaining);

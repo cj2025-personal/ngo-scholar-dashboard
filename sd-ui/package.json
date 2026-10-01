@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:e2e": "playwright test",
-    "brand:lockup": "node scripts/brand-lockup.js"
+    "brand:lockup": "node scripts/brand-lockup.js",
+    "brand:kivyn": "node scripts/kivyn-assets.mjs"
   },
   "dependencies": {
     "next": "16.3.5",

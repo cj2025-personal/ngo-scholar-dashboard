@@ -132,6 +132,31 @@ test("the loop applies calls, feeds results back, stops on finish, and reports",
   assert.equal(r.usage.length, 2);
 });
 
+test("the loop says each step before it does it, and what each tool found after", async () => {
+  const s = stateFromStory(story);
+  const events = [];
+  const order = [];
+  const generate = async ({ contents }) => {
+    order.push("model");
+    const fcs = contents.length === 1
+      ? [{ name: "search_passages", args: { query: "suspended allocations" } }, { name: "replace_block", args: { index: 2, text: "Twelve boards suspended allocations.", passage_ids: ["p2"] } }]
+      : [{ name: "finish", args: { summary: "Shortened block 2." } }];
+    return { text: "", functionCalls: fcs, parts: fcs.map((fc) => ({ functionCall: fc })) };
+  };
+  const search = async () => { order.push("search"); return [{ id: "p2", text: passages[0].text, score: 0.77 }]; };
+  const onProgress = async (e) => { events.push(e); order.push(`${e.phase}${e.tool ? `:${e.tool}` : ""}`); };
+  await runStoryAgent({ state: s, passages, instruction: "shorten block 2", generate, isVerbatim: () => true, search, onProgress });
+  assert.deepEqual(order, [
+    "think", "model",
+    "start:search_passages", "search", "done:search_passages",
+    "start:replace_block", "done:replace_block",
+    "think", "model",
+    "start:finish", "done:finish",
+  ], "every step is announced before the work, so nothing finished is ever shown as under way");
+  assert.deepEqual(events.filter((e) => e.phase === "think").map((e) => e.round), [1, 2]);
+  assert.match(events.find((e) => e.phase === "done" && e.tool === "replace_block").result, /^ok/);
+});
+
 test("a write is read by the voice judge before it lands; what it finds is refused with its reason, and the agent can write it again", async () => {
   const s = stateFromStory(story);
   assert.deepEqual(voiceTexts(s, { name: "replace_block", args: { index: 2, text: "We measured it." } }), [{ label: "block 2", text: "We measured it." }]);

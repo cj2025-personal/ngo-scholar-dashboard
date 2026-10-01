@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FaTriangleExclamation } from "react-icons/fa6";
 
 import { acknowledgeStoryRecord } from "@/lib/drafting";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
  * The scientific record has moved against this article's source.
@@ -44,7 +45,7 @@ export default function RecordBanner({ storyId, record, status, onAskAgent, onUn
           {record.acknowledgedAt ? " · seen" : ""}
         </div>
         <div className="rec-actions">
-          <button type="button" className="sc-write-secondary st-btn" onClick={() => onAskAgent?.(instruction)}>Have the agent draft a notice</button>
+          <button type="button" className="sc-write-secondary st-btn" onClick={() => onAskAgent?.(instruction)}>Have {AGENT_NAME} draft a notice</button>
           {status !== "draft" ? <button type="button" className="sc-write-secondary st-btn" onClick={onUnpublish}>Take it down</button> : null}
           {!record.acknowledgedAt ? <button type="button" className="st-link" disabled={busy} onClick={acknowledge}>I have seen this</button> : null}
         </div>

@@ -3,19 +3,22 @@
 import { useState } from "react";
 import { FaXmark } from "react-icons/fa6";
 
-import { FACES, TONES, usePersona } from "@/lib/persona";
-import AgentFace from "./AgentFace";
+import Kivyn from "@/components/kivyn/Kivyn";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
  * The scholar's agent as a personal helper: one pane, shaped like a
  * messaging app rather than a toolbox.
  *
- * At the top, who it is: a name and a face the scholar chose, and a line
- * under the name saying what it is doing right now. Tapping it opens what
- * the agent may and may not do, the story's history, its terms, and the
- * controls to rename it. Along the foot, the sections: Chat, Ideas, Checks,
- * Sources, whichever apply to the page. Between them, whatever the current
- * section shows.
+ * At the top, who it is: Kivyn, drawn doing what the agent is doing right
+ * now, and a line under the name saying it in words. Tapping it opens what
+ * Kivyn may and may not do, the story's history and its terms. Along the
+ * foot, the sections: Chat, Ideas, Checks, Sources, whichever apply to the
+ * page. Between them, whatever the current section shows.
+ *
+ * One name and one face, the same for every scholar: Kivyn is the product's
+ * character, not a costume each person dresses, so a screenshot, a help page
+ * and a colleague's screen all show the same helper.
  *
  * Three pieces rather than one wrapper, because the new-story agent holds a
  * running job and must keep its place in the tree while the page rearranges
@@ -27,23 +30,15 @@ import AgentFace from "./AgentFace";
  * had, so the way the studio is driven and tested is unchanged.
  */
 
-export const STUDIO_PERSONA_KEY = "sd:studio-agent";
-export const STUDIO_PERSONA_DEFAULT = { name: "Agent", face: "A", tone: "navy" };
-
-export function useStudioPersona() {
-  return usePersona(STUDIO_PERSONA_KEY, STUDIO_PERSONA_DEFAULT);
-}
-
-/** The head: face, name, and the line saying what the agent is doing. */
-export function AgentIdentity({ status, busy = false, about, onAbout, onClose, closeLabel = "Close the agent" }) {
-  const [persona] = useStudioPersona();
+/** The head: Kivyn in its pose, its name, and the line saying what it is doing. */
+export function AgentIdentity({ status, busy = false, pose = "neutral", about, onAbout, onClose, closeLabel = `Close ${AGENT_NAME}` }) {
   return (
     <div className="rc-head ws-agent-head">
-      <button type="button" className="rc-identity ws-identity" onClick={() => onAbout(!about)} aria-expanded={about} title="Who this is, what it may do, and what it did">
-        <AgentFace persona={persona} size="md" />
+      <button type="button" className="rc-identity ws-identity" onClick={() => onAbout(!about)} aria-expanded={about} title={`Who ${AGENT_NAME} is, what it may do, and what it did`}>
+        <Kivyn pose={pose} size={52} live />
         <span className="rc-identity-text">
-          <b>{persona.name}</b>
-          <span className={`rc-status${busy ? " is-busy" : ""}`}>{busy ? <span className="ag-spinner rc-step-spinner" aria-hidden /> : null}{status}</span>
+          <b>{AGENT_NAME}</b>
+          <span className={`rc-status${busy ? " is-busy" : ""}`}>{status}</span>
         </span>
       </button>
       {onClose ? <button type="button" className="ag-rail-close" aria-label={closeLabel} onClick={onClose}><FaXmark size={13} aria-hidden /></button> : null}
@@ -51,32 +46,21 @@ export function AgentIdentity({ status, busy = false, about, onAbout, onClose, c
   );
 }
 
-/** Behind the face: rename it, what it may do, its terms, what it did. */
+/** Behind the face: who Kivyn is, what it may do, its terms, what it did. */
 export function AgentAbout({ onClose, permissions, termsVersion = null, onTerms, activity = null, activityTitle = "What it did" }) {
-  const [persona, setPersona] = useStudioPersona();
-  const [name, setName] = useState(persona.name);
-  const commitName = () => setPersona({ ...persona, name: name.trim().slice(0, 24) || STUDIO_PERSONA_DEFAULT.name });
   return (
     <div className="rc-about ws-about">
-      <div className="rc-about-head">
-        <AgentFace persona={persona} size="lg" />
-        <div className="rc-about-name">
-          <label className="rc-about-label" htmlFor="ws-agent-name">Name</label>
-          <input id="ws-agent-name" className="rc-name-input" value={name} maxLength={24} onChange={(e) => setName(e.target.value)} onBlur={commitName} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitName(); e.currentTarget.blur(); } }} />
+      <div className="rc-about-head ws-about-hero">
+        <Kivyn pose="neutral" size={88} live />
+        <div className="ws-about-who">
+          <b className="ws-about-name">{AGENT_NAME}</b>
+          <p className="ws-about-intro">A computer helper that reads your papers, drafts with you, and shows the passage behind what it writes.</p>
         </div>
-        <button type="button" className="ag-rail-close" onClick={onClose} aria-label="Back to the agent"><FaXmark size={12} aria-hidden /></button>
-      </div>
-      <div className="rc-about-row">
-        <span className="rc-about-label">Face</span>
-        <div className="rc-faces">{FACES.map((f) => <button key={f} type="button" className={`rc-face-pick${persona.face === f ? " on" : ""}`} aria-pressed={persona.face === f} onClick={() => setPersona({ ...persona, face: f })}>{f}</button>)}</div>
-      </div>
-      <div className="rc-about-row">
-        <span className="rc-about-label">Colour</span>
-        <div className="rc-tones">{TONES.map((t) => <button key={t} type="button" className={`rc-tone-pick is-${t}${persona.tone === t ? " on" : ""}`} aria-pressed={persona.tone === t} aria-label={t} onClick={() => setPersona({ ...persona, tone: t })} />)}</div>
+        <button type="button" className="ag-rail-close" onClick={onClose} aria-label={`Back to ${AGENT_NAME}`}><FaXmark size={12} aria-hidden /></button>
       </div>
 
       <div className="rc-about-section">
-        <p className="rc-tab-title">What {persona.name} may do</p>
+        <p className="rc-tab-title">What {AGENT_NAME} may do</p>
         <ul className="rc-permissions">
           {permissions.map((p) => <li key={p.text} className={p.allowed ? "is-yes" : "is-no"}><span aria-hidden>{p.allowed ? "✓" : "✕"}</span> {p.text}</li>)}
         </ul>
@@ -143,6 +127,7 @@ export const STUDIO_PERMISSIONS = [
  * @param {object} p
  * @param {string} p.status
  * @param {boolean} [p.busy]
+ * @param {string} [p.pose]   what Kivyn is drawn doing; see lib/kivyn/pose.mjs
  * @param {{key:string,label:string,icon:string,badge?:number}[]} p.tabs
  * @param {string} p.tab
  * @param {(key:string)=>void} p.onTab
@@ -152,11 +137,11 @@ export const STUDIO_PERMISSIONS = [
  * @param {string} [p.activityTitle]
  * @param {import("react").ReactNode} p.children   the current tab's body
  */
-export default function StudioAgentShell({ status, busy = false, tabs, tab, onTab, termsVersion = null, onTerms, activity = null, activityTitle, children }) {
+export default function StudioAgentShell({ status, busy = false, pose = "neutral", tabs, tab, onTab, termsVersion = null, onTerms, activity = null, activityTitle, children }) {
   const [about, setAbout] = useState(false);
   return (
     <div className="ag-panel ws-agent">
-      <AgentIdentity status={status} busy={busy} about={about} onAbout={setAbout} />
+      <AgentIdentity status={status} busy={busy} pose={pose} about={about} onAbout={setAbout} />
       {about ? (
         <AgentAbout onClose={() => setAbout(false)} permissions={STUDIO_PERMISSIONS} termsVersion={termsVersion} onTerms={onTerms} activity={activity} activityTitle={activityTitle} />
       ) : (

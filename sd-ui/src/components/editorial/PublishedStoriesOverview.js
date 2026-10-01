@@ -10,6 +10,7 @@ import {
 } from "react-icons/hi2";
 
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
  * Stories: everything the scholar has written, in one list.
@@ -211,7 +212,7 @@ export default function PublishedStoriesOverview({
               {tab === "published"
                 ? "Publish a story and it will appear here."
                 : tab === "all"
-                  ? "A story starts from one of your papers. The agent proposes an outline before it writes a word."
+                  ? `A story starts from one of your papers. ${AGENT_NAME} proposes an outline before it writes a word.`
                   : "Nothing in this state right now."}
             </p>
             {tab === "all" || tab === "drafts" ? (

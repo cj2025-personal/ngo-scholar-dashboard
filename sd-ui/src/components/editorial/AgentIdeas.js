@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 
+import Kivyn from "@/components/kivyn/Kivyn";
+import { AGENT_NAME, poseForStep } from "@/lib/kivyn/pose.mjs";
+
 import { getAgentIdeas } from "@/lib/drafting";
 
 /**
@@ -48,13 +51,13 @@ export default function AgentIdeas({ storyId = null, version = null, paperKey = 
   return (
     <div className="rc-tab ws-ideas">
       <p className="rc-tab-title">Ideas</p>
-      <p className="st-muted rc-tab-note">{note || "Things the agent could do next, after reading this page. Tap one to put it in the chat; change it before you send."}</p>
+      <p className="st-muted rc-tab-note">{note || `Things ${AGENT_NAME} could do next, after reading this page. Tap one to put it in the chat; change it before you send.`}</p>
       {loading ? (
-        <div className="ag-working" role="status" aria-live="polite"><div className="ag-working-line"><span className="ag-spinner" aria-hidden /> Reading the page for ideas…</div></div>
+        <div className="ag-working has-kv" role="status" aria-live="polite"><Kivyn pose={poseForStep("ideas")} size={48} live /><div className="ag-working-body"><div className="ag-working-line">Reading the page for ideas…</div></div></div>
       ) : got.error ? (
         <p className="st-muted rc-tab-note">{got.error}</p>
       ) : !got.groups.length ? (
-        <p className="st-muted rc-tab-note">No ideas just now. Tell the agent in Chat what you want instead.</p>
+        <p className="st-muted rc-tab-note">No ideas just now. Tell {AGENT_NAME} in Chat what you want instead.</p>
       ) : got.groups.map((g) => (
         <div key={g.title} className="rc-ask-group">
           <p className="rc-ask-group-title">{g.title}</p>

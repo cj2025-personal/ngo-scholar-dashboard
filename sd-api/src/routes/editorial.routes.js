@@ -27,6 +27,8 @@ const { env } = require("../config/env");
 const { readServiceToken, secretsMatch } = require("../lib/service-auth");
 const { getDb } = require("../db/mongo");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
+const { describeError } = require("../middleware/error.middleware");
+const { wantsEventStream, openEventStream } = require("../lib/eventStream");
 
 const router = express.Router();
 
@@ -399,6 +401,11 @@ router.get(
  * Tell the agent what to change. Returns a proposal: the summary, the
  * changes block by block, and the checks on what it wrote. The stored story
  * is untouched until the proposal is accepted.
+ *
+ * Asked with `Accept: text/event-stream`, the turn is streamed as it happens:
+ * a `progress` frame for each step (reading, each tool the agent calls and
+ * what it found, the checks), then a `turn` frame with the same body the JSON
+ * reply carries, or an `error` frame saying what the JSON error would.
  */
 router.post(
   "/:storyId/agent",
@@ -408,14 +415,27 @@ router.post(
     const instruction = typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
     if (!instruction) throw new ApiError(400, "Say what you'd like changed.");
     if (instruction.length > 2000) throw new ApiError(400, "Keep an instruction under 2,000 characters.");
-    const result = await askStoryAgent({
+    const ask = {
       storyId: req.params.storyId,
       scholarId: req.auth.user.scholar_id,
       profileId: req.auth.user.profile_id,
       user: req.auth.user,
       instruction,
-    });
-    res.status(200).json(result);
+    };
+    if (!wantsEventStream(req)) {
+      res.status(200).json(await askStoryAgent(ask));
+      return;
+    }
+    const stream = openEventStream(res);
+    try {
+      const result = await askStoryAgent({ ...ask, onProgress: async (e) => stream.send("progress", e) });
+      stream.send("turn", result);
+    } catch (error) {
+      const { status, body } = describeError(error, req);
+      stream.send("error", { status, ...body });
+    } finally {
+      stream.end();
+    }
   }),
 );
 

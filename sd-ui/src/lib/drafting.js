@@ -15,6 +15,8 @@
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000";
 
+const UNREACHABLE = "We couldn't reach the server. Check your connection and try again.";
+
 async function request(path, init) {
   let response;
   try {
@@ -24,9 +26,12 @@ async function request(path, init) {
       ...init,
     });
   } catch {
-    return { ok: false, data: null, error: "We couldn't reach the server. Check your connection and try again." };
+    return { ok: false, data: null, error: UNREACHABLE };
   }
+  return readResult(response);
+}
 
+async function readResult(response) {
   let data = null;
   try {
     data = await response.json();
@@ -274,13 +279,70 @@ export async function acceptAiTerms(version) {
   });
 }
 
-/** Tell the agent what to change. Returns `{ turn }` with a proposal to accept or reject. */
-export async function askStoryAgent(storyId, instruction) {
-  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/agent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ instruction }),
-  });
+/**
+ * Tell the agent what to change. Returns `{ turn }` with a proposal to accept or reject.
+ *
+ * The turn is asked for as a stream, so the page can show each step as the
+ * agent takes it — `onProgress({ step, message, tool, refused, detail })` —
+ * and the turn arrives as the last frame. A server or a proxy that answers
+ * with plain JSON instead gives the same result, with no steps on the way.
+ */
+export async function askStoryAgent(storyId, instruction, { onProgress = () => {} } = {}) {
+  let response;
+  try {
+    response = await fetch(`${AUTH_API_URL}/api/editorial-stories/${encodeURIComponent(storyId)}/agent`, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream, application/json" },
+      body: JSON.stringify({ instruction }),
+    });
+  } catch {
+    return { ok: false, data: null, error: UNREACHABLE };
+  }
+  if (!/text\/event-stream/.test(response.headers.get("content-type") || "") || !response.body) return readResult(response);
+
+  let result = null;
+  try {
+    await readEventStream(response.body, (event, data) => {
+      if (event === "progress") onProgress(data);
+      else if (event === "turn") result = { ok: true, data, error: null };
+      else if (event === "error") result = { ok: false, data: null, error: data?.error || "That did not complete. Try again in a moment." };
+    });
+  } catch {
+    /* The connection dropped mid-turn. */
+  }
+  /* A stream that ended without its last frame: the turn may still have been
+     saved on the server, and the thread shows it on the next load. */
+  return result || { ok: false, data: null, error: "The connection closed before the change was ready. Reload the page in a moment to see whether it arrived." };
+}
+
+/** Read Server-Sent Events from a fetch body, frame by frame, until it ends. */
+async function readEventStream(body, onFrame) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+    let end;
+    while ((end = buffer.indexOf("\n\n")) >= 0) {
+      const raw = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      let event = "message";
+      const data = [];
+      for (const line of raw.split("\n")) {
+        if (line.startsWith(":")) continue; // a keep-alive
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+      }
+      if (!data.length) continue;
+      let parsed = null;
+      try { parsed = JSON.parse(data.join("\n")); } catch { continue; }
+      onFrame(event, parsed);
+    }
+  }
 }
 
 export async function listStoryTurns(storyId) {
@@ -414,6 +476,7 @@ const STEP_LABELS = {
   judge_reach: "Checking what the draft draws from the paper…",
   judge_context: "Checking your own context for what it claims of the paper…",
   assemble: "Assembling the draft…",
+  review_article: "Reading the whole article: its headings, whose pronoun, its rhythm…",
   verify: "Reading the draft as its reader would…",
   create_story: "Opening the draft in your workspace…",
 };

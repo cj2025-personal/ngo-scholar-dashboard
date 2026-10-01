@@ -77,11 +77,42 @@ function viewTurn(doc, { withProposal = true } = {}) {
   });
 }
 
-async function askStoryAgent({ storyId, scholarId, profileId, user, instruction }) {
+/* What each tool is, said as the step under way. The page shows these while
+   the turn runs, and draws Kivyn doing the same thing. */
+const TOOL_STEPS = {
+  search_passages: "Searching the paper",
+  replace_block: "Rewriting a block",
+  insert_block: "Writing a new block",
+  delete_block: "Removing a block",
+  move_block: "Moving a block",
+  set_heading_fields: "Changing the heading",
+  add_image: "Planning an illustration",
+  finish: "Summing up what changed",
+};
+
+/** A tool's result, short enough to show as it lands: a search says how much it found, never the passages. */
+function stepDetail(tool, result) {
+  const text = String(result || "");
+  if (tool === "search_passages") {
+    const found = (text.match(/^\[[^\]]+\]/gm) || []).length;
+    return found ? `${found} passage${found === 1 ? "" : "s"} close to it` : "nothing close to it in the paper";
+  }
+  const said = text.replace(/^(ok|refused):\s*/, "");
+  return said.length > 160 ? `${said.slice(0, 159).trim()}…` : said;
+}
+
+/**
+ * @param {object} p
+ * @param {(e:{step:string, message?:string, tool?:string, refused?:boolean, detail?:string})=>Promise<void>} [p.onProgress]
+ *        the turn as it happens, each step said before it is done: reading,
+ *        the agent's own tool calls and what each found, then the checks.
+ */
+async function askStoryAgent({ storyId, scholarId, profileId, user, instruction, onProgress = async () => {} }) {
   if (!vertex.isConfigured()) throw new ApiError(503, `The story agent is not available on this deployment. ${vertex.describeMissingConfig()}`);
 
   const { db } = await getCollections();
   const storyDoc = await editorial.findOwnedStory({ storyId, scholarId, profileId });
+  await onProgress({ step: "read_draft", message: "Reading the draft and the paper" });
   const mapped = editorial.mapStoryDocument(storyDoc, null, null);
   const passages = await passagesFor(db, storyDoc);
   const turns = db.collection(COLLECTIONS.storyTurns);
@@ -109,6 +140,11 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const result = await agent.runStoryAgent({
     state: stateBefore, passages, instruction, history, audience, voice, scholarName: author?.name || null, generate,
     judgeVoice: router.bound("drafting.voice"), imagesAllowed: imageGen.isConfigured(), isVerbatim, search, limits: studio.edit,
+    onProgress: async (e) => {
+      if (e.phase === "think") await onProgress({ step: "think", message: e.round === 1 ? "Deciding what to change" : "Deciding what to do next" });
+      else if (e.phase === "start") await onProgress({ step: "tool", tool: e.tool, message: TOOL_STEPS[e.tool] || "Working" });
+      else if (e.phase === "done") await onProgress({ step: "tool_done", tool: e.tool, refused: /^refused/.test(String(e.result || "")), detail: stepDetail(e.tool, e.result) });
+    },
   });
 
   /* Check what the agent wrote, and only that: paragraphs drawn from the
@@ -118,6 +154,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   let judgeCall = null;
   let reachCall = null;
   if (changed.length && passages.length) {
+    await onProgress({ step: "check_changes", message: `Checking ${changed.length === 1 ? "the change" : `${changed.length} changed paragraphs`} against the passages` });
     const judged = await fidelity.judgeSection({ blocks: changed.map(({ b }) => b), passages, generate });
     const reached = await reach.judgeSection({ blocks: judged.blocks, passages, audience, generate });
     reached.blocks.forEach((jb, k) => { result.state.blocks[changed[k].i] = { ...result.state.blocks[changed[k].i], fidelity: jb.fidelity || null, reach: jb.reach || null }; });
@@ -134,6 +171,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const imageFailures = [];
   const failedImageIndexes = new Set();
   let imageIndex = 0;
+  if (result.state.blocks.some((b) => b.type === "image" && b.pending)) await onProgress({ step: "illustrate", message: "Drawing the illustration" });
   for (let i = 0; i < result.state.blocks.length; i += 1) {
     const b = result.state.blocks[i];
     if (b.type !== "image" || !b.pending) continue;
@@ -178,6 +216,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   /* An editor model reads the draft as it would be, for its reader; the formula's grade is evidence and display. */
   let readability = null;
   if (prose) {
+    await onProgress({ step: "check_reading_level", message: "Reading it as its reader would" });
     const measured = assessDraftReadability({ text: prose, audience });
     const ruling = await bandJudge.judgeBand({ text: prose, audience, measured, generate: router.bound("drafting.band") });
     readability = placeReadability(measured, ruling);

@@ -6,6 +6,7 @@ import { AUDIENCE_TARGETS, normaliseAudience } from "@/lib/readability";
 import { FaCheck, FaCircleInfo, FaTriangleExclamation } from "react-icons/fa6";
 
 import { DRAFT_AUDIENCES, checkStoryRecord, getStoryReadingLevel } from "@/lib/drafting";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
  * The checks on this draft, as it stands right now.
@@ -170,7 +171,7 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
                 className="ck-cta"
                 onClick={() => onAskAgent(`Rewrite the article so it reads right for ${target.label}${ruled?.judged?.guidance ? `: ${ruled.judged.guidance}` : "."} Keep every fact and add none.`)}
               >
-                Ask the agent to fit it to {band.toLowerCase()}
+                Ask {AGENT_NAME} to fit it to {band.toLowerCase()}
               </button>
             ) : null}
           </>
@@ -204,7 +205,7 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
             <span id="ck-verify-title" className="ck-card-title">To verify</span>
             <span className={`ck-chip ${s.unverified ? "is-warn" : "is-ok"}`}>{s.unverified ? `${s.unverified} of ${s.toVerify} left` : "All verified"}</span>
           </header>
-          <p className="ck-card-note">The agent brought these in from outside the paper, in your own context. Tick each once you have checked it, or cut it. The story cannot be published while any is unticked.</p>
+          <p className="ck-card-note">{AGENT_NAME} brought these in from outside the paper, in your own context. Tick each once you have checked it, or cut it. The story cannot be published while any is unticked.</p>
           <div className="ck-verify">
             {verifyItems(blocks).map((v) => (
               <label key={`${v.blockId}-${v.itemIndex}`} className={v.verified ? "ck-verify__row is-done" : "ck-verify__row"}>

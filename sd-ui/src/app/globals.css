@@ -4647,3 +4647,89 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
   .ws-toast.sc-write-msg, .pc-modal, .pc-scrim, .ck-level.is-reading .ck-ruling { animation: none; }
   .ck-card, .pc-item, .lv-wrap.is-folded .lv-fold, .ck-level .ck-pin, .pc-meter > span { transition: none; }
 }
+
+/* ══ Kivyn ══════════════════════════════════════════════════════════════════
+   The agent's face and figure, drawn inline by components/kivyn/Kivyn.js
+   from lib/kivyn/art.mjs. Paint is by role, from the theme; motion is by
+   layer, only on a `kv-live` Kivyn, only for work under way, and only when
+   the reader has not asked for less motion. Distances are in the drawing's
+   own units (a 400-unit grid), so a move reads the same at every size.
+   ═══════════════════════════════════════════════════════════════════════ */
+.kv {
+  --kv-line: var(--ark-navy, #1e3a8a);
+  --kv-page: var(--ark-surface, #ffffff);
+  --kv-fold: #eef3fb;
+  --kv-accent: var(--ark-red, #b22234);
+  display: inline-block; flex: 0 0 auto; vertical-align: middle; overflow: visible;
+}
+/* On navy, the page is the shape; a navy line would vanish into it. */
+.kv-on-dark { --kv-line: var(--ark-navy-ink, #172554); }
+.kv-line { fill: none; stroke: var(--kv-line); stroke-linecap: round; stroke-linejoin: round; }
+.kv-crease, .kv-faint { fill: none; stroke: var(--kv-line); stroke-linecap: round; opacity: 0.3; }
+.kv-outline { fill: none; stroke: var(--kv-line); stroke-linejoin: round; }
+.kv-page, .kv-shine { fill: var(--kv-page); }
+.kv-card { fill: var(--kv-page); stroke: var(--kv-line); stroke-linejoin: round; }
+.kv-fold { fill: var(--kv-fold); stroke: var(--kv-line); stroke-linejoin: round; }
+.kv-tint { fill: var(--kv-fold); }
+.kv-ink { fill: var(--kv-line); }
+.kv-accent { fill: var(--kv-accent); }
+.kv-ground { fill: var(--kv-line); opacity: 0.1; }
+.kv-glass { fill: var(--kv-page); opacity: 0.6; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* At rest: a blink now and then, nothing else. */
+  .kv-live .kv-p-eye { transform-box: fill-box; transform-origin: center; animation: kv-blink 5.2s ease-in-out infinite; }
+  .kv-live.kv-pose-done .kv-p-eye { animation: none; }
+  .kv-live .kv-p-eye-right { animation-delay: 0.04s; }
+
+  /* Reading: the eyes go along the line and down. */
+  .kv-live.kv-pose-reading .kv-p-face { animation: kv-read 2.6s ease-in-out infinite; }
+  /* Searching: the pages fan and settle, one after the other. */
+  .kv-live.kv-pose-searching .kv-p-sheet-1,
+  .kv-live.kv-pose-searching .kv-p-sheet-2 { transform-box: view-box; transform-origin: 105px 300px; animation: kv-leaf 1.9s ease-in-out infinite; }
+  .kv-live.kv-pose-searching .kv-p-sheet-2 { animation-delay: 0.32s; }
+  .kv-live.kv-pose-searching .kv-p-face { animation: kv-glance 3.8s ease-in-out infinite; }
+  /* Writing: the pencil keeps time, and the line it writes appears. */
+  .kv-live.kv-pose-writing .kv-p-pencil { transform-box: view-box; transform-origin: 351px 302px; animation: kv-pencil 0.42s ease-in-out infinite alternate; }
+  .kv-live.kv-pose-writing .kv-p-script .kv-line { stroke-dasharray: 1; animation: kv-write 1.7s linear infinite; }
+  /* Checking: the lens drifts across, held from the hand. */
+  .kv-live.kv-pose-checking .kv-p-magnifier { transform-box: view-box; transform-origin: 306px 241px; animation: kv-lens 2.4s ease-in-out infinite; }
+  /* Tracing: the thread runs from the hand to the passage, which lights. */
+  .kv-live.kv-pose-tracing .kv-p-thread .kv-line { animation: kv-thread 0.9s linear infinite; }
+  .kv-live.kv-pose-tracing .kv-p-passage .kv-tint { animation: kv-glow 1.8s ease-in-out infinite; }
+  .kv-live.kv-pose-tracing .kv-p-lift { animation: kv-glow 1.8s ease-in-out infinite; }
+  /* The two moments play once and hold. */
+  .kv-live.kv-pose-cant-answer .kv-p-arms { animation: kv-open 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .kv-live.kv-pose-done .kv-p-figure { animation: kv-hop 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .kv-live.kv-pose-done .kv-p-fold-back { animation: kv-fade-in 0.7s ease-out both; }
+}
+@keyframes kv-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.12); } }
+@keyframes kv-read { 0%, 100% { transform: translate(-6px, -1px); } 45% { transform: translate(6px, 0); } 55% { transform: translate(6px, 2px); } 90% { transform: translate(-6px, 2px); } }
+@keyframes kv-glance { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-4px, -2px); } }
+@keyframes kv-leaf { 0%, 100% { transform: rotate(0deg); } 40% { transform: rotate(-6deg); } }
+@keyframes kv-pencil { from { transform: rotate(-5deg); } to { transform: rotate(4deg); } }
+@keyframes kv-write { 0% { stroke-dashoffset: 1; } 70%, 100% { stroke-dashoffset: 0; } }
+@keyframes kv-lens { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(5deg); } }
+@keyframes kv-thread { from { stroke-dashoffset: 9.5; } to { stroke-dashoffset: 0; } }
+@keyframes kv-glow { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@keyframes kv-open { from { transform: translateY(16px); } to { transform: translateY(0); } }
+@keyframes kv-hop { 0% { transform: translateY(0); } 35% { transform: translateY(-14px); } 70% { transform: translateY(3px); } 100% { transform: translateY(0); } }
+@keyframes kv-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Where Kivyn sits. */
+.ws-identity .kv { margin: -6px 0 -6px -4px; }
+.ag-reply > .kv, .ch-msg > .kv { margin-top: 2px; }
+.ch-wrap .ch-msg > .kv-mark { margin-top: 4px; }
+.ag-nudge { padding-left: 8px; gap: 8px; }
+.ag-nudge .kv { margin: -2px 0; }
+/* Working: the figure doing the step, beside the words saying it. */
+.ag-working.has-kv { flex-direction: row; align-items: center; gap: 12px; }
+.ag-working.has-kv .ag-working-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ag-working.has-kv .ag-steps { margin-top: 2px; }
+.ch-msg.is-working { align-items: center; }
+.ch-msg.is-working > .kv { margin-top: 0; }
+.ds-status .kv { margin: -6px 0 -6px -4px; }
+.ws-about-hero { display: flex; align-items: center; gap: 14px; }
+.ws-about-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ws-about-name { font-family: var(--sd-display); font-size: 20px; font-weight: 700; color: var(--sd-heading); }
+.ws-about-intro { margin: 0; font-size: 13px; line-height: 1.5; color: var(--sd-muted); }

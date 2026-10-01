@@ -596,6 +596,84 @@ test("the scholar edits by instruction: a proposal with checks, accepted onto th
   assert.equal(list.data.turns[0].proposal, undefined, "resolved turns do not carry their proposal");
 });
 
+/** POST, asking for the work as it happens; every frame until the stream ends. */
+async function streamCall(p, body) {
+  const res = await fetch(`${base}${p}`, {
+    method: "POST",
+    headers: { Cookie: `sd_session=${cookie}`, "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify(body),
+  });
+  const frames = [];
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const raw = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      if (!raw.trim() || raw.startsWith(":")) continue;
+      const frame = {};
+      for (const line of raw.split("\n")) {
+        const m = line.match(/^(\w+): ?(.*)$/);
+        if (m) frame[m[1]] = m[2];
+      }
+      if (frame.data) frame.data = JSON.parse(frame.data);
+      frames.push(frame);
+    }
+  }
+  return { status: res.status, type: res.headers.get("content-type") || "", frames };
+}
+
+test("asked for a stream, the agent's turn arrives step by step, each said before it is done, then the same turn the reply carries", async () => {
+  const before = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
+  /* A paragraph the paper still carries, long enough to shorten (the one
+     edited by instruction above is a sentence already), whose first sentence
+     the voice judge will let stand: in the scholar's own account, "the
+     authors" is the scholar, and that write is rightly sent back. */
+  const firstSentence = (b) => String(b.html || "").replace(/<[^>]+>/g, " ").trim().split(/(?<=[.!?])\s+/);
+  const n = before.bodyBlocks.findIndex((b) => b.type === "paragraph" && b.traceable === true && b.sourceRefs?.length && firstSentence(b).length > 1 && !/\b(authors?|I|we|our|my)\b/i.test(firstSentence(b)[0])) + 1;
+  assert.ok(n > 0, "there is a paragraph to shorten");
+  const streamed = await streamCall(`/api/editorial-stories/${state.storyId}/agent`, { instruction: `shorten paragraph ${n}` });
+  assert.equal(streamed.status, 200);
+  assert.match(streamed.type, /text\/event-stream/);
+  const steps = streamed.frames.filter((f) => f.event === "progress").map((f) => f.data.step);
+  assert.equal(steps[0], "read_draft", "reading comes first");
+  assert.equal(steps[1], "think");
+  const firstTool = steps.indexOf("tool");
+  assert.ok(firstTool > 1, JSON.stringify(steps));
+  assert.ok(steps.indexOf("tool_done") > firstTool, "a tool is announced before what it found");
+  assert.ok(steps.indexOf("check_changes") > steps.lastIndexOf("tool_done"), `the change is checked after the agent has written it: ${JSON.stringify(streamed.frames.map((f) => f.event === "progress" ? [f.data.step, f.data.tool || ""] : f.event))}`);
+  assert.ok(steps.includes("check_reading_level"));
+  const written = streamed.frames.find((f) => f.event === "progress" && f.data.step === "tool" && f.data.tool === "replace_block");
+  assert.equal(written.data.message, "Rewriting a block", "each step is said in words the page can show");
+  for (const f of streamed.frames.filter((x) => x.event === "progress" && x.data.step === "tool_done")) {
+    assert.ok(String(f.data.detail || "").length <= 160, "a step's result is a line, never the passages it found");
+  }
+  const last = streamed.frames[streamed.frames.length - 1];
+  assert.equal(last.event, "turn", "the turn is the last frame");
+  assert.equal(last.data.turn.status, "proposed");
+  assert.equal(last.data.turn.changes[0].index, n);
+  assert.equal(last.data.turn.checks.paragraphsChanged, 1);
+  const listed = await call("GET", `/api/editorial-stories/${state.storyId}/agent/turns`);
+  assert.equal(listed.data.turns[0].id, last.data.turn.id, "a streamed turn is on the record like any other");
+  assert.equal((await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${last.data.turn.id}/reject`, { body: {} })).status, 200);
+
+  /* A refusal after the stream has opened is the error the reply would carry, as the last frame. */
+  const stranger = await streamCall(`/api/editorial-stories/${new ObjectId()}/agent`, { instruction: "shorten paragraph 1" });
+  assert.equal(stranger.frames.length, 1);
+  assert.equal(stranger.frames[0].event, "error");
+  assert.equal(stranger.frames[0].data.status, 404);
+  assert.ok(stranger.frames[0].data.error);
+  /* Refused before the stream opens: an ordinary JSON error. */
+  const empty = await fetch(`${base}/api/editorial-stories/${state.storyId}/agent`, { method: "POST", headers: { Cookie: `sd_session=${cookie}`, "Content-Type": "application/json", Accept: "text/event-stream" }, body: JSON.stringify({ instruction: " " }) });
+  assert.equal(empty.status, 400);
+  assert.equal((await empty.json()).error, "Say what you'd like changed.");
+});
+
 test("the agent adds an illustration by instruction; rejecting discards the generated image", async () => {
   const asked = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: "add an illustration of a four-element antenna array on a mast after paragraph 1" } });
   assert.equal(asked.status, 200, JSON.stringify(asked.data));

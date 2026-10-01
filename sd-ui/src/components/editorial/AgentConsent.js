@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { FaCheck } from "react-icons/fa6";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
  * The agent's terms, asked once.
@@ -28,7 +29,7 @@ export default function AgentConsent({ version, busy = false, error = "", onAgre
   return (
     <div className="pc-scrim" role="dialog" aria-modal="true" aria-labelledby="ac-title">
       <div className="pc-modal ac-modal">
-        <span className="sc-kicker">Before the agent writes with you</span>
+        <span className="sc-kicker">Before {AGENT_NAME} writes with you</span>
         <h2 id="ac-title" className="ac-title">It drafts from your papers, under your name. Here is what that means.</h2>
         <ol className="ac-terms">
           <li><b>It writes from your paper, and only that.</b> Every paragraph is checked against the passages it cites. Anything that goes beyond the paper is marked as such and checked to follow from it.</li>

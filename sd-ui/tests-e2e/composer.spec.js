@@ -122,7 +122,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   const firstParagraph = page.locator(".block-row", { has: page.locator(".block-chip") }).first();
   await firstParagraph.locator(".block-editor-surface").click();
   await page.getByRole("tab", { name: "Sources" }).click();
-  await page.getByRole("button", { name: "This paragraph" }).click();
+  await page.getByRole("button", { name: "This paragraph", exact: true }).click();
   await expect(page.locator(".sr-passage").first()).toBeVisible();
   await expect(page.locator(".sr-passage mark").first()).toBeVisible();
 
@@ -158,6 +158,10 @@ test("from a paper to a published story, with the agent editing by instruction",
   const proposed = (await proposal.locator(".ag-after").innerText()).trim();
   expect(proposed.length).toBeGreaterThan(0);
   expect(proposed.length).toBeLessThan(secondBefore.length);
+  /* The turn came as a stream of steps; its end is a moment for Kivyn, then rest. */
+  const reviewKivyn = page.locator(".ws-right .ws-identity svg.kv");
+  await expect(reviewKivyn).toHaveAttribute("data-pose", "done");
+  await expect(reviewKivyn).toHaveAttribute("data-pose", "neutral", { timeout: 10_000 });
   await expect(proposal.locator(".ag-checks .block-chip").first()).toHaveText("1 of 1 written paragraph supported by the paper");
   await expect(page.getByPlaceholder("Accept or reject the proposal above first")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Publish check" })).toBeDisabled();
@@ -178,7 +182,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.locator(".hist-badge.is-drafter")).toHaveCount(1);
   await expect(page.locator(".hist-badge.is-agent").first()).toBeVisible();
   await expect(page.locator(".hist-item.is-current")).toHaveCount(1);
-  await page.getByRole("button", { name: "Back to the agent" }).click();
+  await page.getByRole("button", { name: "Back to Kivyn" }).click();
   await page.getByRole("tab", { name: "Chat" }).click();
 
   /* An illustration by instruction, then rejected: it never touches the story. */
@@ -195,9 +199,11 @@ test("from a paper to a published story, with the agent editing by instruction",
   /* Claim by claim: the Source rail shows which sentence rests on which. */
   await page.locator(".block-row", { has: page.locator(".block-chip") }).first().locator(".block-editor-surface").click();
   await page.getByRole("tab", { name: "Sources" }).click();
-  await page.getByRole("button", { name: "This paragraph" }).click();
+  await page.getByRole("button", { name: "This paragraph", exact: true }).click();
   await expect(page.locator(".sr-claim").first()).toBeVisible();
   await expect(page.locator(".sr-claim-ev").first()).toContainText(/p\d+:/);
+  /* Showing where a paragraph came from is Kivyn tracing it. */
+  await expect(page.locator(".ws-right .ws-identity svg.kv")).toHaveAttribute("data-pose", "tracing");
 
   /* Sources, whole story: the article checked by rule and ready to be signed. */
   await page.getByRole("tab", { name: "Sources" }).click();
@@ -229,7 +235,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   await page.locator(".ck-wrap").getByRole("button", { name: "Check now" }).click();
   await expect(page.locator(".rec-banner")).toContainText("was retracted", { timeout: 20_000 });
   await expect(page.locator(".rec-banner")).toContainText(/Paragraphs? [\d, ]+ rests? on it/);
-  await page.locator(".rec-banner").getByRole("button", { name: "Have the agent draft a notice" }).click();
+  await page.locator(".rec-banner").getByRole("button", { name: "Have Kivyn draft a notice" }).click();
   await expect(page.locator(".ws-tab.on")).toContainText("Chat");
   await expect(page.getByPlaceholder("What should change?")).toHaveValue(/was retracted/);
   await page.getByPlaceholder("What should change?").fill("");

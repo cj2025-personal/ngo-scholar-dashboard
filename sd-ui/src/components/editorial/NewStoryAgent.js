@@ -5,8 +5,12 @@ import { FaCheck, FaXmark } from "react-icons/fa6";
 import { HiOutlineArrowUp, HiOutlinePlus } from "react-icons/hi2";
 
 import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, converseWithAgent, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
-import AgentFace from "./AgentFace";
-import { useStudioPersona } from "./StudioAgentShell";
+import Kivyn from "@/components/kivyn/Kivyn";
+import { useKivynMoment } from "@/components/kivyn/useKivynMoment";
+import { AGENT_NAME, poseForStep } from "@/lib/kivyn/pose.mjs";
+
+/* Kivyn beside each message: still, so the thread does not blink from every line. */
+const Face = () => <Kivyn variant="mark" size={28} />;
 
 /**
  * The agent, in the rail of a story that has no paper behind it yet.
@@ -68,7 +72,7 @@ function AudienceChips({ onPick, disabled }) {
   );
 }
 
-function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, persona }) {
+function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, moment = null }) {
   const [beats, setBeats] = useState(() => (msg.outline.beats || []).map((b) => ({ ...b, kept: true })));
   const kept = beats.filter((b) => b.kept);
   /* The outline as it stands, sections cut or kept, so an approval said in
@@ -80,7 +84,8 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, perso
   const coverage = msg.outline.coverage || null;
   return (
     <div className={`ch-msg is-agent is-outline${latest ? " ag-approval" : ""}`}>
-      <AgentFace persona={persona} />
+      {/* While an outline waits the page is the plan and the pane's head is gone, so its moment is on this face. */}
+      <Kivyn variant="mark" size={28} pose={latest && moment ? moment : "neutral"} live={Boolean(latest && moment)} />
       <div className="ch-bubble">
         {latest ? <p className="ag-approval-kicker">Needs your approval</p> : null}
         <p className="ch-text">
@@ -143,8 +148,9 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, perso
  * @param {(stage: "outline"|null) => void} [p.onStageChange]   what the rail is asking for, so the page can give it the room it needs
  */
 export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, onStatus, onPaperChange, onDraftingStart, onSection }) {
-  const [persona] = useStudioPersona();
   const [inventory, setInventory] = useState(null);
+  /* A finished piece of work, for a moment: an outline in, a draft landed. */
+  const [moment, showMoment] = useKivynMoment();
   const [paper, setPaper] = useState(initialSource);
   const [audience, setAudience] = useState(DEFAULT_AUDIENCE);
   /* The other reading ages to write once the article exists: any subset,
@@ -207,11 +213,11 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   useEffect(() => () => onStageChange?.(null), [onStageChange]);
 
   const push = useCallback((m) => setMessages((cur) => [...cur, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...m }]), []);
-  const setProgress = useCallback((textValue) => setMessages((cur) => {
+  const setProgress = useCallback((textValue, step) => setMessages((cur) => {
     const i = cur.findIndex((m) => m.role === "progress");
-    if (i < 0) return [...cur, { id: "progress", role: "progress", text: textValue }];
+    if (i < 0) return [...cur, { id: "progress", role: "progress", text: textValue, step }];
     const next = cur.slice();
-    next[i] = { ...next[i], text: textValue };
+    next[i] = { ...next[i], text: textValue, step };
     return next;
   }), []);
   const clearProgress = useCallback(() => setMessages((cur) => cur.filter((m) => m.role !== "progress")), []);
@@ -261,6 +267,8 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   }, [text]);
 
   function showOutline(j, { replans = 0 } = {}) {
+    /* An outline is work done; one that says the paper cannot carry what was asked is the paper not saying it. */
+    showMoment(j.outline?.coverage?.met === "none" ? "cant-answer" : "done");
     setMessages((cur) => [...cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m)), { id: `outline-${j.id}-${replans}`, role: "outline", outline: j.outline, replans, jobId: j.id }]);
   }
 
@@ -269,11 +277,13 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   function settle(settled, source) {
     clearProgress();
     if (settled.storyId) {
+      showMoment("done");
       push({ role: "agent", text: "Your draft is ready. Opening it, where you can read it against the paper and keep editing by instruction." });
       onStoryReady?.(settled.storyId);
       return true;
     }
     if (settled.status === "awaiting_review" && settled.draft) {
+      showMoment("done");
       push({ role: "agent", text: "The draft is in the page beside us, under your name. Every paragraph shows the passage it came from. Read it, change what you like, and tell me what to do next." });
       onDraftReady?.(settled, source || settled.source || {}, { levels: wantedLevelsRef.current });
       return true;
@@ -285,8 +295,8 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     if (stopRef.current) stopRef.current();
     stopRef.current = watchDraftJob(j.id, {
       after,
-      onProgress: ({ message, detail }) => {
-        setProgress(message);
+      onProgress: ({ step, message, detail }) => {
+        setProgress(message, step);
         /* A section as it lands: handed to the page, which types it in. */
         if (detail?.step === "section_drafted" && Array.isArray(detail.blocks)) onSection?.({ index: detail.index, total: detail.total, heading: detail.heading, kind: detail.kind, blocks: detail.blocks });
       },
@@ -312,7 +322,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     if (!ready || busy || job || !from) return;
     if (said) push({ role: "user", text: "What could this paper become?" });
     setBusy(true);
-    setProgress("Reading the paper…");
+    setProgress("Reading the paper…", "pick_source");
     const r = await proposeFromPaper({ origin: from.origin, sourceId: from.id });
     if (!r.ok) {
       setBusy(false);
@@ -364,11 +374,13 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   }, [prefill]);
 
   /* The line under the agent's name, in the pane's head. */
-  const progressText = messages.find((m) => m.role === "progress")?.text || "";
+  const progressMessage = messages.find((m) => m.role === "progress");
+  const progressText = progressMessage?.text || "";
+  const progressStep = progressMessage?.step || null;
   useEffect(() => {
     const text = busy ? (progressText || "Working") : outlineWaiting ? "An outline is waiting for your approval" : locked ? "Draft in hand" : !ready ? "Looking at your papers" : awaitingAudience ? "Who is the article for?" : selectedPaper ? `Ready to plan from “${String(selectedPaper.title || "").length > 26 ? `${String(selectedPaper.title).slice(0, 25).trim()}…` : selectedPaper.title}”` : "Tell me what to write";
-    onStatus?.({ text, busy });
-  }, [busy, progressText, outlineWaiting, locked, ready, selectedPaper, awaitingAudience, onStatus]);
+    onStatus?.({ text, busy, pose: busy ? poseForStep(progressStep) : moment || "neutral" });
+  }, [busy, progressText, progressStep, moment, outlineWaiting, locked, ready, selectedPaper, awaitingAudience, onStatus]);
   useEffect(() => { onPaperChange?.(selectedPaper); }, [selectedPaper, onPaperChange]);
 
   /* Coming back to a job from Studio. */
@@ -387,7 +399,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       if (settle(j, j.source)) return;
       if (j.terminal) { push({ role: "error", text: j.failure?.sentence || "That draft did not complete." }); return; }
       setBusy(true);
-      setProgress("Picking up where it left off…");
+      setProgress("Picking up where it left off…", "resume");
       watch(j);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -415,7 +427,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   async function startJob(brief, { from = selectedPaper, forAudience = audience, forVoice = voice, extras = levelBands } = {}) {
     if (!from) return;
     setBusy(true);
-    setProgress("Reading the paper…");
+    setProgress("Reading the paper…", "pick_source");
     wantedLevelsRef.current = extras.filter((a) => a !== forAudience);
     /* No story from the job: the page beside us is the story. */
     const r = await createDraftJob({ origin: from.origin, sourceId: from.id, audience: forAudience, voice: forVoice, brief, approveOutline: true, createStory: false, levels: false });
@@ -456,7 +468,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     const thread = [...transcript(messages), { role: "scholar", text: said }];
     push({ role: "user", text: said });
     setBusy(true);
-    setProgress("Reading what you said…");
+    setProgress("Reading what you said…", "converse");
     const r = await converseWithAgent({
       messages: thread,
       state: {
@@ -545,7 +557,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   async function replan(instruction) {
     if (!job) return;
     setBusy(true);
-    setProgress("Replanning the outline from what you said…");
+    setProgress("Replanning the outline from what you said…", "plan_outline");
     const r = await replanDraftOutline(job.id, instruction);
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     setJob(r.data.job);
@@ -557,7 +569,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     if (!job || busy) return;
     setBusy(true);
     if (said) push({ role: "user", text: `Approved${outline.beats.length ? `: ${outline.beats.length} section${outline.beats.length === 1 ? "" : "s"}` : ""}.` });
-    setProgress("Drafting…");
+    setProgress("Drafting…", "draft_blocks");
     /* The page knows what is coming, and shows each section as it is written. */
     onDraftingStart?.({ title: outline.title || "", beats: outline.beats.map((b, i) => ({ index: b.index ?? i + 1, heading: b.heading })) });
     const r = await approveDraftOutline(job.id, outline);
@@ -592,13 +604,13 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       <div className="ch-thread" ref={threadRef}>
         {messages.map((m) => {
           if (m.role === "outline") {
-            return <OutlineMessage key={m.id} msg={m} latest={m.id === latestOutlineId && outlineWaiting} busy={busy} onApprove={(o) => approve(o)} onDiscard={() => discard()} onKept={onKept} persona={persona} />;
+            return <OutlineMessage key={m.id} msg={m} latest={m.id === latestOutlineId && outlineWaiting} busy={busy} onApprove={(o) => approve(o)} onDiscard={() => discard()} onKept={onKept} moment={moment} />;
           }
           if (m.role === "user") return <div key={m.id} className="ch-msg is-user"><div className="ch-bubble">{m.text}</div></div>;
           if (m.role === "papers") {
             return (
               <div key={m.id} className="ch-msg is-agent is-papers">
-                <AgentFace persona={persona} />
+                <Face />
                 <div className="ch-bubble">
                   <p className="ch-text">{m.text}</p>
                   <PaperCards papers={draftable} disabled={busy || locked || Boolean(selectedPaper)} onPick={(p) => pickPaper(p)} />
@@ -609,7 +621,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
           if (m.role === "story") {
             return (
               <div key={m.id} className="ch-msg is-agent is-story">
-                <AgentFace persona={persona} />
+                <Face />
                 <div className="ch-bubble">
                   <p className="ch-text">{m.text}</p>
                   <div className="ch-chips"><button type="button" className="ch-chip is-default" onClick={() => onStoryReady?.(m.storyId)}>Open the story</button></div>
@@ -620,7 +632,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
           if (m.role === "audience") {
             return (
               <div key={m.id} className="ch-msg is-agent is-audience">
-                <AgentFace persona={persona} />
+                <Face />
                 <div className="ch-bubble">
                   <p className="ch-text">{m.text}</p>
                   <AudienceChips disabled={busy || locked || !awaitingAudience} onPick={(a) => pickAudience(a)} />
@@ -630,14 +642,14 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
           }
           if (m.role === "progress") {
             return (
-              <div key={m.id} className="ch-msg is-agent">
-                <AgentFace persona={persona} />
-                <div className="ag-working" role="status" aria-live="polite"><div className="ag-working-line"><span className="ag-spinner" aria-hidden /> {m.text}</div></div>
+              <div key={m.id} className="ch-msg is-agent is-working">
+                <Kivyn pose={poseForStep(m.step)} size={56} live />
+                <div className="ag-working" role="status" aria-live="polite"><div className="ag-working-line">{m.text}</div></div>
               </div>
             );
           }
-          if (m.role === "error") return <div key={m.id} className="ch-msg is-agent"><AgentFace persona={persona} /><div className="ch-bubble is-error">{m.text}</div></div>;
-          return <div key={m.id} className="ch-msg is-agent"><AgentFace persona={persona} /><div className="ch-bubble">{m.text}</div></div>;
+          if (m.role === "error") return <div key={m.id} className="ch-msg is-agent"><Face /><div className="ch-bubble is-error">{m.text}</div></div>;
+          return <div key={m.id} className="ch-msg is-agent"><Face /><div className="ch-bubble">{m.text}</div></div>;
         })}
       </div>
 
@@ -676,7 +688,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
                   </label>
                   <fieldset className="ch-field ch-field-bands">
                     <legend>Also write it for</legend>
-                    <p className="ch-menu__note">After the article, the agent writes it again for each of these, on its own. You approve every level before readers see it.</p>
+                    <p className="ch-menu__note">After the article, {AGENT_NAME} writes it again for each of these, on its own. You approve every level before readers see it.</p>
                     {DRAFT_AUDIENCES.filter((a) => a.value !== audience).map((a) => (
                       <label key={a.value} className="ch-menu__row">
                         <input type="checkbox" checked={levelBands.includes(a.value)} onChange={(e) => setLevelBands((cur) => (e.target.checked ? [...cur, a.value] : cur.filter((v) => v !== a.value)))} />

@@ -10,6 +10,7 @@
  */
 
 import { needsAttention } from "@/components/editorial/ChecksRail";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /* Why an implication went too far, in the reviewer's words. */
 const REACH_REASONS = {
@@ -41,7 +42,7 @@ function ContextRail({ block, passages, onVerify }) {
       {c.verdict && c.verdict !== "clear" ? (
         <p className="sc-write-msg is-error">
           {c.verdict === "misattributed" ? "This paragraph presents your own context as the paper's finding" : "Part of this paragraph presents your own context as the paper's finding"}
-          {c.misattributedClaims?.length ? `: ${c.misattributedClaims.map((t) => `“${t}”`).join("; ")}` : ""}. Say it as what you know, or ask the agent to.
+          {c.misattributedClaims?.length ? `: ${c.misattributedClaims.map((t) => `“${t}”`).join("; ")}` : ""}. Say it as what you know, or ask {AGENT_NAME} to.
         </p>
       ) : null}
       {toVerify.length ? (
@@ -74,7 +75,7 @@ export default function SourceRail({ block, passages, provenance, onVerify = nul
   if (block.ownView && block.context) return <ContextRail block={block} passages={passages} onVerify={onVerify} />;
   const refs = (block.sourceRefs || []).map((r) => r.passageId);
   if (refs.length === 0) {
-    return <p className="st-muted">{block.ownView ? "This paragraph is your own view; it cites no passage by design." : "This paragraph cites no passage. If it makes a claim about the paper, ask the agent to rewrite it from the source."}</p>;
+    return <p className="st-muted">{block.ownView ? "This paragraph is your own view; it cites no passage by design." : `This paragraph cites no passage. If it makes a claim about the paper, ask ${AGENT_NAME} to rewrite it from the source.`}</p>;
   }
   const cited = passages.filter((p) => refs.includes(p.id));
   const blockText = String(block.html || "").replace(/<[^>]+>/g, " ");

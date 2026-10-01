@@ -7,6 +7,7 @@ import { getStoryEvidence, getStoryReadingLevel } from "@/lib/drafting";
 
 import { AUDIENCE_TARGETS, normaliseAudience } from "@/lib/readability";
 import { needsAttention, summariseBlocks } from "@/components/editorial/ChecksRail";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
  * Before it goes out under the scholar's name.
@@ -65,7 +66,7 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
       : {
         ok: levelOk,
         title: levelOk ? `Reads right for ${target.label}` : `Reads too ${ruled.judged?.verdict === "too_simple" ? "simple" : "hard"} for ${target.label}`,
-        detail: `${ruled.judged?.reason || ""}${grade !== null ? ` Measured grade ${grade}.` : ""}${levelOk ? "" : " Ask the agent to rewrite it for them, or edit."}`.trim(),
+        detail: `${ruled.judged?.reason || ""}${grade !== null ? ` Measured grade ${grade}.` : ""}${levelOk ? "" : ` Ask ${AGENT_NAME} to rewrite it for them, or edit.`}`.trim(),
       };
   const troubles = [
     s.partial ? `${s.partial} partly supported` : "",
@@ -114,7 +115,7 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
         : `${s.unverified} specific${s.unverified === 1 ? "" : "s"} in your own context ${s.unverified === 1 ? "is" : "are"} not yet verified`,
       detail: s.unverified === 0
         ? "You ticked each one in Checks. Readers see these paragraphs as yours, not the paper's."
-        : "The agent brought them in from outside the paper. Tick each in Checks once you have checked it, or cut it. Nothing it invented reaches a reader without your eyes on it.",
+        : `${AGENT_NAME} brought them in from outside the paper. Tick each in Checks once you have checked it, or cut it. Nothing it invented reaches a reader without your eyes on it.`,
       action: s.unverified ? { label: "Go to it", onClick: () => onGoTo?.(firstUnverified) } : null,
     }] : []),
     levelItem,

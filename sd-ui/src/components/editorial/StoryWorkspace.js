@@ -9,7 +9,6 @@ import {
   FaChevronRight,
   FaGear,
   FaPlus,
-  FaWandMagicSparkles,
   FaXmark,
 } from "react-icons/fa6";
 
@@ -34,6 +33,8 @@ import StudioAgentShell, { AgentAbout, AgentIdentity, AgentTabs, STUDIO_PERMISSI
 import AgentIdeas from "@/components/editorial/AgentIdeas";
 import { Toast, ToastStack } from "@/components/editorial/Toasts";
 import DraftStream from "@/components/editorial/DraftStream";
+import Kivyn from "@/components/kivyn/Kivyn";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { AUDIENCE_TARGETS, assessForAudience, normaliseAudience } from "@/lib/readability";
@@ -255,8 +256,8 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     (initialStory?.bodyBlocks || []).some(needsAttention) ? "checks" : "chat");
   /* Sources shows the paragraph's passages, or the whole story's record. */
   const [sourcesView, setSourcesView] = useState("block");
-  /* The line under the agent's name, reported by whichever agent is in the pane. */
-  const [agentStatus, setAgentStatus] = useState({ text: "Ready", busy: false });
+  /* The line under Kivyn's name and what it is drawn doing, reported by whichever agent is in the pane. */
+  const [agentStatus, setAgentStatus] = useState({ text: "Ready", busy: false, pose: "neutral" });
   /* The new-story pane: its section, its about sheet, and what the Ideas tab hands the composer. */
   const [newTab, setNewTab] = useState("chat");
   const [newAbout, setNewAbout] = useState(false);
@@ -291,6 +292,13 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const savedSignatureRef = useRef(null);
 
   const reviewMode = Boolean(form.provenance && form.id);
+  /* What Kivyn is drawn doing in the review pane. The chat reports its own
+     work. On Sources, the pane is showing where writing came from — the
+     whole story's record, or a paragraph that cites a passage — and that is
+     Kivyn tracing it. Every other section is something already worked out,
+     and Kivyn is at rest beside it. */
+  const tracingShown = railTab === "sources" && (sourcesView === "story" || Boolean(form.bodyBlocks.find((b) => b.id === activeBlockId)?.sourceRefs?.length));
+  const reviewPose = !consented ? "neutral" : railTab === "chat" ? agentStatus.pose || "neutral" : tracingShown ? "tracing" : "neutral";
 
   /* The bar is transparent until the page moves under it. See the rule for
      `.sc-write-bar.is-stuck`: at rest it should be the page, and once it is
@@ -839,7 +847,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
         {error ? <Toast kind="error" text={error} onDismiss={dismissError} /> : null}
         {feedback ? <Toast kind="ok" text={feedback} onDismiss={dismissFeedback} autoHide /> : null}
         {draftProgress ? <Toast kind="info" text={draftProgress} busy /> : null}
-        {proposalPending ? <Toast kind="info" text="The agent has proposed a change. Accept or reject it in the Agent tab before saving." /> : null}
+        {proposalPending ? <Toast kind="info" text={`${AGENT_NAME} has proposed a change. Accept or reject it in Chat before saving.`} /> : null}
       </ToastStack>
       {reviewMode && form.record?.alerts?.length ? (
         <RecordBanner storyId={form.id} record={form.record} status={form.status} onAskAgent={askAgent} onUnpublish={() => submitStory("draft")} onAcknowledged={(story) => handleStoryChanged(story, "Noted. The alert stays on the story until the record changes.")} />
@@ -874,14 +882,14 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
             <aside
               className={outlineStage ? "ws-plan__inner" : `ws-right is-agent ws-agent-rail${railOpen ? "" : " is-closed"}`}
               role={outlineStage ? "region" : undefined}
-              aria-label={outlineStage ? "The outline, waiting for your approval" : "Agent"}
+              aria-label={outlineStage ? "The outline, waiting for your approval" : AGENT_NAME}
               aria-hidden={!outlineStage && !railOpen ? true : undefined}
               inert={!outlineStage && !railOpen ? true : undefined}
             >
               {/* The pane's head, body and foot are laid around the agent,
                   never wrapped over it, so its place in the tree holds. */}
               {outlineStage ? null : (
-                <AgentIdentity status={agentStatus.text} busy={agentStatus.busy} about={newAbout} onAbout={setNewAbout} onClose={() => setRailOpen(false)} />
+                <AgentIdentity status={agentStatus.text} busy={agentStatus.busy} pose={agentStatus.pose} about={newAbout} onAbout={setNewAbout} onClose={() => setRailOpen(false)} />
               )}
               <div className={`ws-rail-body${!outlineStage && (newTab !== "chat" || newAbout) ? " is-hidden" : ""}`}>
                 {/* The agent is asked for an angle only once the terms are
@@ -961,8 +969,9 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
 
           <aside className={railTab === "chat" ? "ws-right is-agent" : "ws-right"}>
             <StudioAgentShell
-              status={consented ? agentStatus.text : "Read the terms once to begin"}
+              status={!consented ? "Read the terms once to begin" : reviewPose === "tracing" ? (sourcesView === "story" ? "Tracing the story to its sources" : "Tracing the paragraph to its passages") : agentStatus.text}
               busy={consented && agentStatus.busy}
+              pose={reviewPose}
               tabs={[
                 { key: "chat", label: "Chat", icon: "💬" },
                 { key: "ideas", label: "Ideas", icon: "✦" },
@@ -994,13 +1003,13 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                   version={form.version}
                   focusIndex={agentContext?.index || null}
                   disabled={!consented || proposalPending || dirty}
-                  note={!consented ? "Read the agent's terms once and these become one tap away." : proposalPending ? "Decide on the change waiting in Chat first." : dirty ? "Your edits are saving; a moment, then these are one tap away." : "Things the agent could do next, after reading this draft. Tap one to put it in the chat; change it before you send."}
+                  note={!consented ? `Read ${AGENT_NAME}'s terms once and these become one tap away.` : proposalPending ? "Decide on the change waiting in Chat first." : dirty ? "Your edits are saving; a moment, then these are one tap away." : `Things ${AGENT_NAME} could do next, after reading this draft. Tap one to put it in the chat; change it before you send.`}
                   onPick={(idea) => { if (!consented) { openAgent(); return; } setRailTab("chat"); setAgentPrefill(idea.text); }}
                 />
               ) : null}
               {railTab === "chat" ? (consented ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} prefill={agentPrefill} onPrefillTaken={() => setAgentPrefill("")} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} onStatus={setAgentStatus} /> : (
                 <div className="ag-gate">
-                  <p className="ag-empty-title">The agent edits by instruction.</p>
+                  <p className="ag-empty-title">{AGENT_NAME} edits by instruction.</p>
                   <p className="st-muted">It works from the paper behind this story and shows every change before it lands. Read its terms once to use it.</p>
                   <button type="button" className="sc-write-secondary st-btn" onClick={openAgent}>Read the terms</button>
                 </div>
@@ -1031,8 +1040,8 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
 
       {/* The way in when the rail is closed. */}
       {!reviewMode && !railOpen && mode !== "preview" ? (
-        <button type="button" className="ag-nudge" onClick={openAgent} title={consented ? "Open the agent" : "The agent drafts from your papers — read its terms once"}>
-          <FaWandMagicSparkles size={14} aria-hidden /> Agent
+        <button type="button" className="ag-nudge" onClick={openAgent} title={consented ? `Open ${AGENT_NAME}` : `${AGENT_NAME} drafts from your papers — read its terms once`}>
+          <Kivyn variant="mark" size={30} tone="on-dark" live /> {AGENT_NAME}
         </button>
       ) : null}
 

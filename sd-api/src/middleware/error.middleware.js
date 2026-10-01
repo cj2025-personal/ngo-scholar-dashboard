@@ -27,31 +27,40 @@ function notFoundHandler(req, res, next) {
   next(new ApiError(404, `Route not found: ${req.method} ${req.originalUrl}`));
 }
 
+/**
+ * What a failure says to the caller, logged as above: the body of a JSON
+ * reply, or the last frame of a stream that was already open when it failed.
+ * One function, so a streamed failure can never say more than a replied one.
+ */
+function describeError(error, req) {
+  const status = error.statusCode || 500;
+
+  if (status >= 500) {
+    const ref = reference();
+    console.error(`[error] ref=${ref} ${req.method} ${req.originalUrl}`, error);
+    return {
+      status,
+      body: { error: "Something went wrong on our side. Nothing you sent was lost; try again in a moment.", reference: ref },
+    };
+  }
+
+  /* Deliberate, reader-facing, and safe to return as written. */
+  const body = { error: error.message || "Request failed." };
+  if (error.details) body.details = error.details;
+  return { status, body };
+}
+
 function errorHandler(error, req, res, next) {
   if (res.headersSent) {
     next(error);
     return;
   }
-
-  const statusCode = error.statusCode || 500;
-
-  if (statusCode >= 500) {
-    const ref = reference();
-    console.error(`[error] ref=${ref} ${req.method} ${req.originalUrl}`, error);
-    res.status(statusCode).json({
-      error: "Something went wrong on our side. Nothing you sent was lost; try again in a moment.",
-      reference: ref,
-    });
-    return;
-  }
-
-  /* Deliberate, reader-facing, and safe to return as written. */
-  const response = { error: error.message || "Request failed." };
-  if (error.details) response.details = error.details;
-  res.status(statusCode).json(response);
+  const { status, body } = describeError(error, req);
+  res.status(status).json(body);
 }
 
 module.exports = {
+  describeError,
   errorHandler,
   notFoundHandler,
 };

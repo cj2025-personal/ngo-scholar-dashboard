@@ -44,7 +44,7 @@ test("the pane opens from the bottom-left nudge, moves the editor over, and clos
   await box.fill("I want to write from one of my papers");
   await box.press("Enter");
   await expect(page.locator(".ch-msg.is-papers .ch-paper")).toHaveCount(3);
-  await page.getByRole("button", { name: "Close the agent" }).click();
+  await page.getByRole("button", { name: "Close Kivyn" }).click();
   await expect(rail).toBeHidden();
   await expect.poll(async () => grid.evaluate((el) => getComputedStyle(el).paddingLeft)).toBe("0px");
   await expect(nudge).toBeVisible();
