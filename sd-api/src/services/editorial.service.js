@@ -1109,7 +1109,24 @@ async function findOwnedStory({ storyId, scholarId, profileId }) {
     throw new ApiError(404, "Story not found.");
   }
 
-  return story;
+  return withJobProvenance(db, story);
+}
+
+/**
+ * Who a story was written for and whose account it is, for a story saved
+ * before its provenance carried them: the page once claimed the draft job
+ * without them, so the story stored neither. It still names the job, and the
+ * job holds what the scholar asked for, so the two are read from there —
+ * in memory, wherever the owner's story is loaded, so the reading-level
+ * target, the levels and the agent all see the reader asked for. Nothing is
+ * written here; scripts/backfillStoryProvenance.js restores the record.
+ */
+async function withJobProvenance(db, story) {
+  const p = story?.provenance;
+  if (!p || !p.job_id || (p.audience && p.voice)) return story;
+  const job = await db.collection(COLLECTIONS.draftJobs).findOne({ _id: p.job_id }, { projection: { audience: 1, voice: 1 } });
+  if (!job || (!job.audience && !job.voice)) return story;
+  return { ...story, provenance: { ...p, audience: p.audience || job.audience || null, voice: p.voice || job.voice || null } };
 }
 
 /**

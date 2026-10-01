@@ -354,6 +354,15 @@ test("saving the draft into a story stores provenance, links the job, and return
   assert.ok(jobDoc.audience, "the job records its reader");
   assert.equal(s.provenance.audience, jobDoc.audience);
   assert.equal(s.provenance.voice, jobDoc.voice || null);
+
+  /* A story saved before the fix stored neither; it still names its job, so
+     it reads as the reader asked for, without anything being rewritten. */
+  const stories = db.collection("scholar_editorials");
+  await stories.updateOne({ _id: new ObjectId(s.id) }, { $set: { "provenance.audience": null, "provenance.voice": null } });
+  const healed = (await call("GET", `/api/editorial-stories/${s.id}`)).data.story;
+  assert.equal(healed.provenance.audience, jobDoc.audience, "the reader is read from the job");
+  assert.equal((await stories.findOne({ _id: new ObjectId(s.id) })).provenance.audience, null, "and nothing was written to do it");
+  await stories.updateOne({ _id: new ObjectId(s.id) }, { $set: { "provenance.audience": jobDoc.audience, "provenance.voice": jobDoc.voice || null } });
   const drafted = s.bodyBlocks.filter((b) => b.sourceRefs);
   assert.ok(drafted.length >= 2);
   assert.ok(drafted.every((b) => b.traceable === true && b.overlap >= 0.99));
