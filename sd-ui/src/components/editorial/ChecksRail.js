@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AUDIENCE_TARGETS, normaliseAudience } from "@/lib/readability";
-import { checkStoryRecord } from "@/lib/drafting";
+import { checkStoryRecord, getStoryReadingLevel } from "@/lib/drafting";
 
 /**
  * The checks on this draft, as it stands right now.
@@ -77,10 +77,22 @@ function Meter({ assessment }) {
   );
 }
 
-export default function ChecksRail({ blocks, assessment, audience, warnings, draftChecks = null, record = null, storyId = null, levels = [], onGoTo, onStoryChanged, onOpenEvidence, onVerify = null }) {
+export default function ChecksRail({ blocks, assessment, audience, warnings, draftChecks = null, record = null, storyId = null, version = null, dirty = false, levels = [], onGoTo, onStoryChanged, onOpenEvidence, onVerify = null }) {
   const s = summariseBlocks(blocks);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState("");
+  /* Whether it reads right for its reader is an editor model's ruling on the
+     saved version; the grade above is measured live as the scholar types. */
+  const [level, setLevel] = useState({ key: null, data: null, error: "" });
+  const levelKey = storyId ? `${storyId}:${version ?? ""}` : null;
+  useEffect(() => {
+    if (!levelKey || dirty) return undefined;
+    let alive = true;
+    getStoryReadingLevel(storyId).then((r) => { if (alive) setLevel({ key: levelKey, data: r.ok ? r.data : null, error: r.ok ? "" : r.error }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [levelKey, dirty]);
+  const ruled = level.key === levelKey ? level.data : null;
   const numbers = draftChecks?.numbers || null;
   const limitations = draftChecks?.limitations || null;
   const worldClaims = draftChecks?.worldClaims || null;
@@ -109,7 +121,17 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
           <div className="ck-row"><span>Measured grade <b>{assessment.fkGrade}</b></span><span className="st-todo-detail">target {target.grade} for {target.label}</span></div>
           <Meter assessment={assessment} />
           <div className="st-todo-detail">
-            {assessment.verdict === "pass" ? "Inside the band." : assessment.verdict === "fail" ? `${assessment.drift} grades above target. Ask the agent to make it plainer, or edit.` : !assessment.reliable ? "Too short to measure reliably yet." : "Below target; readable, but may feel thin."}
+            {dirty || !storyId
+              ? "Measured as you type. Once saved, the article is read again for its reader."
+              : level.key !== levelKey
+                ? "Reading it as its reader would…"
+                : !ruled
+                  ? `The reading level could not be judged just now${level.error ? `: ${level.error}` : "."}`
+                  : ruled.verdict === "pass"
+                    ? `Read as right for ${target.label}.${ruled.judged?.reason ? ` ${ruled.judged.reason}` : ""}`
+                    : ruled.verdict === "fail"
+                      ? `Reads too ${ruled.judged?.verdict === "too_simple" ? "simple" : "hard"} for ${target.label}: ${ruled.judged?.reason || ""} Ask the agent to rewrite it for them, or edit.`
+                      : `Not judged: ${ruled.reason || "the reading level could not be read"}.`}
           </div>
         </>
       ) : <p className="st-muted">Nothing to measure yet.</p>}

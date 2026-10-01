@@ -19,6 +19,8 @@ const converse = require("../src/lib/agents/studioConverse");
 const ideas = require("../src/lib/agents/studioIdeas");
 const voice = require("../src/lib/agents/voiceJudge");
 const band = require("../src/lib/agents/bandJudge");
+const reviewer = require("../src/lib/agents/articleReviewer");
+const caveats = require("../src/lib/agents/caveatJudge");
 const sentinel = require("../src/lib/sentinel");
 const readingAgent = require("../src/lib/readingAgent");
 const fidelity = require("../src/lib/fidelity");
@@ -54,6 +56,10 @@ const schemas = {
   "studio.ideas": ideas.SCHEMA,
   "drafting.voice": voice.schemaFor([{ index: 1 }, { index: 2 }]),
   "drafting.band": band.SCHEMA,
+  "drafting.review": reviewer.schemaFor(reviewer.plan({ title: "T", blocks: [{ type: "subheading", text: "h" }, { type: "paragraph", text: "p" }], passages: [] })),
+  "drafting.review (re-read)": reviewer.schemaFor(reviewer.plan({ title: null, blocks: [{ type: "subheading", text: "h" }], passages: [], only: ["H1"] })),
+  "drafting.review (no headings)": reviewer.schemaFor(reviewer.plan({ title: null, blocks: [{ type: "paragraph", text: "p" }], passages: [] })),
+  "drafting.caveats": caveats.schemaFor([{ id: "p1" }]),
   "judge.fidelity": fidelity.JUDGE_SCHEMA,
   "judge.reach": reach.JUDGE_SCHEMA,
   "judge.context": context.JUDGE_SCHEMA,

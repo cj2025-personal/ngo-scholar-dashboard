@@ -29,6 +29,7 @@ const plan = require("../lib/draftPlan");
 const fidelity = require("../lib/fidelity");
 const reach = require("../lib/reach");
 const checksLib = require("../lib/checks");
+const { caveatsFor } = require("./agentRulings.service");
 const { assessDraftReadability, placeReadability, VERDICT } = require("../lib/draftReadability");
 const bandJudge = require("../lib/agents/bandJudge");
 const agent = require("../lib/storyAgent");
@@ -204,8 +205,8 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
     /* Every number the agent wrote must be in a passage it cited. A rule,
        not a model, because a fluent wrong number is the one that gets past. */
     numbers: checksLib.numericConsistency({ blocks: changed.map(({ b }) => b), passages }),
-    /* Whether the article, as it would be, cites any of the paper's own caveats. */
-    limitationsCited: checksLib.limitationsCoverage({ blocks: result.state.blocks, passages }).ok,
+    /* Whether the article, as it would be, cites any of the paper's own caveats, as the caveat judge found them. */
+    limitationsCited: checksLib.limitationsCoverage({ blocks: result.state.blocks, caveats: await caveatsFor(db, passages, { subject: { kind: "story", id: String(storyDoc._id) } }) }).ok,
   };
   const warnings = [];
   if (checks.unsupported) warnings.push(`${checks.unsupported} changed paragraph${checks.unsupported === 1 ? " is" : "s are"} not supported by the paper.`);

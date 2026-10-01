@@ -76,7 +76,7 @@ const main = async () => {
   const generate = traced("eval.generateContent", (req) => vertex.generateContent(req));
   /* The judges on their policy routes, as production runs them. */
   const router = createRouter({ models: defaultsFor("models"), deploymentModel: env.llm.model, call: traced("eval.judge.generateContent", (req) => vertex.generateContent(req)) });
-  const judges = { voice: router.bound("drafting.voice"), band: router.bound("drafting.band") };
+  const judges = { voice: router.bound("drafting.voice"), band: router.bound("drafting.band"), review: router.bound("drafting.review") };
   const limits = defaultsFor("drafting");
   const plain = (html) => String(html || "").replace(/<[^>]+>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
   const results = [];
@@ -89,7 +89,9 @@ const main = async () => {
       result = await runDraftGraph(inputFor(row), { generate, judges, limits });
       /* The voice score is a second, independent reading of the finished draft. */
       const second = await voiceJudge.judgeBlocks({ blocks: result.bodyBlocks, voice: inputFor(row).voice || composer.DEFAULT_VOICE, scholarName: inputFor(row).scholar?.name || null, generate: judges.voice, plain });
-      result.voiceFlags = second.unchecked ? 0 : second.speaking.length + second.naming.length;
+      /* Speaking as the scholar is dropped upstream, so any here is a regression; naming them is kept with a warning, so it is reported, not gated. */
+      result.voiceFlags = second.unchecked ? 0 : second.speaking.length;
+      result.voiceSecondReading = { unchecked: second.unchecked, speaking: second.sentences.speaking, naming: second.sentences.naming, reasons: second.reasons };
     } catch (e) {
       error = e;
     }
@@ -105,6 +107,8 @@ const main = async () => {
           : ""),
     );
     for (const w of result?.warnings || []) console.log(`    · ${w}`);
+    const sr = result?.voiceSecondReading;
+    if (sr && (sr.speaking.length || sr.naming.length)) console.log(`    ! second voice reading: ${[...sr.speaking.map((x) => `speaks “${x}”`), ...sr.naming.map((x) => `names “${x}”`)].join("; ")}${sr.reasons.length ? ` — ${sr.reasons.join(" ")}` : ""}`);
   }
 
   const summary = summarise(results.map((r) => r.score));

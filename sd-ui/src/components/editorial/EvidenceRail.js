@@ -110,7 +110,7 @@ export default function EvidenceRail({ storyId, version, status, slug, onGoTo })
           <p className="st-muted">This record is a preview. When you publish, it is signed and made public with the article, with your approval on it as version {version}.</p>
         </>
       )}
-      {limitations?.heuristic ? <p className="st-muted ev-fine">Limitations are found by wording, so this is a prompt to look, not a verdict.</p> : null}
+      {limitations?.judged ? <p className="st-muted ev-fine">The paper&rsquo;s own caveats were found by a model that read it, so this is a prompt to look, not a verdict.</p> : null}
     </div>
   );
 }

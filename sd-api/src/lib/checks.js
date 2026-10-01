@@ -1,38 +1,32 @@
 "use strict";
 
 /**
- * Two cheap checks the fact-checker does not make, because a rule makes
- * them better than a model does.
+ * The checks on a whole article, beside the judges that read each paragraph.
  *
- * ── Numbers ─────────────────────────────────────────────────────────────────
- * A number is where a model slips and where a scholar's reputation is most
- * exposed: "eleven decibels" becoming "twelve" reads as fluent and is wrong.
- * So every number in a paragraph drawn from the paper must appear in one of
- * the passages it cites. Digits, and the number words a paper would use;
- * "one" is left out because it is mostly a pronoun.
+ * Two kinds, kept apart on purpose.
  *
- * ── Limitations ─────────────────────────────────────────────────────────────
- * The most-omitted content in any popular account of research is the paper's
- * own caveats. Passages that state a limitation are found by their wording,
- * which is a heuristic and says so; an article that cites none of them is
- * told which ones it left out. It is a check, not a refusal: some papers
- * state no limitations, and the scholar decides.
+ * ── Counts ──────────────────────────────────────────────────────────────────
+ * What a rule measures exactly: every number in a paragraph drawn from the
+ * paper must appear in a passage it cites, because "eleven decibels"
+ * becoming "twelve" reads as fluent and is wrong; how much of a paragraph is
+ * the paper's own six-word runs; how many paragraphs go beyond the paper
+ * against those drawn from it; which words open the sentences. Where a count
+ * becomes a warning, the line is in the drafting policy.
  *
- * ── Claims about the world ──────────────────────────────────────────────────
- * A paragraph that goes beyond the paper may say what follows from it; it
- * may not say what is done with it. "Is used in", "has led to", "is the
- * basis of" are the wordings by which an implication turns into a fact about
- * the world that the paper does not state. The reach judge looks for the
- * same thing claim by claim; this is the cheap net under it, by wording,
- * and labelled a heuristic.
- *
- * ── Budget ──────────────────────────────────────────────────────────────────
- * An article that is mostly what follows from the paper is no longer about
- * the paper. Paragraphs that go beyond it may not outnumber those drawn from
- * it. A check, not a refusal: the scholar sees the count.
+ * ── Rulings, read here ──────────────────────────────────────────────────────
+ * What needs reading is read by a model, and these functions only report it.
+ * A sentence beyond the paper that brings in a fact about the world, and the
+ * author's own context presented as the paper's finding, are the reach and
+ * context judges' claim rulings. Which passages state the paper's caveats is
+ * the caveat judge's (agents/caveatJudge.js). A heading that promises what
+ * is not said, the scholar's pronoun across sections, and whether the prose
+ * drones are the article reviewer's (agents/articleReviewer.js). These used
+ * to be word lists; each missed what it was for and flagged what it was not.
  */
 
-const CHECKS_VERSION = "checks-2026.1";
+const { defaultsFor } = require("./policyDefaults");
+
+const CHECKS_VERSION = "checks-2026.2";
 
 const UNITS = {
   two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13,
@@ -44,22 +38,12 @@ const MULTIPLIERS = { hundred: 100, thousand: 1000, million: 1000000, billion: 1
 const FRACTION_WORDS = new Set(["half", "quarter", "third", "twice", "double", "triple"]);
 const NUMBER_WORDS = new Set([...Object.keys(UNITS), ...Object.keys(TENS), ...Object.keys(MULTIPLIERS), ...FRACTION_WORDS]);
 
-const LIMITATION_CUES = [
-  /\blimitation/i, /\blimited\b/i, /\bnot (?:tested|measured|examined|evaluated|studied|assessed)\b/i, /\bdid not\b/i, /\bwas not\b/i, /\bwere not\b/i,
-  /\bcannot\b/i, /\bcaveat/i, /\bdegrad/i, /\bfuture work\b/i, /\bfurther (?:work|study|research)\b/i, /\bremains? to be\b/i,
-  /\bsmall sample\b/i, /\bsample size\b/i, /\bonly\b/i, /\bexpected to\b/i, /\bwould (?:present|require|need)\b/i, /\bassum/i,
-];
-
-/* Wordings by which an implication becomes a claim about the world. */
-const WORLD_CLAIM_CUES = [
-  /\b(?:is|are|was|were|has been|have been|being)\s+(?:now\s+|widely\s+|already\s+|commonly\s+|routinely\s+|still\s+)?(?:used|applied|adopted|deployed|employed|relied on|built into|found in|standard)\b/i,
-  /\b(?:has|have|had)\s+(?:since\s+|already\s+)?(?:led|contributed|given rise)\s+to\b/i,
-  /\b(?:is|are|became|become)\s+(?:the|a)\s+(?:basis|foundation|standard|backbone)\s+(?:of|for)\b/i,
-  /\b(?:today|nowadays)\b[^.!?]{0,50}\b(?:engineers|companies|manufacturers|networks|phones|devices)\b[^.!?]{0,30}\b(?:use|rely|depend)\b/i,
-];
-
 const plain = (html) =>
   String(html || "").replace(/<[^>]+>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+const sentencesOf = (blocks) => (blocks || [])
+  .filter((b) => b.type === "paragraph")
+  .flatMap((b) => plain(b.html).split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean));
+const firstWord = (s) => (s.split(/\s+/)[0] || "").toLowerCase().replace(/[^a-z]/g, "");
 
 /**
  * The numbers a passage of text states, as canonical tokens.
@@ -132,39 +116,45 @@ function numericConsistency({ blocks, passages }) {
   return { version: CHECKS_VERSION, checked, numbers, misses, ok: misses.length === 0 };
 }
 
-/** The passages that read as stating a limitation, by their wording. A heuristic, and labelled so. */
-function limitationPassages(passages) {
-  return (passages || []).filter((p) => LIMITATION_CUES.filter((re) => re.test(p.text)).length >= 2).map((p) => p.id);
-}
-
 /**
- * Whether the article cites any passage that states a limitation.
- * @returns {{version: string, heuristic: true, limitationIds: string[], citedIds: string[], ok: boolean|null, sentence: string|null}}
+ * Whether the article cites any passage where the paper states its own
+ * caveats. Which passages those are is the caveat judge's finding; whether
+ * the article cites them is a lookup.
+ *
+ * @param {object} p
+ * @param {object[]} p.blocks
+ * @param {{ids: string[], caveats?: {id:string, caveat:string}[], unchecked?: boolean, version?: string}|null} p.caveats
+ * @returns {{version: string, judged: boolean, limitationIds: string[], citedIds: string[], caveats: object[], ok: boolean|null, sentence: string|null}}
  */
-function limitationsCoverage({ blocks, passages }) {
-  const ids = limitationPassages(passages);
-  if (!ids.length) return { version: CHECKS_VERSION, heuristic: true, limitationIds: [], citedIds: [], ok: null, sentence: null };
+function limitationsCoverage({ blocks, caveats }) {
+  const base = { version: CHECKS_VERSION, judged: true, judge: caveats?.version || null, caveats: caveats?.caveats || [] };
+  if (!caveats || caveats.unchecked) {
+    return { ...base, judged: false, limitationIds: [], citedIds: [], ok: null, sentence: "The paper's own caveats could not be read just now; check the article carries them." };
+  }
+  const ids = caveats.ids || [];
+  if (!ids.length) return { ...base, limitationIds: [], citedIds: [], ok: null, sentence: null };
   const cited = new Set();
   for (const b of blocks || []) for (const r of b.sourceRefs || []) if (ids.includes(r.passageId)) cited.add(r.passageId);
   const citedIds = [...cited];
   const ok = citedIds.length > 0;
   const missing = ids.filter((id) => !cited.has(id));
+  const named = (list) => list.map((id) => { const c = base.caveats.find((x) => x.id === id); return c?.caveat ? `${id} (${c.caveat})` : id; }).join(", ");
   return {
-    version: CHECKS_VERSION,
-    heuristic: true,
+    ...base,
     limitationIds: ids,
     citedIds,
     ok,
     sentence: ok
-      ? (missing.length ? `The article carries some of the paper's own caveats (${citedIds.join(", ")}); it leaves out ${missing.join(", ")}.` : "The article carries the paper's own caveats.")
-      : `The article cites none of the passages where the paper states its limitations (${ids.join(", ")}). Readers deserve the caveats the authors gave.`,
+      ? (missing.length ? `The article carries some of the paper's own caveats (${citedIds.join(", ")}); it leaves out ${named(missing)}.` : "The article carries the paper's own caveats.")
+      : `The article cites none of the passages where the paper states its limitations: ${named(ids)}. Readers deserve the caveats the authors gave.`,
   };
 }
 
 /**
- * Sentences in paragraphs that go beyond the paper which read as claims
- * about the world rather than implications. A heuristic, and labelled so.
- * @returns {{version: string, heuristic: true, checked: number, hits: {block: number, sentence: string}[], ok: boolean|null}}
+ * Sentences beyond the paper that bring in a fact about the world, as the
+ * reach judge ruled them claim by claim. Read off the verdicts on the
+ * blocks; nothing is re-judged here.
+ * @returns {{version: string, judged: true, checked: number, hits: {block: number, sentence: string}[], ok: boolean|null}}
  */
 function worldClaims({ blocks }) {
   const hits = [];
@@ -172,18 +162,19 @@ function worldClaims({ blocks }) {
   (blocks || []).forEach((b, i) => {
     if (b.type !== "paragraph" || !b.extension) return;
     checked += 1;
-    for (const sentence of plain(b.html).split(/(?<=[.!?])\s+/)) {
-      if (WORLD_CLAIM_CUES.some((re) => re.test(sentence))) hits.push({ block: i + 1, sentence: sentence.trim().slice(0, 200) });
+    for (const c of b.reach?.claims || []) {
+      if (c.verdict !== "follows" && c.reason === "outside_fact") hits.push({ block: i + 1, sentence: String(c.text).slice(0, 200) });
     }
   });
-  return { version: CHECKS_VERSION, heuristic: true, checked, hits, ok: checked ? hits.length === 0 : null };
+  return { version: CHECKS_VERSION, judged: true, checked, hits, ok: checked ? hits.length === 0 : null };
 }
 
 /**
- * Paragraphs that go beyond the paper against those drawn from it.
- * @returns {{version: string, extension: number, paper: number, ok: boolean|null, sentence: string|null}}
+ * Paragraphs that go beyond the paper against those drawn from it. A count;
+ * how many may go beyond per paragraph from the paper is policy.
+ * @returns {{version: string, extension: number, context: number, paper: number, ok: boolean|null, sentence: string|null}}
  */
-function extensionBudget({ blocks }) {
+function extensionBudget({ blocks, maxBeyondPerPaper = defaultsFor("drafting").maxBeyondPerPaper }) {
   let extension = 0;
   let context = 0;
   let paper = 0;
@@ -198,7 +189,7 @@ function extensionBudget({ blocks }) {
   }
   const beyond = extension + context;
   if (!beyond) return { version: CHECKS_VERSION, extension, context, paper, ok: null, sentence: null };
-  const ok = beyond <= paper;
+  const ok = beyond <= paper * maxBeyondPerPaper;
   const goes = beyond === 1 ? "goes" : "go";
   /* The split is said only when there is one to say. */
   const parts = context ? ` (${[extension ? `${extension} as implication` : "", `${context} as your own context`].filter(Boolean).join(", ")})` : "";
@@ -214,17 +205,10 @@ function extensionBudget({ blocks }) {
   };
 }
 
-/* Wordings by which the author's own context puts itself under the paper's authority. */
-const ATTRIBUTION_CUES = [
-  /\b(?:the|this|that|our)\s+(?:paper|study|work|research|article|analysis|results?|findings?|experiments?|trials?)\s+(?:shows?|showed|found|finds|proves?|proved|demonstrat\w*|establish\w*|confirm\w*|reports?|reported|measured)\b/i,
-  /\bas\s+(?:the|this)\s+(?:paper|study|work)\s+(?:shows|showed|found|demonstrates|reports)\b/i,
-];
-
 /**
- * Sentences in the author's own context that read as the paper's finding.
- * The context judge looks for the same thing claim by claim; this is the
- * cheap net under it, by wording, and labelled a heuristic.
- * @returns {{version: string, heuristic: true, checked: number, hits: {block: number, sentence: string}[], ok: boolean|null}}
+ * Sentences in the author's own context presented as the paper's finding,
+ * as the context judge ruled them claim by claim. Read off the verdicts.
+ * @returns {{version: string, judged: true, checked: number, hits: {block: number, sentence: string}[], ok: boolean|null}}
  */
 function attributionCues({ blocks }) {
   const hits = [];
@@ -232,11 +216,11 @@ function attributionCues({ blocks }) {
   (blocks || []).forEach((b, i) => {
     if (b.type !== "paragraph" || !b.ownView || !b.context) return;
     checked += 1;
-    for (const sentence of plain(b.html).split(/(?<=[.!?])\s+/)) {
-      if (ATTRIBUTION_CUES.some((re) => re.test(sentence))) hits.push({ block: i + 1, sentence: sentence.trim().slice(0, 200) });
+    for (const c of b.context.claims || []) {
+      if (c.reason === "stated_as_finding") hits.push({ block: i + 1, sentence: String(c.text).slice(0, 200) });
     }
   });
-  return { version: CHECKS_VERSION, heuristic: true, checked, hits, ok: checked ? hits.length === 0 : null };
+  return { version: CHECKS_VERSION, judged: true, checked, hits, ok: checked ? hits.length === 0 : null };
 }
 
 /**
@@ -259,138 +243,60 @@ function verifyList({ blocks }) {
 }
 
 /**
- * A heading may not name what the article never says.
- *
- * ── The hole this closes ────────────────────────────────────────────────────
- * Every judge and every check above skips a block that is not a paragraph, so
- * headings and the title were the one part of an article nothing read. Asked
- * to link a signal-processing paper to cancer, the drafter obeyed where it
- * could not be caught: the paragraphs said nothing about cancer, because the
- * reach judge forbids it, and the heading over them said "Potential
- * Applications in Cancer Treatment and Protein Folding". A reader skims
- * headings. That one was a lie the whole pipeline was built to prevent.
- *
- * ── Deliberately narrow ─────────────────────────────────────────────────────
- * A heading is flagged only for a word that appears nowhere in the article's
- * prose AND nowhere in the paper. Not "unsupported by this section" — absent
- * from everything the scholar and the paper actually said. "Everyday devices"
- * over prose about phones is fine; "cancer" over prose that never mentions it
- * is not. Generic article words are ignored, because a heading is allowed to
- * frame as well as name.
+ * The headings and title the article reviewer found promising something the
+ * article and the paper do not say, in the shape the drafter and the page
+ * read.
+ * @param {{headings: object[], unchecked?: boolean, version?: string}|null} review
+ * @returns {{version: string, judged: boolean, checked: number, unsupported: {index: number|null, kind: string, text: string, missing: string[]}[], ok: boolean|null}}
  */
-const HEADING_IGNORE = new Set([
-  "the", "and", "for", "with", "from", "that", "this", "what", "when", "where", "which", "how", "why", "into", "over", "under", "about",
-  "your", "our", "its", "their", "they", "them", "than", "then", "some", "more", "most", "less", "best", "better", "good", "great",
-  "new", "newer", "old", "modern", "today", "now", "here", "there", "also", "still", "just", "even", "only", "very", "much", "many",
-  "approach", "approaches", "method", "methods", "way", "ways", "idea", "ideas", "thing", "things", "part", "parts", "case", "cases",
-  "matter", "matters", "mattered", "means", "meaning", "important", "importance", "understanding", "overview", "introduction", "conclusion",
-  "story", "article", "section", "look", "looking", "make", "makes", "making", "work", "works", "working", "use", "uses", "using", "used",
-  "help", "helps", "helping", "find", "finds", "finding", "findings", "see", "seeing", "show", "shows", "showing", "get", "gets",
-  "can", "could", "would", "should", "may", "might", "must", "will", "does", "did", "done", "has", "have", "had", "been", "being",
-  "one", "two", "three", "four", "five", "first", "second", "third", "next", "last", "other", "others", "another", "both", "all", "any",
-  "problem", "problems", "challenge", "challenges", "solution", "solutions", "result", "results", "answer", "answers", "question", "questions",
-  "big", "small", "long", "short", "hard", "easy", "simple", "complex", "real", "true", "different", "same", "own", "kind", "kinds", "sort",
-  /* Framing a section is not claiming a topic: "Potential applications of X"
-     asserts nothing beyond X, and X is what this check is about. */
-  "potential", "application", "applications", "apply", "applies", "applying", "applied", "relevance", "relevant", "implication", "implications",
-  "impact", "impacts", "future", "beyond", "value", "benefit", "benefits", "advantage", "advantages", "promise", "practice", "practical",
-  /* Ordinary English a heading frames with. A verb is not a topic: "Where it
-     breaks" claims nothing the prose must contain, and removing that heading
-     for the word "breaks" was this check's first false positive. The check is
-     for domain nouns an article never mentions, so everyday words are out. */
-  "break", "breaks", "broken", "fail", "fails", "failed", "failure", "failures", "struggle", "struggles", "struggling",
-  "hide", "hides", "hidden", "hiding", "lose", "loses", "lost", "win", "wins", "keep", "keeps", "take", "takes", "give", "gives",
-  "come", "comes", "coming", "goes", "going", "stay", "stays", "read", "reads", "reading", "tell", "tells", "say", "says",
-  "need", "needs", "want", "wants", "happen", "happens", "change", "changes", "changed", "improve", "improves", "improved", "improvement",
-  "reduce", "reduces", "reduced", "solve", "solves", "solved", "build", "builds", "built", "start", "starts", "stop", "stops",
-  "know", "knows", "knowing", "think", "thinks", "learn", "learns", "hear", "hears", "hearing", "listen", "listens", "listening",
-  "catch", "catches", "miss", "misses", "missing", "pick", "picks", "picking", "choose", "chooses", "choosing", "choice", "choices",
-  "matter", "mattering", "worked", "wrong", "right", "wrongly", "better", "worse", "worst", "harder", "easier", "faster", "slower",
-  "inside", "outside", "before", "after", "while", "against", "without", "within", "through", "across", "around", "between", "behind",
-  "step", "steps", "test", "tests", "tested", "testing", "check", "checks", "trade", "trades", "limit", "limits", "limited", "limitation", "limitations",
-  "found", "paper", "papers", "study", "studies", "research", "author", "authors", "reader", "readers", "people", "someone", "everyone", "anyone",
-]);
-
-/* One odd word in a heading is imagery — "Steering silence toward the noise"
-   says nothing false about an article that never uses the word "silence".
-   Several odd words together is a topic the article does not have, which is
-   what "Cancer Treatment and Protein Folding" was. So the check fires on the
-   second word, not the first: precision over recall, because a false positive
-   costs the scholar a good heading and a miss costs a warning. */
-const HEADING_MIN_MISSING = 2;
-
-/**
- * @param {object} p
- * @param {object[]} p.blocks   mapped blocks, subheadings included
- * @param {{id: string, text: string}[]} p.passages
- * @param {string|null} [p.title]  the article's title, checked the same way
- * @returns {{version: string, heuristic: true, checked: number, unsupported: {index: number|null, kind: string, text: string, missing: string[]}[], ok: boolean|null}}
- */
-function headingSupport({ blocks, passages, title = null }) {
-  const said = new Set();
-  const add = (text) => { for (const w of plain(text).toLowerCase().split(/[^a-z0-9]+/)) if (w.length >= 4) said.add(w); };
-  for (const b of blocks || []) if (b.type === "paragraph" || b.type === "quote") add(b.html);
-  for (const p of passages || []) add(p.text);
-
-  /* A word counts as said if the article or the paper used any form of it.
-     Crude stemming, because "steering" over prose that says "steers" is the
-     same word and flagging it would cost an honest heading. */
-  const stem = (w) => w.replace(/(ing|edly|ed|ies|es|s|ly)$/, "").slice(0, 12);
-  const stems = new Set([...said].map(stem));
-  const everSaid = (w) => {
-    if (said.has(w) || stems.has(stem(w))) return true;
-    const st = stem(w);
-    if (st.length < 4) return false;
-    for (const s of stems) if (s.startsWith(st) || st.startsWith(s)) return true;
-    return false;
-  };
-  const missingIn = (text) => [...new Set(plain(text).toLowerCase().split(/[^a-z0-9]+/))]
-    .filter((w) => w.length >= 4 && !HEADING_IGNORE.has(w))
-    .filter((w) => !everSaid(w));
-
-  const unsupported = [];
-  let checked = 0;
-  (blocks || []).forEach((b, i) => {
-    if (b.type !== "subheading" && b.type !== "heading") return;
-    checked += 1;
-    const missing = missingIn(b.html);
-    if (missing.length >= HEADING_MIN_MISSING) unsupported.push({ index: i + 1, kind: "heading", text: plain(b.html), missing });
-  });
-  if (title) {
-    checked += 1;
-    const missing = missingIn(title);
-    if (missing.length >= HEADING_MIN_MISSING) unsupported.push({ index: null, kind: "title", text: String(title), missing });
-  }
-  return { version: CHECKS_VERSION, heuristic: true, checked, unsupported, ok: checked ? unsupported.length === 0 : null };
+function headingFindings(review) {
+  if (!review || review.unchecked) return { version: CHECKS_VERSION, judged: false, checked: 0, unsupported: [], ok: null };
+  const unsupported = review.headings.filter((h) => h.promisesUnsaid).map((h) => ({ index: h.index, kind: h.kind, text: h.text, missing: h.unsaid ? [h.unsaid] : [] }));
+  return { version: CHECKS_VERSION, judged: true, reviewer: review.version || null, checked: review.headings.length, unsupported, ok: review.headings.length ? unsupported.length === 0 : null };
 }
 
 /**
- * How much the prose repeats itself, counted.
+ * Whether the article keeps one pronoun for the scholar throughout. Which
+ * pronoun stands for the scholar, in which paragraph, is the article
+ * reviewer's reading — a colleague the paper names is not the scholar;
+ * whether they agree is a count.
  *
- * Measured across seven drafts before anything was done about it: three
- * words opened between half and two thirds of every sentence, one article
- * began 23 of its 97 sentences with "This", and 2 of 84 paragraphs opened
- * with anything joining them to what came before. A reader feels that as
- * flatness without being able to name it, so it is named here.
- *
- * A count, not a verdict on the writing: it reports, and the scholar decides.
+ * @param {object} p
+ * @param {{pronouns: {index:number, pronoun:string}[], unchecked?: boolean}|null} p.review
+ * @returns {{version: string, judged: boolean, used: string[], ok: boolean|null, sentence: string|null, blocks: number[]}}
  */
-const JOINING_OPENERS = /^(?:but|yet|so|still|then|because|although|though|while|however|even|that is|in other words|the result|the catch|what follows|worse|better|instead|by contrast|for all that|and)\b/i;
+function authorPronouns({ review }) {
+  if (!review || review.unchecked) return { version: CHECKS_VERSION, judged: false, used: [], ok: null, sentence: null, blocks: [] };
+  const seen = new Map();
+  for (const { index, pronoun } of review.pronouns || []) seen.set(pronoun, [...(seen.get(pronoun) || []), index]);
+  const used = [...seen.keys()];
+  if (used.length <= 1) return { version: CHECKS_VERSION, judged: true, used, ok: used.length === 1 ? true : null, sentence: null, blocks: [] };
+  /* Whichever is rarer is the one that slipped: name those blocks. */
+  const [minor] = [...seen.entries()].sort((a, b) => a[1].length - b[1].length);
+  const [major] = [...seen.entries()].sort((a, b) => b[1].length - a[1].length);
+  return {
+    version: CHECKS_VERSION,
+    judged: true,
+    used,
+    ok: false,
+    blocks: minor[1],
+    sentence:
+      `This article calls the author "${major[0]}" in some paragraphs and "${minor[0]}" in others — ` +
+      `"${minor[0]}" in block${minor[1].length === 1 ? "" : "s"} ${minor[1].join(", ")}. ` +
+      "One of them is wrong about a real person. Fix it before publishing.",
+  };
+}
 
 /**
- * The words that open a draft's sentences, most used first.
- *
- * Separate from the verdict below, which says nothing until there are enough
- * sentences to judge a share. The drafter needs the count from the first
- * section onward — that is when the habit forms — so this always answers.
+ * The words that open a draft's sentences, most used first: a count, given
+ * to the drafter so the next section does not reach for them again, and to
+ * the article reviewer as evidence.
  */
 function openerCounts(blocks) {
-  const sentences = (blocks || [])
-    .filter((b) => b.type === "paragraph")
-    .flatMap((b) => plain(b.html).split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean));
+  const sentences = sentencesOf(blocks);
   const counts = {};
   for (const s of sentences) {
-    const w = (s.split(/\s+/)[0] || "").toLowerCase().replace(/[^a-z]/g, "");
+    const w = firstWord(s);
     if (w) counts[w] = (counts[w] || 0) + 1;
   }
   return Object.entries(counts)
@@ -398,20 +304,25 @@ function openerCounts(blocks) {
     .map(([word, n]) => ({ word, n, share: sentences.length ? +(n / sentences.length).toFixed(2) : 0 }));
 }
 
-/**
- * How much of a paragraph is the paper's own wording.
- *
- * An article is meant to be the paper explained, not the paper retyped. The
- * whole point of the pipeline is that it paraphrases — measured across seven
- * drafts, 1-3% of six-word runs matched the source. Then a change aimed at
- * raising the reading level told the drafter to prefer exact terms, and one
- * paragraph came back 38% verbatim. Nothing was watching, so nothing said so.
- *
- * Quotes are exempt: a quote block is supposed to be word for word.
- */
-const BORROW_LIMIT = 0.2;
+/** How many times three sentences in a row open the same way: a count. */
+function repeatedRuns(blocks) {
+  const sentences = sentencesOf(blocks);
+  let runs = 0;
+  let run = 1;
+  for (let i = 1; i < sentences.length; i += 1) {
+    if (firstWord(sentences[i]) && firstWord(sentences[i]) === firstWord(sentences[i - 1])) { run += 1; if (run === 3) runs += 1; }
+    else run = 1;
+  }
+  return { sentences: sentences.length, runs };
+}
 
-function borrowed({ blocks, passages }) {
+/**
+ * How much of a paragraph is the paper's own wording: the share of its
+ * six-word runs found in the passages. An article is meant to be the paper
+ * explained, not the paper retyped; the share that becomes a warning is
+ * policy. Quotes are exempt: a quote block is supposed to be word for word.
+ */
+function borrowed({ blocks, passages, limit = defaultsFor("drafting").borrowLimit }) {
   const words = (t) => plain(t).toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
   const runs = (list, n) => {
     const out = new Set();
@@ -419,7 +330,7 @@ function borrowed({ blocks, passages }) {
     return out;
   };
   const source = runs((passages || []).flatMap((p) => words(p.text)), 6);
-  if (!source.size) return { version: CHECKS_VERSION, heuristic: true, checked: 0, worst: null, hits: [], ok: null, sentence: null };
+  if (!source.size) return { version: CHECKS_VERSION, checked: 0, worst: null, hits: [], ok: null, sentence: null, limit };
 
   const hits = [];
   let checked = 0;
@@ -431,11 +342,11 @@ function borrowed({ blocks, passages }) {
     const mine = [...runs(w, 6)];
     const shared = mine.filter((g) => source.has(g)).length;
     const share = mine.length ? shared / mine.length : 0;
-    if (share > BORROW_LIMIT) hits.push({ block: i + 1, share: +share.toFixed(2), words: w.length });
+    if (share > limit) hits.push({ block: i + 1, share: +share.toFixed(2), words: w.length });
   });
   const worst = hits.length ? Math.max(...hits.map((h) => h.share)) : 0;
   return {
-    version: CHECKS_VERSION, heuristic: true, checked, hits, worst: +worst.toFixed(2),
+    version: CHECKS_VERSION, checked, hits, worst: +worst.toFixed(2), limit,
     ok: checked ? hits.length === 0 : null,
     sentence: hits.length
       ? `${hits.length} paragraph${hits.length === 1 ? "" : "s"} repeat${hits.length === 1 ? "s" : ""} the paper's own wording closely (up to ${Math.round(worst * 100)}% of six-word runs: ${hits.map((h) => `block ${h.block}`).join(", ")}). An article is the paper explained, not the paper retyped.`
@@ -443,43 +354,29 @@ function borrowed({ blocks, passages }) {
   };
 }
 
-function repetition({ blocks }) {
-  const paras = (blocks || []).filter((b) => b.type === "paragraph");
-  const sentences = paras.flatMap((b) => plain(b.html).split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean));
-  /* Under a dozen sentences a share means nothing: three distinct openers
-     out of six is 50% and perfectly varied. */
-  if (sentences.length < 12) return { version: CHECKS_VERSION, heuristic: true, sentences: sentences.length, ok: null, openers: [], repeatedRuns: 0, joinedParagraphs: 0, paragraphs: paras.length, sentence: null };
-
-  const firstWord = (s) => (s.split(/\s+/)[0] || "").toLowerCase().replace(/[^a-z]/g, "");
-  const counts = {};
-  for (const s of sentences) { const w = firstWord(s); if (w) counts[w] = (counts[w] || 0) + 1; }
-  const openers = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([word, n]) => ({ word, n, share: +(n / sentences.length).toFixed(2) }));
-  const topThreeShare = openers.reduce((a, o) => a + o.n, 0) / sentences.length;
-  /* One word carrying a fifth of the article's sentences is what a reader
-     hears: "This" opened 23 of 97 sentences in one measured draft. Judged on
-     the commonest alone, with a real count behind it, so varied prose with
-     few sentences is not accused of droning. */
-  const top = openers[0] || { word: "", n: 0, share: 0 };
-  const dominated = top.n >= 5 && top.share > 0.18;
-
-  /* Three in a row opening the same way is the thing a reader hears. */
-  let repeatedRuns = 0;
-  let run = 1;
-  for (let i = 1; i < sentences.length; i += 1) {
-    if (firstWord(sentences[i]) && firstWord(sentences[i]) === firstWord(sentences[i - 1])) { run += 1; if (run === 3) repeatedRuns += 1; }
-    else run = 1;
-  }
-  const joinedParagraphs = paras.filter((b) => JOINING_OPENERS.test(plain(b.html))).length;
-
-  const ok = !dominated && repeatedRuns === 0;
-  const parts = [];
-  if (dominated) parts.push(`${top.n} of ${sentences.length} sentences begin with “${top.word}”`);
-  if (repeatedRuns) parts.push(`${repeatedRuns} run${repeatedRuns === 1 ? "" : "s"} of three sentences opening the same way`);
+/**
+ * Whether the prose drones: the article reviewer's reading, with the counts
+ * it was given kept beside it.
+ * @param {object} p
+ * @param {object[]} p.blocks
+ * @param {{rhythm: {droning:boolean, note:string}|null, unchecked?: boolean}|null} p.review
+ */
+function repetition({ blocks, review }) {
+  const openers = openerCounts(blocks).slice(0, 3);
+  const { sentences, runs } = repeatedRuns(blocks);
+  const counts = { version: CHECKS_VERSION, sentences, openers, repeatedRuns: runs };
+  if (!review || review.unchecked || !review.rhythm) return { ...counts, judged: false, ok: null, sentence: null };
+  const ok = !review.rhythm.droning;
   return {
-    version: CHECKS_VERSION, heuristic: true, sentences: sentences.length, paragraphs: paras.length,
-    openers, topThreeShare: +topThreeShare.toFixed(2), topShare: +top.share.toFixed(2), repeatedRuns, joinedParagraphs, ok,
-    sentence: ok ? null : `${parts.join("; ")}. Varying how sentences open costs nothing and changes no fact.`,
+    ...counts,
+    judged: true,
+    ok,
+    sentence: ok ? null : `${review.rhythm.note || "The sentences open the same way again and again."} Varying how sentences open costs nothing and changes no fact.`,
   };
 }
 
-module.exports = { CHECKS_VERSION, NUMBER_WORDS, WORLD_CLAIM_CUES, ATTRIBUTION_CUES, HEADING_IGNORE, HEADING_MIN_MISSING, JOINING_OPENERS, BORROW_LIMIT, repetition, openerCounts, borrowed, numbersIn, numericConsistency, limitationPassages, limitationsCoverage, worldClaims, extensionBudget, attributionCues, verifyList, headingSupport };
+module.exports = {
+  CHECKS_VERSION, NUMBER_WORDS,
+  numbersIn, numericConsistency, limitationsCoverage, worldClaims, extensionBudget, attributionCues, verifyList,
+  headingFindings, authorPronouns, openerCounts, repeatedRuns, borrowed, repetition,
+};

@@ -137,3 +137,64 @@ test("the band note is the editor's guidance and sentences, and asks for no new 
   assert.equal(band.bandNote({ verdict: "fits" }, "adults"), null);
   assert.equal(band.bandNote({ verdict: "unchecked" }, "adults"), null);
 });
+
+/* ── the article reviewer and the caveat judge ──────────────────────────── */
+
+const reviewer = require("../src/lib/agents/articleReviewer");
+const caveatJudge = require("../src/lib/agents/caveatJudge");
+
+const article = [
+  { type: "subheading", text: "What the trial found" },
+  { type: "paragraph", text: "The array improved the ratio by eleven decibels. He chose four elements." },
+  { type: "subheading", text: "Lessons for hearing aids" },
+  { type: "paragraph", text: "Performance degrades beyond four interferers." },
+];
+const paper = [{ id: "p1", text: "The array improved the ratio by eleven decibels." }];
+
+test("the reviewer is asked about every heading and paragraph by an id it cannot invent, and must answer every heading", async () => {
+  const p = reviewer.plan({ title: "T", blocks: article, passages: paper });
+  assert.deepEqual(p.asked, ["TITLE", "H1", "H3"]);
+  assert.deepEqual(p.paragraphIds, ["B2", "B4"]);
+  const schema = reviewer.schemaFor(p);
+  assert.deepEqual(schema.properties.headings.items.properties.id.enum, ["TITLE", "H1", "H3"]);
+  assert.deepEqual(schema.properties.author_pronouns.items.properties.id.enum, ["B2", "B4"]);
+
+  const prompt = reviewer.buildPrompt({ title: "T", blocks: article, passages: paper, voice: "about", scholarName: "Inder Gupta", openers: [{ word: "the", n: 3 }], repeatedRuns: 0, sentences: 4 });
+  assert.match(prompt, /^\[H3\] \(heading\) Lessons for hearing aids$/m);
+  assert.match(prompt, /^SENTENCE OPENINGS: “the” opens 3 of 4; 0 runs/m);
+
+  const partial = JSON.stringify({ headings: [{ id: "H1", promises_unsaid: false, unsaid: "" }], author_pronouns: [], rhythm: { droning: false, note: "" } });
+  const full = JSON.stringify({
+    headings: [{ id: "TITLE", promises_unsaid: false, unsaid: "" }, { id: "H1", promises_unsaid: false, unsaid: "" }, { id: "H3", promises_unsaid: true, unsaid: "hearing aids" }],
+    author_pronouns: [{ id: "B2", pronoun: "he" }, { id: "B9", pronoun: "he" }],
+    rhythm: { droning: false, note: "" },
+  });
+  const { generate, prompts } = scripted(partial, full);
+  const r = await reviewer.reviewArticle({ title: "T", blocks: article, passages: paper, voice: "about", generate });
+  assert.equal(prompts.length, 2, "a review that leaves a heading out is asked for again");
+  assert.match(prompts[1], /LEFT A HEADING OUT/);
+  assert.deepEqual(r.headings.find((h) => h.id === "H3"), { id: "H3", index: 3, kind: "heading", text: "Lessons for hearing aids", promisesUnsaid: true, unsaid: "hearing aids" });
+  assert.deepEqual(r.pronouns, [{ index: 2, pronoun: "he" }], "a paragraph that is not there is not counted");
+});
+
+test("a re-read asks only about the rewritten headings; an unreadable review is unchecked", async () => {
+  const p = reviewer.plan({ title: "T", blocks: article, passages: paper, only: ["H3"] });
+  assert.deepEqual(p.asked, ["H3"]);
+  assert.deepEqual(p.paragraphIds, []);
+  assert.deepEqual(Object.keys(reviewer.schemaFor(p).properties), ["headings"], "nothing else is asked");
+  const never = scripted("nope");
+  const r = await reviewer.reviewArticle({ title: null, blocks: article, passages: paper, voice: "author", generate: never.generate });
+  assert.equal(r.unchecked, true);
+  assert.deepEqual(r.headings, []);
+});
+
+test("the caveat judge names passages by ids it is given, once each, and an unreadable answer is unchecked", async () => {
+  const passages = [{ id: "p1", text: "a" }, { id: "p2", text: "b" }];
+  assert.deepEqual(caveatJudge.schemaFor(passages).properties.caveats.items.properties.passage_id.enum, ["p1", "p2"]);
+  assert.deepEqual(caveatJudge.parse(JSON.stringify({ caveats: [{ passage_id: "p2", caveat: "only in a chamber" }, { passage_id: "p2", caveat: "again" }, { passage_id: "p9", caveat: "x" }] }), passages), [{ id: "p2", caveat: "only in a chamber" }]);
+  const ok = await caveatJudge.findCaveats({ passages, generate: scripted({ caveats: [{ passage_id: "p1", caveat: "small sample" }] }).generate });
+  assert.deepEqual(ok.ids, ["p1"]);
+  const never = await caveatJudge.findCaveats({ passages, generate: scripted("nope").generate });
+  assert.equal(never.unchecked, true);
+  assert.deepEqual((await caveatJudge.findCaveats({ passages: [], generate: scripted("x").generate })).calls, [], "no paper, no call");
+});

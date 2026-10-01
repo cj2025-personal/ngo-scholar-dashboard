@@ -57,11 +57,13 @@ const context = require("./context");
 const { assessDraftReadability, placeReadability, VERDICT } = require("./draftReadability");
 const voiceJudge = require("./agents/voiceJudge");
 const bandJudge = require("./agents/bandJudge");
+const articleReviewer = require("./agents/articleReviewer");
+const caveatJudge = require("./agents/caveatJudge");
 const { defaultsFor } = require("./policyDefaults");
 const { USE } = require("./draftEligibility");
 const checks = require("./checks");
 
-const GRAPH_VERSION = "draft-graph-2026.6";
+const GRAPH_VERSION = "draft-graph-2026.7";
 
 /** A block's text, as the voice checks read it: markup out, entities back. */
 function plainText(html) {
@@ -95,6 +97,8 @@ const State = Annotation.Root({
   readabilityRounds: Annotation(),
   checks: Annotation(),
   headingChecks: Annotation(),
+  review: Annotation(),
+  caveats: Annotation(),
   warnings: Annotation({ reducer: (a, b) => [...(a || []), ...(b || [])], default: () => [] }),
   calls: Annotation({ reducer: (a, b) => [...(a || []), ...(b || [])], default: () => [] }),
 });
@@ -103,7 +107,7 @@ const State = Annotation.Root({
  * @param {object} deps
  * @param {(req: {prompt: string, systemInstruction: string, responseSchema: object, temperature?: number, maxOutputTokens?: number}) => Promise<{text: string, usage?: object, modelVersion?: string|null}>} deps.generate
  * @param {(event: {step: string, message: string, detail?: object}) => (void|Promise<void>)} [deps.onProgress]
- * @param {{voice?: Function, band?: Function}} [deps.judges]   the voice and reading-level judges' models; the writer's when not given
+ * @param {{voice?: Function, band?: Function, review?: Function}} [deps.judges]   the voice, reading-level and article-review judges' models; the writer's when not given
  * @param {{sectionVoiceRetries?: number, fidelityRetries?: number, bandRetries?: number}} [deps.limits]   from the drafting policy
  */
 function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, limits = {} }) {
@@ -111,6 +115,7 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
   const L = { ...defaultsFor("drafting"), ...limits };
   const judgeVoice = judges.voice || generate;
   const judgeBand = judges.band || generate;
+  const judgeReview = judges.review || generate;
   const progress = (step, message, detail) => Promise.resolve(onProgress({ step, message, detail }));
   /* The system instruction depends on whose account this is, so it is built
      per run rather than once per process. */
@@ -380,30 +385,47 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
     return out;
   }
 
+  /** The article as the reviewer reads it: plain text, in order. */
+  const asRead = (blocks) => blocks.map((b) => ({ type: b.type, text: b.type === "image" ? `(illustration) ${b.caption || ""}`.trim() : plainText(b.html) }));
+
+  /** One reading of the article by the reviewer, with the opening counts as evidence. */
+  async function reviewDraft(s, blocks, { only = null } = {}) {
+    const { sentences, runs } = checks.repeatedRuns(blocks);
+    return articleReviewer.reviewArticle({
+      title: s.outline.title, blocks: asRead(blocks), passages: s.passages, voice: s.voice, scholarName: s.scholar?.name || null,
+      openers: checks.openerCounts(blocks).slice(0, 3), repeatedRuns: runs, sentences, only, generate: judgeReview,
+    });
+  }
+
   async function repairHeadings(s, draft) {
-    const first = checks.headingSupport({ blocks: draft.bodyBlocks, passages: s.passages, title: s.outline.title });
     const warnings = [];
     const repaired = [];
     const calls = [];
+    const review = await reviewDraft(s, draft.bodyBlocks);
+    calls.push(...review.calls);
+    if (review.unchecked) warnings.push("The headings and title could not be read against the article just now. Check that each names only what its section says before you publish.");
+    const first = checks.headingFindings(review);
+    const named = (u) => u.missing.length ? u.missing.slice(0, 2).map((w) => `“${w}”`).join(", ") : "something";
 
     /* A heading whose section lost every paragraph to a judge promises a
        reader something that is not there. "Finding enemies with signals"
-       survived a section the reach judge had emptied, because the check
-       above reads vocabulary and this one reads the article's shape. */
+       survived a section the reach judge had emptied, because the reviewer
+       reads what a heading names and this reads the article's shape. */
     const strandedFirst = emptyHeadings(draft.bodyBlocks);
     if (first.ok !== false && strandedFirst.length === 0) {
-      return { draft, warnings, headings: first, coverage: null, calls, repaired };
+      return { draft, warnings, headings: first, review, coverage: null, calls, repaired };
     }
     const blocks = draft.bodyBlocks.map((b) => ({ ...b }));
+    const rewritten = [];
+    const leftAlone = [];
     for (const bad of first.unsupported.filter((u) => u.kind === "heading")) {
       const at = bad.index - 1;
       /* A heading the scholar wrote or renamed is theirs. Say what it names
          that the article does not, and leave it alone — rewriting a person's
          own words on their behalf is the one thing this system never does. */
       if (blocks[at]?.headingEdited) {
-        warnings.push(
-          `Your heading “${bad.text}” names ${bad.missing.slice(0, 4).map((w) => `“${w}”`).join(", ")}, which neither this article nor the paper mentions. It was left exactly as you wrote it.`,
-        );
+        leftAlone.push(bad);
+        warnings.push(`Your heading “${bad.text}” names ${named(bad)}, which neither this article nor the paper says. It was left exactly as you wrote it.`);
         continue;
       }
       /* The prose this heading sits over, which is what it must describe. */
@@ -431,55 +453,75 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
           });
           calls.push({ step: "repair_heading", usage: r.usage || null, model: r.modelVersion || null });
           const text = String(JSON.parse(String(r.text).replace(/^```(?:json)?|```$/g, "").trim())?.heading || "").replace(/\s+/g, " ").trim();
-          if (text && checks.headingSupport({ blocks, passages: s.passages, title: text }).unsupported.every((u) => u.kind !== "title")) {
-            replacement = composer.clampToSentence(text, 140);
-          }
+          if (text) replacement = composer.clampToSentence(text, 140);
         } catch { /* a repair that fails is a heading that goes */ }
       }
       if (replacement) {
-        repaired.push(`“${bad.text}” → “${replacement}”`);
         blocks[at] = { ...blocks[at], html: replacement.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") };
+        rewritten.push({ at, bad, replacement });
       } else {
-        repaired.push(`“${bad.text}” (removed)`);
         blocks[at] = null;
+        repaired.push(`“${bad.text}” (removed)`);
+        warnings.push(`The heading “${bad.text}” named ${named(bad)}, which neither this article nor the paper says, so it was removed. The section's own words were not changed.`);
       }
-      warnings.push(
-        `The heading “${bad.text}” named ${bad.missing.slice(0, 4).map((w) => `“${w}”`).join(", ")}, which neither this article nor the paper mentions${replacement ? `, so it now reads “${replacement}”` : ", so it was removed"}. The section's own words were not changed.`,
-      );
     }
+
+    /* The writer's new heading is not passed by the writer: the reviewer
+       reads each rewrite against the article, and one that still promises
+       what is not said goes. */
+    if (rewritten.length) {
+      const live = blocks.map((b, i) => (b ? i : null)).filter((i) => i !== null);
+      const idAt = (at) => `H${live.indexOf(at) + 1}`;
+      const again = await reviewDraft(s, live.map((i) => blocks[i]), { only: rewritten.map((w) => idAt(w.at)) });
+      calls.push(...again.calls);
+      const still = new Set(again.unchecked ? [] : again.headings.filter((h) => h.promisesUnsaid).map((h) => h.id));
+      for (const w of rewritten) {
+        if (still.has(idAt(w.at))) {
+          blocks[w.at] = null;
+          repaired.push(`“${w.bad.text}” (removed)`);
+          warnings.push(`The heading “${w.bad.text}” named ${named(w.bad)}, which neither this article nor the paper says, and its rewrite did too, so it was removed. The section's own words were not changed.`);
+        } else {
+          repaired.push(`“${w.bad.text}” → “${w.replacement}”`);
+          warnings.push(`The heading “${w.bad.text}” named ${named(w.bad)}, which neither this article nor the paper says, so it now reads “${w.replacement}”. The section's own words were not changed.`);
+        }
+      }
+    }
+
     /* Whatever the repairs left, a heading over nothing goes — the scholar's
        own wording included, because this is not a rewrite of their words but
        the removal of a label with nothing beneath it. */
-    const afterRepair = blocks.filter(Boolean);
-    const stranded = emptyHeadings(afterRepair);
-    for (const i of stranded) {
-      warnings.push(
-        `The heading “${plainText(afterRepair[i].html)}” was removed: every paragraph under it was left out by the checks, so it promised a section that is not there.`,
-      );
+    const origin = blocks.map((b, i) => (b ? i : null)).filter((i) => i !== null);
+    const afterRepair = origin.map((i) => blocks[i]);
+    for (const i of emptyHeadings(afterRepair)) {
+      warnings.push(`The heading “${plainText(afterRepair[i].html)}” was removed: every paragraph under it was left out by the checks, so it promised a section that is not there.`);
       repaired.push(`“${plainText(afterRepair[i].html)}” (removed, nothing under it)`);
       afterRepair[i] = null;
+      origin[i] = null;
     }
     const kept = afterRepair.filter(Boolean);
+    /* Where each block the reviewer numbered now stands, so what it said of a paragraph stays with that paragraph. */
+    const keptOrigin = origin.filter((i) => i !== null);
+    const now = (index) => keptOrigin.indexOf(index - 1) + 1;
     const titleBad = first.unsupported.find((u) => u.kind === "title");
-    if (titleBad) {
-      warnings.push(
-        `The title “${titleBad.text}” names ${titleBad.missing.slice(0, 4).map((w) => `“${w}”`).join(", ")}, which neither this article nor the paper mentions. Change it before you publish.`,
-      );
-    }
+    if (titleBad) warnings.push(`The title “${titleBad.text}” names ${named(titleBad)}, which neither this article nor the paper says. Change it before you publish.`);
+
+    const leftover = [...leftAlone.map((u) => ({ ...u, index: now(u.index) })).filter((u) => u.index > 0), ...(titleBad ? [titleBad] : [])];
+    const headings = { ...first, unsupported: leftover, ok: first.checked ? leftover.length === 0 : null };
     const after = plan.assembleFrom(kept);
-    const headings = checks.headingSupport({ blocks: kept, passages: s.passages, title: s.outline.title });
     /* A brief answered by a heading was not answered. */
     const coverage = repaired.length
       ? { met: plan.COVERAGE.PART, note: `A section promised something the paper cannot carry: ${first.unsupported.filter((u) => u.kind === "heading").flatMap((u) => u.missing).slice(0, 4).join(", ")}.` }
       : null;
-    return { draft: after, warnings, headings, coverage, repaired, calls };
+    const remapped = { ...review, pronouns: review.pronouns.map((p) => ({ ...p, index: now(p.index) })).filter((p) => p.index > 0) };
+    return { draft: after, warnings, headings, review: remapped, coverage, repaired, calls };
   }
 
   async function assemble(s) {
     await progress("assemble", "Assembling the draft…");
     const assembled = plan.assemble({ outline: s.outline, sections: s.sections });
+    await progress("review_article", "Reading the whole article: its headings, whose pronoun, its rhythm…");
     const fixed = await repairHeadings(s, assembled);
-    if (fixed.warnings.length) {
+    if (fixed.repaired.length) {
       await progress("assemble", `Corrected ${fixed.repaired.length} heading${fixed.repaired.length === 1 ? "" : "s"} that named what the article does not say.`, { repaired: fixed.repaired });
     }
     return {
@@ -489,6 +531,7 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
       warnings: fixed.warnings,
       calls: fixed.calls,
       headingChecks: fixed.headings,
+      review: fixed.review,
       ...(fixed.coverage ? { outline: { ...s.outline, coverage: fixed.coverage } } : {}),
     };
   }
@@ -521,8 +564,7 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
     const warnings = [];
     if (readability.verdict !== VERDICT.PASS && readability.reason) warnings.push(`This draft ${readability.reason}.`);
 
-    /* Two rules the judge does not apply: every number must be in a cited
-       passage, and the paper's own caveats should not have been left out. */
+    /* A count the judges do not make: every number must be in a cited passage. */
     const numbers = checks.numericConsistency({ blocks: s.draft.bodyBlocks, passages: s.passages });
     if (!numbers.ok) {
       warnings.push(
@@ -530,11 +572,14 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
         `${numbers.misses.map((m) => `${m.number} (block ${m.block})`).join(", ")}. Check ${numbers.misses.length === 1 ? "it" : "them"} against the paper before publishing.`,
       );
     }
-    const limitations = checks.limitationsCoverage({ blocks: s.draft.bodyBlocks, passages: s.passages });
-    if (limitations.ok === false) warnings.push(limitations.sentence);
+    /* The paper's own caveats, found by the caveat judge once per run, and
+       whether the article cites any of them. */
+    const caveats = s.caveats || await caveatJudge.findCaveats({ passages: s.passages, generate: judgeReview });
+    const limitations = checks.limitationsCoverage({ blocks: s.draft.bodyBlocks, caveats });
+    if (limitations.ok === false || limitations.judged === false) warnings.push(limitations.sentence);
 
-    /* Two more, only where the article goes beyond the paper: a sentence
-       that reads as a fact about the world, and the share of such prose. */
+    /* Where the article goes beyond the paper: the claims the reach judge
+       found bringing in a fact about the world, and the share of such prose. */
     const worldClaims = checks.worldClaims({ blocks: s.draft.bodyBlocks });
     if (worldClaims.ok === false) {
       warnings.push(
@@ -542,12 +587,12 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
         `${worldClaims.hits.map((h) => `"${h.sentence}" (block ${h.block})`).join("; ")}. Say what follows, not what is done.`,
       );
     }
-    const budget = checks.extensionBudget({ blocks: s.draft.bodyBlocks });
+    const budget = checks.extensionBudget({ blocks: s.draft.bodyBlocks, maxBeyondPerPaper: L.maxBeyondPerPaper });
     if (budget.ok === false) warnings.push(budget.sentence);
 
-    /* The author's own context: a sentence that wears the paper's authority,
-       by wording; and the specifics the author must verify before the story
-       can be published. */
+    /* The author's own context: the claims the context judge found wearing
+       the paper's authority, and the specifics the author must verify before
+       the story can be published. */
     const attribution = checks.attributionCues({ blocks: s.draft.bodyBlocks });
     if (attribution.ok === false) {
       warnings.push(
@@ -561,35 +606,36 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
     }
 
     /* Sections are drafted by separate calls, so nothing but this stops them
-       disagreeing about the author's pronoun. They did, under a real name. */
-    const pronouns = composer.pronounConsistency({ blocks: s.draft.bodyBlocks });
+       disagreeing about the author's pronoun. They did, under a real name.
+       Which pronoun stands for the scholar is the reviewer's reading. */
+    const pronouns = checks.authorPronouns({ review: s.review });
     if (pronouns.ok === false) warnings.push(pronouns.sentence);
     if (s.prepared.truncated) {
       warnings.push(
         `Only the first ${s.prepared.words.toLocaleString()} of ${s.prepared.totalWords.toLocaleString()} words were used; the rest of the paper is not reflected here.`,
       );
     }
-    /* Measured again on the assembled article, so a heading the repair pass
-       left standing is on the record and in front of the scholar at publish. */
-    const headings = checks.headingSupport({ blocks: s.draft.bodyBlocks, passages: s.passages, title: s.outline.title });
+    /* What the repair pass left standing — the scholar's own headings, the
+       title — on the record and in front of the scholar at publish. */
+    const headings = s.headingChecks || checks.headingFindings(null);
     if (headings.ok === false) {
       warnings.push(
         `${headings.unsupported.length === 1 ? "A heading names" : `${headings.unsupported.length} headings name`} something neither this article nor the paper says: ` +
         `${headings.unsupported.map((u) => `“${u.text}” (${u.missing.slice(0, 3).join(", ")})`).join("; ")}. A reader skims headings, so change ${headings.unsupported.length === 1 ? "it" : "them"} before publishing.`,
       );
     }
-    /* How much the prose repeats itself. Reported, never a refusal: it is a
-       count about rhythm, and rhythm is the scholar's to judge. */
-    const repeats = checks.repetition({ blocks: s.draft.bodyBlocks });
+    /* Whether the prose drones: the reviewer's reading, the counts beside it.
+       Reported, never a refusal: rhythm is the scholar's to judge. */
+    const repeats = checks.repetition({ blocks: s.draft.bodyBlocks, review: s.review });
     if (repeats.ok === false) warnings.push(repeats.sentence);
 
     /* And how much of it is the paper's own wording rather than the
        article's. A paraphrasing pipeline that starts copying says nothing
        about it unless something counts. */
-    const borrow = checks.borrowed({ blocks: s.draft.bodyBlocks, passages: s.passages });
+    const borrow = checks.borrowed({ blocks: s.draft.bodyBlocks, passages: s.passages, limit: L.borrowLimit });
     if (borrow.ok === false) warnings.push(borrow.sentence);
 
-    return { readability, readabilityNote: null, warnings, calls: ruling.calls, checks: { numbers, limitations, worldClaims, budget, pronouns, attribution, verify: verifyItems, headings, repetition: repeats, borrowed: borrow } };
+    return { readability, readabilityNote: null, warnings, caveats, calls: [...ruling.calls, ...(s.caveats ? [] : caveats.calls)], checks: { numbers, limitations, worldClaims, budget, pronouns, attribution, verify: verifyItems, headings, repetition: repeats, borrowed: borrow } };
   }
 
   return { pick_source, plan_outline, draft_blocks, assemble, verify };

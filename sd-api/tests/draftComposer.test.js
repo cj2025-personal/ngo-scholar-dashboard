@@ -130,18 +130,7 @@ test("the system instruction states the rules the parser enforces, in the voice 
   assert.deepEqual(RESPONSE_SCHEMA.required, ["title", "deck", "blocks"]);
 });
 
-test("an article written about a scholar must not change their pronoun halfway through", () => {
-  const { pronounConsistency } = require("../src/lib/draftComposer");
-  const p = (html) => ({ type: "paragraph", html });
-  assert.equal(pronounConsistency({ blocks: [p("He built the array."), p("His method worked.")] }).ok, true);
-  assert.equal(pronounConsistency({ blocks: [p("The method worked.")] }).ok, null, "no pronoun at all is nothing to be inconsistent about");
-
-  const mixed = pronounConsistency({ blocks: [p("He built it."), p("His method worked."), p("Later, she tested it."), { type: "subheading", html: "she" }] });
-  assert.equal(mixed.ok, false);
-  assert.deepEqual(mixed.used, ["he", "she"]);
-  assert.deepEqual(mixed.blocks, [3], "the rarer pronoun is the one that slipped; headings are not prose");
-  assert.match(mixed.sentence, /One of them is wrong about a real person/);
-});
+/* Whether the article keeps one pronoun for the scholar is the article reviewer's reading, counted in checks.authorPronouns: see checks.test.js. */
 
 /* ── quote grounding ───────────────────────────────────────────────────── */
 

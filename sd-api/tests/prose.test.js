@@ -1,6 +1,7 @@
 /**
- * The two prose rules that are counts rather than taste: how far below its
- * reader a draft may sit, and how much it may repeat itself.
+ * Prose measured: the reading grade the formula gives, how a draft's
+ * sentences open, and how much of it is the paper's own wording. Counts;
+ * what they mean for the reader is a model's to say.
  *
  * Both come from measurement, not opinion. Across seven real drafts every
  * adult article landed below its target and passed, because the readability
@@ -12,7 +13,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { assessDraftReadability, VERDICT } = require("../src/lib/draftReadability");
-const { repetition, borrowed } = require("../src/lib/checks");
+const { repetition, borrowed, openerCounts, repeatedRuns } = require("../src/lib/checks");
 const { AUDIENCES } = require("../src/lib/audiences");
 
 /* Long, clause-carrying sentences: comfortably above a child's grade. */
@@ -40,42 +41,35 @@ test("too hard still measures as a failure by the formula", () => {
   assert.ok(!a.tooSimple);
 });
 
-test("repetition is counted: one word carrying the article, runs of three, and paragraphs that join", () => {
+test("the openings are counted; whether the prose drones is the reviewer's reading, with the counts beside it", () => {
   const p = (t) => ({ type: "paragraph", html: t });
-  const flat = repetition({ blocks: [
+  const blocks = [
     p("This is the first point. This is the second point. This is the third point. The array works."),
     p("This is another point. The signal is weak. The noise is loud. The reader cannot tell."),
     p("This is a fifth point. Sidelobes hide it. This is a sixth point. Arrays are useful."),
-  ] });
-  assert.equal(flat.ok, false);
-  /* "This, This, This" and later "The, The, The": two runs of three. */
-  assert.equal(flat.repeatedRuns, 2, "runs of three opening the same way");
-  assert.equal(flat.openers[0].word, "this");
-  assert.match(flat.sentence, /sentences begin with “this”/);
-  assert.match(flat.sentence, /changes no fact/);
-  assert.equal(flat.joinedParagraphs, 0);
+  ];
+  const droning = repetition({ blocks, review: { rhythm: { droning: true, note: "Six sentences open with “This”." } } });
+  assert.equal(droning.ok, false);
+  assert.equal(droning.judged, true);
+  /* "This, This, This" and later "The, The, The": two runs of three — counted, and given to the reviewer as evidence. */
+  assert.equal(droning.repeatedRuns, 2);
+  assert.equal(droning.openers[0].word, "this");
+  assert.match(droning.sentence, /^Six sentences open with “This”\. Varying how sentences open costs nothing and changes no fact\.$/);
+
+  const fine = repetition({ blocks, review: { rhythm: { droning: false, note: "" } } });
+  assert.equal(fine.ok, true, "the counts inform; the reviewer decides");
+  assert.equal(fine.sentence, null);
+  const unread = repetition({ blocks, review: { unchecked: true } });
+  assert.equal(unread.ok, null);
+  assert.equal(unread.judged, false);
+  assert.equal(unread.repeatedRuns, 2, "the counts stand whether or not it was read");
 });
 
-test("varied prose is not accused of droning just because it is short", () => {
+test("the counts the reviewer is given are what the prose does", () => {
   const p = (t) => ({ type: "paragraph", html: t });
-  /* Three distinct openers out of six sentences is 50% of the top three and
-     perfectly varied; judging the share alone once called this repetitive. */
-  const varied = repetition({ blocks: [
-    p("A strong signal hides a weak one, which is the problem the method sets out to solve. Sidelobes are the reason. Weak arrivals vanish beneath them."),
-    p("But a mixed window changes that balance. Resolution survives where it matters, because the uniform window keeps the main lobe narrow. Readers meet the same trade every day."),
-  ] });
-  assert.equal(varied.ok, null, "too few sentences to judge");
-  const longer = repetition({ blocks: [
-    p("A strong signal hides a weak one, which is the problem the method sets out to solve. Sidelobes are the reason. Weak arrivals vanish beneath them. Resolution survives where it matters."),
-    p("But a mixed window changes that balance, because the uniform window keeps the main lobe narrow. Readers meet the same trade every day. Chebyshev weights cost angular sharpness. Apodization takes the better of each."),
-    p("Trials bore that out across two, three and four signals. Failures fell. Bias stayed small. Nothing here is free, though."),
-  ] });
-  assert.equal(longer.ok, true, JSON.stringify(longer));
-  assert.equal(longer.joinedParagraphs, 1, "one paragraph opens with a joining word");
-});
-
-test("too little text says nothing either way", () => {
-  assert.equal(repetition({ blocks: [{ type: "paragraph", html: "One sentence." }] }).ok, null);
+  const blocks = [p("But a mixed window changes that balance. Readers meet the same trade every day. Readers notice. Readers forget.")];
+  assert.deepEqual(openerCounts(blocks).slice(0, 2), [{ word: "readers", n: 3, share: 0.75 }, { word: "but", n: 1, share: 0.25 }]);
+  assert.deepEqual(repeatedRuns(blocks), { sentences: 4, runs: 1 });
 });
 
 test("a paragraph that retypes the paper is counted, and one that explains it is not", () => {

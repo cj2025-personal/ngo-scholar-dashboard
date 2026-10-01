@@ -392,7 +392,7 @@ async function runClaimedJob(db, doc) {
   /* The voice and reading-level judges each run on their own route, with
      its own model and fallback; the retries they may cause are policy. */
   const router = await routerFor({ db });
-  const judges = { voice: router.bound("drafting.voice"), band: router.bound("drafting.band") };
+  const judges = { voice: router.bound("drafting.voice"), band: router.bound("drafting.band"), review: router.bound("drafting.review") };
   const limits = await getPolicy("drafting", { db });
 
   let calls = [];

@@ -18,6 +18,7 @@ const { REACH_VERSION } = require("../lib/reach");
 const { AGENT_VERSION } = require("../lib/storyAgent");
 const checksLib = require("../lib/checks");
 const composer = require("../lib/draftComposer");
+const { caveatsFor, reviewFor } = require("./agentRulings.service");
 const { serializeMongoValue } = require("../lib/serialize");
 const { passagesFor } = require("./passages.service");
 
@@ -39,7 +40,13 @@ function publicKey() {
   return { keyId: k ? k.keyId : null, publicKey: k ? ledger.publicKeyPem(k) : null, signed: Boolean(k), ledgerVersion: ledger.LEDGER_VERSION };
 }
 
-async function buildEvidence(db, storyDoc) {
+/**
+ * The ledger for a story, and — when the owner is looking — the checks on
+ * the text as it stands. The checks read the judges' rulings, so building
+ * them can cost a model call; a public ledger rebuilt after a write does not
+ * need them and does not ask.
+ */
+async function buildEvidence(db, storyDoc, { withChecks = false } = {}) {
   /* Lazy: editorial.service requires this module for the refresh after a write. */
   const editorial = require("./editorial.service");
   const [author, provenance, passages, revisions] = await Promise.all([
@@ -57,23 +64,38 @@ async function buildEvidence(db, storyDoc) {
     versions: { drafter: storyDoc.provenance?.graph_version || null, judge: FIDELITY_VERSION, reach: REACH_VERSION, agent: AGENT_VERSION },
     keyId: k ? k.keyId : null,
   });
-  return {
+  const built = {
     manifest,
     signature: k ? ledger.sign(manifest, k) : null,
     keyId: k ? k.keyId : null,
     signed: Boolean(k),
     publicKey: k ? ledger.publicKeyPem(k) : null,
     passages,
-    checks: {
-      numbers: checksLib.numericConsistency({ blocks: mapped.bodyBlocks, passages }),
-      limitations: checksLib.limitationsCoverage({ blocks: mapped.bodyBlocks, passages }),
-      worldClaims: checksLib.worldClaims({ blocks: mapped.bodyBlocks }),
-      budget: checksLib.extensionBudget({ blocks: mapped.bodyBlocks }),
-      /* Measured on the text as it stands, so an edit that fixes a pronoun
-         clears the notice without a redraft. */
-      pronouns: composer.pronounConsistency({ blocks: mapped.bodyBlocks }),
-    },
+    checks: null,
   };
+  if (!withChecks) return built;
+  const { getPolicy } = require("./policy.service");
+  const drafting = await getPolicy("drafting", { db });
+  /* Read on the text as it stands, so an edit that fixes a pronoun clears
+     the notice without a redraft: the review is kept per saved version. */
+  const [caveats, review] = await Promise.all([
+    passages.length ? caveatsFor(db, passages, { subject: { kind: "story", id: String(storyDoc._id) } }) : { ids: [], caveats: [], unchecked: false },
+    reviewFor(db, {
+      storyId: storyDoc._id, version: mapped.version, title: mapped.title, blocks: mapped.bodyBlocks, passages,
+      voice: composer.normaliseVoice(storyDoc.provenance?.voice || composer.VOICE.ABOUT), scholarName: author?.name || null,
+    }),
+  ]);
+  built.checks = {
+    numbers: checksLib.numericConsistency({ blocks: mapped.bodyBlocks, passages }),
+    limitations: checksLib.limitationsCoverage({ blocks: mapped.bodyBlocks, caveats }),
+    worldClaims: checksLib.worldClaims({ blocks: mapped.bodyBlocks }),
+    attribution: checksLib.attributionCues({ blocks: mapped.bodyBlocks }),
+    budget: checksLib.extensionBudget({ blocks: mapped.bodyBlocks, maxBeyondPerPaper: drafting.maxBeyondPerPaper }),
+    pronouns: checksLib.authorPronouns({ review }),
+    headings: checksLib.headingFindings(review),
+    repetition: checksLib.repetition({ blocks: mapped.bodyBlocks, review }),
+  };
+  return built;
 }
 
 /**
@@ -117,7 +139,7 @@ async function getPublicEvidence(db, slug) {
 async function getOwnerEvidence(db, { storyId, scholarId, profileId }) {
   const editorial = require("./editorial.service");
   const storyDoc = await editorial.findOwnedStory({ storyId, scholarId, profileId });
-  const built = await buildEvidence(db, storyDoc);
+  const built = await buildEvidence(db, storyDoc, { withChecks: true });
   const isPublic = ["published", "scheduled"].includes(storyDoc.status);
   return serializeMongoValue({
     manifest: built.manifest,

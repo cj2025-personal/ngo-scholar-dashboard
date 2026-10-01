@@ -26,7 +26,7 @@ const { sectionVoiceRetries: SECTION_VOICE_RETRIES, fidelityRetries: FIDELITY_RE
 /* The voice and reading-level judges are answered by the shared test double,
    which stands in for their models; these tests script the writer and the
    fidelity judge. */
-const forJudges = (prompt) => [voiceJudge.MARKER, bandJudge.MARKER].some((m) => String(prompt || "").includes(m));
+const forJudges = (prompt) => [voiceJudge.MARKER, bandJudge.MARKER, require("../src/lib/agents/articleReviewer").MARKER, require("../src/lib/agents/caveatJudge").MARKER].some((m) => String(prompt || "").includes(m));
 
 const PAPER = [
   "Adaptive antenna arrays reduce interference by steering nulls toward unwanted sources. The method updates weights with a least-mean-squares rule every two milliseconds, which is fast enough for fixed interferers.",
@@ -116,7 +116,7 @@ test("a clean run: outline → sections with provenance → judged → assembled
   const r = await runDraftGraph(input, { generate: model.generate, onProgress: (e) => progress.push(e.step) });
 
   assert.equal(r.title, "Steering silence toward the noise");
-  assert.deepEqual([...new Set(progress)], ["pick_source", "plan_outline", "draft_blocks", "judge_voice", "judge_fidelity", "section_drafted", "assemble", "verify"]);
+  assert.deepEqual([...new Set(progress)], ["pick_source", "plan_outline", "draft_blocks", "judge_voice", "judge_fidelity", "section_drafted", "assemble", "review_article", "verify"]);
   assert.equal(r.outline.length, 3);
 
   const paragraphs = r.bodyBlocks.filter((b) => b.type === "paragraph");
@@ -138,7 +138,9 @@ test("a clean run: outline → sections with provenance → judged → assembled
   assert.equal(r.calls.filter((c) => c.step === "judge_voice").length, 3, "every section is read for its voice");
   assert.equal(r.calls.filter((c) => c.step === "judge_fidelity").length, 3, "one judge call per section");
   assert.equal(r.calls.filter((c) => c.step === "judge_band").length, 1, "the whole draft is placed for its reader once");
-  assert.equal(r.calls.length, 11);
+  assert.equal(r.calls.filter((c) => c.step === "review_article").length, 1, "the assembled article is read once for headings, pronouns and rhythm");
+  assert.equal(r.calls.filter((c) => c.step === "judge_caveats").length, 1, "the paper is read once for its caveats");
+  assert.equal(r.calls.length, 13);
 });
 
 test("first-person prose earns one retry per section, then the run refuses", async () => {
@@ -477,11 +479,17 @@ test("a section that is only an implication and keeps overreaching refuses the r
   await assert.rejects(runDraftGraph(briefed, onlyImplied), /kept going beyond what the paper supports/);
 });
 
-test("a sentence that reads as a claim about the world is a warning even when the judge let it through", async () => {
-  const model = briefedModel({ implied: "Which means the same limit faces any crowded band. This method is now used in every phone." });
-  const r = await runDraftGraph(briefed, { generate: model.generate });
+test("a claim the reach judge rules a fact about the world is reported as one, with its words; one it lets through is not second-guessed", async () => {
+  const flagged = briefedModel({ implied: "Which means the same limit faces any crowded band. This method is now used in every phone.", reachJudge: (t) => (/every phone/.test(t) ? "partial" : "follows") });
+  const r = await runDraftGraph(briefed, { generate: flagged.generate });
   assert.equal(r.checks.worldClaims.ok, false);
+  assert.equal(r.checks.worldClaims.judged, true);
   assert.ok(r.warnings.some((w) => /reads as a claim about the world/.test(w) && /used in every phone/.test(w)), r.warnings.join(" | "));
+
+  /* No word list sits under the judge any more: its ruling is the ruling. */
+  const passed = briefedModel({ implied: "Which means the same limit faces any crowded band. This method is now used in every phone." });
+  const clean = await runDraftGraph(briefed, { generate: passed.generate });
+  assert.equal(clean.checks.worldClaims.ok, true);
 });
 
 test("the brief is answered out loud: coverage short of full is a warning, and a budget of extension sections is kept", async () => {

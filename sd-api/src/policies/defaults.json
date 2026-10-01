@@ -18,7 +18,8 @@
       "studio.edit":     { "primary": null, "fallback": ["gemini-2.5-pro"], "thinkingBudget": 0, "temperature": 0.2, "maxOutputTokens": 2048, "timeoutMs": 90000 },
       "studio.ideas":    { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-flash-lite"], "thinkingBudget": 0, "temperature": 0.6, "maxOutputTokens": 2048, "timeoutMs": 30000 },
       "drafting.voice":  { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 30000 },
-      "drafting.band":   { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 45000 }
+      "drafting.band":   { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 45000 },
+      "drafting.review": { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 4096, "timeoutMs": 60000 }
     },
     "modelLimits": {
       "gemini-2.5-pro": { "minThinkingBudget": 128 },
@@ -68,7 +69,9 @@
     "sectionVoiceRetries": 1,
     "fidelityRetries": 2,
     "bandRetries": 1,
-    "rulingCacheDays": 30
+    "rulingCacheDays": 30,
+    "borrowLimit": 0.2,
+    "maxBeyondPerPaper": 1
   },
 
   "audit": { "retainDays": 30 },
@@ -76,6 +79,7 @@
   "evals": {
     "reader": { "grounding": 0.8, "sentinel": 0.9, "cited": 0.8, "bandFit": 0.8, "firstTry": 0.6 },
     "voice": { "speaks": 0.95, "names": 0.9, "quoted": 0.9 },
-    "converse": { "action": 0.9, "fields": 0.9 }
+    "converse": { "action": 0.9, "fields": 0.9 },
+    "review": { "headings": 0.9, "pronouns": 0.9 }
   }
 }

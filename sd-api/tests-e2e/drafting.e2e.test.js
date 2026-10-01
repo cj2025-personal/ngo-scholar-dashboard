@@ -677,8 +677,15 @@ test("a published story carries a signed evidence ledger anyone can verify, and 
   assert.equal(preview.data.passagesCheck.mismatched.length, 0);
   assert.equal(preview.data.checks.numbers.ok, true, JSON.stringify(preview.data.checks.numbers));
   assert.ok(preview.data.checks.numbers.checked >= 1, "the drafted paragraphs were checked for numbers");
-  assert.equal(preview.data.checks.limitations.heuristic, true);
+  assert.equal(preview.data.checks.limitations.judged, true, "the paper's caveats were found by the caveat judge");
   assert.ok(Array.isArray(preview.data.checks.limitations.limitationIds));
+  assert.equal(preview.data.checks.headings.judged, true, "the headings were read by the article reviewer");
+  assert.ok(["boolean", "object"].includes(typeof preview.data.checks.repetition.ok));
+  /* Asked once per paper and per saved version: the second look is cached. */
+  const rulings = await db.collection("agent_rulings").find({ kind: { $in: ["caveats", "review"] } }).toArray();
+  const again = await call("GET", `/api/editorial-stories/${state.outlineStoryId}/evidence`);
+  assert.deepEqual(again.data.checks.headings, preview.data.checks.headings);
+  assert.equal((await db.collection("agent_rulings").countDocuments({ kind: { $in: ["caveats", "review"] } })), rulings.length, "no second reading of the same version");
 
   /* A draft has no public ledger. */
   const draftDoc = await db.collection("scholar_editorials").findOne({ _id: new ObjectId(state.outlineStoryId) });

@@ -686,6 +686,153 @@ function answerBand(prompt) {
     : { verdict: "too_hard", reason: `It reads above ${AUDIENCES[audience].readers} (grade ${a.fkGrade} against ${a.targetGrade}).`, guidance: "Shorten sentences to 15–20 words, prefer one- and two-syllable words, and define each technical term in the sentence that introduces it.", sentences: longest });
 }
 
+/* ── The article reviewer and caveat judge, as the test double judges them ─
+   The word rules checks.js once decided with, kept here only so the fake
+   answers the way the suite expects. Production asks a model. */
+const fakeRules = (() => {
+  const plain = (html) => String(html || "").replace(/<[^>]+>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  const CHECKS_VERSION = "fake";
+const LIMITATION_CUES = [
+  /\blimitation/i, /\blimited\b/i, /\bnot (?:tested|measured|examined|evaluated|studied|assessed)\b/i, /\bdid not\b/i, /\bwas not\b/i, /\bwere not\b/i,
+  /\bcannot\b/i, /\bcaveat/i, /\bdegrad/i, /\bfuture work\b/i, /\bfurther (?:work|study|research)\b/i, /\bremains? to be\b/i,
+  /\bsmall sample\b/i, /\bsample size\b/i, /\bonly\b/i, /\bexpected to\b/i, /\bwould (?:present|require|need)\b/i, /\bassum/i,
+];
+
+const HEADING_IGNORE = new Set([
+  "the", "and", "for", "with", "from", "that", "this", "what", "when", "where", "which", "how", "why", "into", "over", "under", "about",
+  "your", "our", "its", "their", "they", "them", "than", "then", "some", "more", "most", "less", "best", "better", "good", "great",
+  "new", "newer", "old", "modern", "today", "now", "here", "there", "also", "still", "just", "even", "only", "very", "much", "many",
+  "approach", "approaches", "method", "methods", "way", "ways", "idea", "ideas", "thing", "things", "part", "parts", "case", "cases",
+  "matter", "matters", "mattered", "means", "meaning", "important", "importance", "understanding", "overview", "introduction", "conclusion",
+  "story", "article", "section", "look", "looking", "make", "makes", "making", "work", "works", "working", "use", "uses", "using", "used",
+  "help", "helps", "helping", "find", "finds", "finding", "findings", "see", "seeing", "show", "shows", "showing", "get", "gets",
+  "can", "could", "would", "should", "may", "might", "must", "will", "does", "did", "done", "has", "have", "had", "been", "being",
+  "one", "two", "three", "four", "five", "first", "second", "third", "next", "last", "other", "others", "another", "both", "all", "any",
+  "problem", "problems", "challenge", "challenges", "solution", "solutions", "result", "results", "answer", "answers", "question", "questions",
+  "big", "small", "long", "short", "hard", "easy", "simple", "complex", "real", "true", "different", "same", "own", "kind", "kinds", "sort",
+  /* Framing a section is not claiming a topic: "Potential applications of X"
+     asserts nothing beyond X, and X is what this check is about. */
+  "potential", "application", "applications", "apply", "applies", "applying", "applied", "relevance", "relevant", "implication", "implications",
+  "impact", "impacts", "future", "beyond", "value", "benefit", "benefits", "advantage", "advantages", "promise", "practice", "practical",
+  /* Ordinary English a heading frames with. A verb is not a topic: "Where it
+     breaks" claims nothing the prose must contain, and removing that heading
+     for the word "breaks" was this check's first false positive. The check is
+     for domain nouns an article never mentions, so everyday words are out. */
+  "break", "breaks", "broken", "fail", "fails", "failed", "failure", "failures", "struggle", "struggles", "struggling",
+  "hide", "hides", "hidden", "hiding", "lose", "loses", "lost", "win", "wins", "keep", "keeps", "take", "takes", "give", "gives",
+  "come", "comes", "coming", "goes", "going", "stay", "stays", "read", "reads", "reading", "tell", "tells", "say", "says",
+  "need", "needs", "want", "wants", "happen", "happens", "change", "changes", "changed", "improve", "improves", "improved", "improvement",
+  "reduce", "reduces", "reduced", "solve", "solves", "solved", "build", "builds", "built", "start", "starts", "stop", "stops",
+  "know", "knows", "knowing", "think", "thinks", "learn", "learns", "hear", "hears", "hearing", "listen", "listens", "listening",
+  "catch", "catches", "miss", "misses", "missing", "pick", "picks", "picking", "choose", "chooses", "choosing", "choice", "choices",
+  "matter", "mattering", "worked", "wrong", "right", "wrongly", "better", "worse", "worst", "harder", "easier", "faster", "slower",
+  "inside", "outside", "before", "after", "while", "against", "without", "within", "through", "across", "around", "between", "behind",
+  "step", "steps", "test", "tests", "tested", "testing", "check", "checks", "trade", "trades", "limit", "limits", "limited", "limitation", "limitations",
+  "found", "paper", "papers", "study", "studies", "research", "author", "authors", "reader", "readers", "people", "someone", "everyone", "anyone",
+]);
+
+/* One odd word in a heading is imagery — "Steering silence toward the noise"
+   says nothing false about an article that never uses the word "silence".
+   Several odd words together is a topic the article does not have, which is
+   what "Cancer Treatment and Protein Folding" was. So the check fires on the
+   second word, not the first: precision over recall, because a false positive
+   costs the scholar a good heading and a miss costs a warning. */
+const HEADING_MIN_MISSING = 2;
+
+/**
+ * @param {object} p
+ * @param {object[]} p.blocks   mapped blocks, subheadings included
+ * @param {{id: string, text: string}[]} p.passages
+ * @param {string|null} [p.title]  the article's title, checked the same way
+ * @returns {{version: string, heuristic: true, checked: number, unsupported: {index: number|null, kind: string, text: string, missing: string[]}[], ok: boolean|null}}
+ */
+function headingSupport({ blocks, passages, title = null }) {
+  const said = new Set();
+  const add = (text) => { for (const w of plain(text).toLowerCase().split(/[^a-z0-9]+/)) if (w.length >= 4) said.add(w); };
+  for (const b of blocks || []) if (b.type === "paragraph" || b.type === "quote") add(b.html);
+  for (const p of passages || []) add(p.text);
+
+  /* A word counts as said if the article or the paper used any form of it.
+     Crude stemming, because "steering" over prose that says "steers" is the
+     same word and flagging it would cost an honest heading. */
+  const stem = (w) => w.replace(/(ing|edly|ed|ies|es|s|ly)$/, "").slice(0, 12);
+  const stems = new Set([...said].map(stem));
+  const everSaid = (w) => {
+    if (said.has(w) || stems.has(stem(w))) return true;
+    const st = stem(w);
+    if (st.length < 4) return false;
+    for (const s of stems) if (s.startsWith(st) || st.startsWith(s)) return true;
+    return false;
+  };
+  const missingIn = (text) => [...new Set(plain(text).toLowerCase().split(/[^a-z0-9]+/))]
+    .filter((w) => w.length >= 4 && !HEADING_IGNORE.has(w))
+    .filter((w) => !everSaid(w));
+
+  const unsupported = [];
+  let checked = 0;
+  (blocks || []).forEach((b, i) => {
+    if (b.type !== "subheading" && b.type !== "heading") return;
+    checked += 1;
+    const missing = missingIn(b.html);
+    if (missing.length >= HEADING_MIN_MISSING) unsupported.push({ index: i + 1, kind: "heading", text: plain(b.html), missing });
+  });
+  if (title) {
+    checked += 1;
+    const missing = missingIn(title);
+    if (missing.length >= HEADING_MIN_MISSING) unsupported.push({ index: null, kind: "title", text: String(title), missing });
+  }
+  return { version: CHECKS_VERSION, heuristic: true, checked, unsupported, ok: checked ? unsupported.length === 0 : null };
+}
+  return { LIMITATION_CUES, headingSupport };
+})();
+
+/** The caveat judge, for the test double: a passage with two caveat wordings states a caveat. */
+function answerCaveats(prompt) {
+  const body = prompt.slice(prompt.indexOf("PASSAGES TO READ FOR CAVEATS:"));
+  const passages = [...body.matchAll(/^\[(p\d+)\] (.+)$/gm)].map((m) => ({ id: m[1], text: m[2] }));
+  return JSON.stringify({ caveats: passages.filter((p) => fakeRules.LIMITATION_CUES.filter((re) => re.test(p.text)).length >= 2).map((p) => ({ passage_id: p.id, caveat: "a limitation the authors state" })) });
+}
+
+/** The article reviewer, for the test double: the heading, pronoun and rhythm rules the reviewer replaced. */
+function answerReview(prompt) {
+  const at = prompt.indexOf("ARTICLE TO REVIEW:");
+  const paperAt = prompt.indexOf("THE PAPER, IN PASSAGES:");
+  const passages = [...prompt.slice(paperAt, at).matchAll(/^\[(p\d+|self-\d+)\] (.+)$/gm)].map((m) => ({ id: m[1], text: m[2] }));
+  const lines = [...prompt.slice(at).matchAll(/^\[(TITLE|[HB]\d+)\] (?:\((\w+)\) )?(.*)$/gm)].map((m) => ({ id: m[1], kind: m[2] || "title", text: m[3] }));
+  const title = (lines.find((l) => l.id === "TITLE") || {}).text || null;
+  const blocks = lines.filter((l) => l.id !== "TITLE").map((l) => ({ id: l.id, type: l.kind === "heading" ? "subheading" : l.kind, html: l.text }));
+  const only = (prompt.match(/^JUDGE ONLY THESE HEADINGS: (.+)$/m) || [])[1];
+  const asked = only ? only.split(/,\s*/) : null;
+  const found = fakeRules.headingSupport({ blocks, passages, title });
+  const flagged = new Map(found.unsupported.map((u) => [u.kind === "title" ? "TITLE" : `H${u.index}`, u.missing]));
+  const headingIds = [...(title ? ["TITLE"] : []), ...blocks.filter((b) => b.type === "subheading").map((b) => b.id)].filter((id) => !asked || asked.includes(id));
+  const out = { headings: headingIds.map((id) => ({ id, promises_unsaid: flagged.has(id), unsaid: flagged.has(id) ? flagged.get(id).join(", ") : "" })) };
+  if (asked) return JSON.stringify(out);
+
+  out.author_pronouns = [];
+  for (const b of blocks.filter((x) => x.type === "paragraph")) {
+    if (/\b(?:he|him|his)\b/i.test(b.html)) out.author_pronouns.push({ id: b.id, pronoun: "he" });
+    if (/\b(?:she|her|hers)\b/i.test(b.html)) out.author_pronouns.push({ id: b.id, pronoun: "she" });
+  }
+  const sentences = blocks.filter((x) => x.type === "paragraph").flatMap((b) => b.html.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean));
+  const first = (s) => (s.split(/\s+/)[0] || "").toLowerCase().replace(/[^a-z]/g, "");
+  const counts = {};
+  for (const s of sentences) { const w = first(s); if (w) counts[w] = (counts[w] || 0) + 1; }
+  const [top = ["", 0]] = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  let runs = 0;
+  let run = 1;
+  for (let i = 1; i < sentences.length; i += 1) {
+    if (first(sentences[i]) && first(sentences[i]) === first(sentences[i - 1])) { run += 1; if (run === 3) runs += 1; } else run = 1;
+  }
+  const dominated = top[1] >= 5 && top[1] / Math.max(1, sentences.length) > 0.18;
+  const droning = sentences.length >= 12 && (dominated || runs > 0);
+  const parts = [];
+  if (dominated) parts.push(`${top[1]} of ${sentences.length} sentences begin with “${top[0]}”`);
+  if (runs) parts.push(`${runs} run${runs === 1 ? "" : "s"} of three sentences opening the same way`);
+  out.rhythm = { droning, note: droning ? `${parts.join("; ")}.` : "" };
+  return JSON.stringify(out);
+}
+
 /**
  * Embeddings for the test double: words hashed into a fixed space, so texts
  * that share words point the same way and texts that share none are near
@@ -724,6 +871,8 @@ async function generateContent({ prompt, contents = null, tools = null, signal =
   else if (p.includes("THE SCHOLAR JUST SAID:")) text = answerConverse(p);
   else if (p.includes("PARAGRAPHS TO CHECK FOR VOICE:")) text = answerVoice(p);
   else if (p.includes("PROSE TO PLACE FOR ITS READER:")) text = answerBand(p);
+  else if (p.includes("ARTICLE TO REVIEW:")) text = answerReview(p);
+  else if (p.includes("PASSAGES TO READ FOR CAVEATS:")) text = answerCaveats(p);
   else if (p.includes("DRAFT TO SUGGEST EDITS FOR:") || p.includes("PAPERS TO SUGGEST ARTICLES FROM:")) text = answerIdeas(p);
   else if (p.includes("PARAGRAPHS OF THE AUTHOR'S OWN CONTEXT:")) text = answerContext(p);
   else if (p.includes("PARAGRAPHS THAT BUILD ON THEM:")) text = answerReach(p);

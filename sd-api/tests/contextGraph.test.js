@@ -22,7 +22,7 @@ const shared = require("../src/lib/fakeModel");
 
 const FIDELITY_RETRIES = defaultsFor("drafting").fidelityRetries;
 /* The voice and reading-level judges are answered by the shared test double. */
-const forJudges = (prompt) => [voiceJudge.MARKER, bandJudge.MARKER].some((m) => String(prompt || "").includes(m));
+const forJudges = (prompt) => [voiceJudge.MARKER, bandJudge.MARKER, require("../src/lib/agents/articleReviewer").MARKER, require("../src/lib/agents/caveatJudge").MARKER].some((m) => String(prompt || "").includes(m));
 
 const PAPER = [
   "Adaptive antenna arrays reduce interference by steering nulls toward unwanted sources. The method updates weights with a least-mean-squares rule every two milliseconds, which is fast enough for fixed interferers.",
@@ -198,7 +198,7 @@ test("a heading the machine invented is repaired; one the scholar wrote is left 
   const headings = r.bodyBlocks.filter((b) => b.type === "subheading").map((b) => b.html);
   assert.ok(!headings.includes(invented), `the invented heading survived: ${JSON.stringify(headings)}`);
   assert.ok(headings.includes("What the array does with noise"), JSON.stringify(headings));
-  assert.ok(r.warnings.some((w) => /named “cancer”|named “protein”|“cancer”/.test(w)), r.warnings.join(" | "));
+  assert.ok(r.warnings.some((w) => /named “[^”]*(?:cancer|protein)/i.test(w)), r.warnings.join(" | "));
   /* A brief answered by a heading was not answered. */
   assert.equal(r.coverage?.met, "part");
 

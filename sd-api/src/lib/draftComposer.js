@@ -280,44 +280,8 @@ function buildDraftPrompt({ scholar = {}, source = {}, text, truncated = false, 
 /* Whose voice the prose is in — speaking as the author, or naming them in
    their own account — is judged by a model: see agents/voiceJudge.js. */
 
-/**
- * Whether an article written ABOUT a scholar keeps one pronoun for them
- * throughout. Each section is drafted by its own call, so without this the
- * sections can — and did — disagree: an article that said "he" for four
- * sections and "she" for the last two went out under a real person's name.
- *
- * Says nothing about which pronoun is right; only that there must be one.
- *
- * @param {object[]} blocks   mapped blocks with `html`
- * @returns {{version: string, used: string[], ok: boolean|null, sentence: string|null, blocks: number[]}}
- */
-function pronounConsistency({ blocks }) {
-  const MASC = /\b(?:he|him|his)\b/i;
-  const FEM = /\b(?:she|her|hers)\b/i;
-  const seen = new Map();
-  for (const [i, b] of (blocks || []).entries()) {
-    if (b.type !== "paragraph" && b.type !== "quote") continue;
-    const text = String(b.html || "").replace(/<[^>]+>/g, " ");
-    if (MASC.test(text)) seen.set("he", [...(seen.get("he") || []), i + 1]);
-    if (FEM.test(text)) seen.set("she", [...(seen.get("she") || []), i + 1]);
-  }
-  const used = [...seen.keys()];
-  if (used.length <= 1) {
-    return { version: PROMPT_VERSION, used, ok: used.length === 1 ? true : null, sentence: null, blocks: [] };
-  }
-  /* Whichever is rarer is the one that slipped: name those blocks. */
-  const [minor] = [...seen.entries()].sort((a, b) => a[1].length - b[1].length);
-  return {
-    version: PROMPT_VERSION,
-    used,
-    ok: false,
-    blocks: minor[1],
-    sentence:
-      `This article calls the author "${used[0]}" in some paragraphs and "${used[1]}" in others — ` +
-      `"${minor[0]}" in block${minor[1].length === 1 ? "" : "s"} ${minor[1].join(", ")}. ` +
-      "One of them is wrong about a real person. Fix it before publishing.",
-  };
-}
+/* Whether the article keeps one pronoun for the scholar is read by the
+   article reviewer (agents/articleReviewer.js) and counted in checks.authorPronouns. */
 
 /** Whitespace, curly quotes and dashes collapsed so an honest quote survives
  *  the model's punctuation normalisation, and lowercased so a case change does
@@ -440,6 +404,5 @@ module.exports = {
   buildSystemInstruction,
   buildDraftPrompt,
   parseDraftResponse,
-  pronounConsistency,
   isVerbatim,
 };

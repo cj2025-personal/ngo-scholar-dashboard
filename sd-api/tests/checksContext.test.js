@@ -1,8 +1,8 @@
 /**
  * The rule checks that the author's own context adds: the budget counts it
- * as beyond the paper; a sentence that wears the paper's authority is
- * caught by wording; and the list to verify is what the author has not yet
- * ticked.
+ * as beyond the paper; a sentence that wears the paper's authority is what
+ * the context judge ruled so; and the list to verify is what the author has
+ * not yet ticked.
  */
 
 const test = require("node:test");
@@ -27,16 +27,19 @@ test("the budget counts context and extension together against the paper's parag
   assert.equal(extensionBudget({ blocks: [paper("a")] }).ok, null);
 });
 
-test("a context sentence that says the paper showed something is caught by wording; the author's own knowledge is not", () => {
+test("a context sentence that wears the paper's authority is what the context judge ruled so; the author's own knowledge is not", () => {
+  const judged = (html, claims) => ({ type: "paragraph", html, ownView: true, context: { toVerify: [], claims } });
   const r = attributionCues({ blocks: [
     paper("The paper shows eleven decibels."),
-    ctx("In practice this turns up everywhere. The paper shows it is used in every phone. As the study found, receivers struggle."),
-    ctx("Anyone who has used a phone at the edge of a cell has met this."),
+    judged("In practice this turns up everywhere. The paper shows it is used in every phone.", [
+      { text: "in practice this turns up everywhere", attributed: false, inPassages: false, reason: null },
+      { text: "the paper shows it is used in every phone", attributed: true, inPassages: false, reason: "stated_as_finding" },
+    ]),
+    judged("Anyone who has used a phone at the edge of a cell has met this.", [{ text: "anyone at the edge of a cell has met this", attributed: false, inPassages: false, reason: null }]),
   ] });
-  assert.equal(r.heuristic, true);
-  assert.equal(r.checked, 2, "only the author's own context is checked");
-  assert.deepEqual(r.hits.map((h) => h.block), [2, 2]);
-  assert.match(r.hits[0].sentence, /^The paper shows it is used/);
+  assert.equal(r.judged, true);
+  assert.equal(r.checked, 2, "only the author's own context");
+  assert.deepEqual(r.hits, [{ block: 2, sentence: "the paper shows it is used in every phone" }]);
   assert.equal(r.ok, false);
   assert.equal(attributionCues({ blocks: [paper("The paper shows x.")] }).ok, null);
 });
