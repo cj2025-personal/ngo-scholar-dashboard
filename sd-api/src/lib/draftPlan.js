@@ -401,7 +401,7 @@ function rhythmFor(aud) {
   ];
 }
 
-function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, brief = null, strictVoice = false, strictSelf = false, readabilityNote = null, fidelityNote = null, reachNote = null, contextNote = null, voice = composer.DEFAULT_VOICE, previously = null }) {
+function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, brief = null, strictVoice = false, strictSelf = false, voiceNote = null, readabilityNote = null, fidelityNote = null, reachNote = null, contextNote = null, voice = composer.DEFAULT_VOICE, previously = null }) {
   const aud = composer.AUDIENCES[composer.normaliseAudience(audience)];
   const name = scholar.name || "the scholar";
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
@@ -484,6 +484,9 @@ function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, b
       `Rewrite every such sentence with the work as its subject: not "${String(name).split(" ").pop()} built a dictionary", but "The method builds a dictionary".`,
     );
   }
+  if (voiceNote) {
+    lines.push("", voiceNote);
+  }
   if (readabilityNote) {
     lines.push("", readabilityNote);
   }
@@ -532,9 +535,10 @@ function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, b
  * `sourceRefs` — and `extension: true` on a paragraph that draws an
  * implication, in an extension beat; in a context beat, paragraphs are the
  * author's own (`ownView`) with a `context` record naming the passages they
- * relate to, and no `sourceRefs` — plus the first-person sentences found.
+ * relate to, and no `sourceRefs`. Whose voice the prose is in is judged
+ * after this, by a model (agents/voiceJudge.js).
  */
-function parseSection(raw, { beat, passages, voice = composer.DEFAULT_VOICE, scholarName = null }) {
+function parseSection(raw, { beat, passages }) {
   let data;
   try {
     data = JSON.parse(stripFence(raw));
@@ -548,10 +552,7 @@ function parseSection(raw, { beat, passages, voice = composer.DEFAULT_VOICE, sch
   const byId = new Map(passages.map((p) => [p.id, p]));
   const extensionBeat = beat.kind === BEAT_KIND.EXTENSION;
   const contextBeat = beat.kind === BEAT_KIND.CONTEXT;
-  const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
   const blocks = [];
-  const violations = [];
-  const selfReferences = [];
   const warnings = [];
 
   for (const para of data.paragraphs.slice(0, 3)) {
@@ -562,14 +563,6 @@ function parseSection(raw, { beat, passages, voice = composer.DEFAULT_VOICE, sch
       /* A paragraph that cites nothing it was allowed is kept but marked: the
          judge decides; the chip shows nothing. */
       warnings.push(`A paragraph in "${beat.heading}" cited no passage and is untraceable.`);
-    }
-    violations.push(...composer.firstPersonSentences(text));
-    if (authorVoice) {
-      /* Naming the author is sent back to the drafter; a bare pronoun may
-         belong to someone else the paper names, so it is only reported. */
-      const self = composer.selfReferenceSentences(text, scholarName);
-      selfReferences.push(...self.named);
-      for (const s of self.pronouns) warnings.push(`A sentence in "${beat.heading}" uses a personal pronoun: “${s.trim().slice(0, 120)}”. If it stands for you, rewrite it with the work as the subject.`);
     }
     if (contextBeat) {
       /* The author's own: no citation, by design; the passages it relates to
@@ -597,7 +590,7 @@ function parseSection(raw, { beat, passages, voice = composer.DEFAULT_VOICE, sch
   if (!blocks.some((b) => b.type === "paragraph")) {
     throw new Error(`Section ${beat.index} has no prose.`);
   }
-  return { blocks, violations, selfReferences, warnings };
+  return { blocks, warnings };
 }
 
 /* ── assembly ────────────────────────────────────────────────────────────── */

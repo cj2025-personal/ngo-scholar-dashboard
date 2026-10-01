@@ -29,17 +29,22 @@
  * reach judge instead, which asks whether each claim follows from the
  * passages it builds on, is said as an implication, and brings in nothing
  * from outside. A section with a failing paragraph is redrafted with the
- * claims named, up to FIDELITY_RETRIES times; after that unsupported and
+ * claims named, up to the policy's `fidelityRetries`; after that unsupported and
  * overreaching paragraphs are dropped, partial ones ship with a warning,
  * and a section left with no prose fails the run with a sentence. Neither
  * judge sees the drafter's instructions and the drafter never sees theirs —
  * no machine approves its own output.
  *
- * `verify` measures readability. If the draft fails for its audience and no
- * simplification pass has run yet, `draft_blocks` runs again with a note
- * naming the measured grade. Once. A second failure ships with a warning: the
- * scholar is about to edit it, and knowing the measured level is what makes
- * the edit purposeful.
+ * Before the judges, a voice judge reads every section: speaking as the
+ * author, or in the author's own account referring to them, sends it back
+ * with the sentences and the reason, up to `sectionVoiceRetries`.
+ *
+ * `verify` hands the prose to an editor model that reads it as its reader
+ * would — fits, too hard, too simple — with the Flesch-Kincaid measurement as
+ * one piece of evidence. If it does not fit, `draft_blocks` runs again with
+ * the editor's guidance, up to `bandRetries`; after that the draft ships with
+ * the editor's reason as a warning: the scholar is about to edit it, and
+ * knowing why it reads wrong is what makes the edit purposeful.
  */
 
 const { StateGraph, Annotation, START, END } = require("@langchain/langgraph");
@@ -49,11 +54,14 @@ const plan = require("./draftPlan");
 const fidelity = require("./fidelity");
 const reach = require("./reach");
 const context = require("./context");
-const { assessDraftReadability, simplificationNote, VERDICT } = require("./draftReadability");
+const { assessDraftReadability, placeReadability, VERDICT } = require("./draftReadability");
+const voiceJudge = require("./agents/voiceJudge");
+const bandJudge = require("./agents/bandJudge");
+const { defaultsFor } = require("./policyDefaults");
 const { USE } = require("./draftEligibility");
 const checks = require("./checks");
 
-const GRAPH_VERSION = "draft-graph-2026.5";
+const GRAPH_VERSION = "draft-graph-2026.6";
 
 /** A block's text, as the voice checks read it: markup out, entities back. */
 function plainText(html) {
@@ -64,10 +72,10 @@ function plainText(html) {
     .trim();
 }
 
-/** One retry per section for voice; the graph refuses after that. */
-const SECTION_VOICE_RETRIES = 1;
-/** Redrafts a section may earn from the fidelity judge: three attempts in all. */
-const FIDELITY_RETRIES = 2;
+/* How many times a section may be sent back — for its voice, for what the
+   judges found — and how many rewrites the reading level may earn, come from
+   the drafting policy (`sectionVoiceRetries`, `fidelityRetries`,
+   `bandRetries`), so they can be changed without a release. */
 
 const State = Annotation.Root({
   /* inputs */
@@ -84,7 +92,7 @@ const State = Annotation.Root({
   draft: Annotation(),
   readability: Annotation(),
   readabilityNote: Annotation(),
-  readabilityRetried: Annotation(),
+  readabilityRounds: Annotation(),
   checks: Annotation(),
   headingChecks: Annotation(),
   warnings: Annotation({ reducer: (a, b) => [...(a || []), ...(b || [])], default: () => [] }),
@@ -95,13 +103,19 @@ const State = Annotation.Root({
  * @param {object} deps
  * @param {(req: {prompt: string, systemInstruction: string, responseSchema: object, temperature?: number, maxOutputTokens?: number}) => Promise<{text: string, usage?: object, modelVersion?: string|null}>} deps.generate
  * @param {(event: {step: string, message: string, detail?: object}) => (void|Promise<void>)} [deps.onProgress]
+ * @param {{voice?: Function, band?: Function}} [deps.judges]   the voice and reading-level judges' models; the writer's when not given
+ * @param {{sectionVoiceRetries?: number, fidelityRetries?: number, bandRetries?: number}} [deps.limits]   from the drafting policy
  */
-function buildDraftNodes({ generate, onProgress = async () => {} }) {
+function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, limits = {} }) {
   if (typeof generate !== "function") throw new TypeError("buildDraftGraph requires generate()");
+  const L = { ...defaultsFor("drafting"), ...limits };
+  const judgeVoice = judges.voice || generate;
+  const judgeBand = judges.band || generate;
   const progress = (step, message, detail) => Promise.resolve(onProgress({ step, message, detail }));
   /* The system instruction depends on whose account this is, so it is built
      per run rather than once per process. */
   const systemFor = (s) => composer.buildSystemInstruction({ voice: s.voice, scholarName: s.scholar?.name || null });
+  const authorVoiceOf = (s) => composer.normaliseVoice(s.voice) === composer.VOICE.AUTHOR;
 
   async function pick_source(s) {
     if (!s.source || s.source.use !== USE.DRAFTABLE) {
@@ -185,50 +199,67 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
         : null;
       let accepted = null;
 
-      for (let round = 0; round <= FIDELITY_RETRIES; round += 1) {
-        /* Draft, with one retry for voice: first person in either voice, and
-           in the author's own voice also any reference to the author. */
+      for (let round = 0; round <= L.fidelityRetries; round += 1) {
+        /* Draft, then have the voice judge read it: speaking as the author
+           is wrong in either voice, and in the author's own account so is
+           referring to them. What the judge found — the sentences and why —
+           goes back to the writer, as many times as the policy allows. */
         let strictVoice = false;
         let strictSelf = false;
+        let voiceNote = null;
         let result = null;
-        for (let attempt = 0; attempt <= SECTION_VOICE_RETRIES; attempt += 1) {
+        let voiced = null;
+        for (let attempt = 0; attempt <= L.sectionVoiceRetries; attempt += 1) {
           const prompt = plan.buildSectionPrompt({
             scholar: s.scholar, beat, passages: s.passages, outline: s.outline, audience: s.audience, voice: s.voice,
-            brief: s.brief || null, strictVoice, strictSelf, readabilityNote: s.readabilityNote || null, fidelityNote, reachNote, contextNote,
+            brief: s.brief || null, strictVoice, strictSelf, voiceNote, readabilityNote: s.readabilityNote || null, fidelityNote, reachNote, contextNote,
             previously,
           });
           const r = await generate({ prompt, systemInstruction: systemFor(s), responseSchema: plan.SECTION_SCHEMA, temperature: strictVoice || strictSelf ? 0.2 : 0.4, maxOutputTokens: 2048 });
           calls.push({ step: "draft_blocks", beat: beat.index, usage: r.usage || null, model: r.modelVersion || null, strictVoice, strictSelf, round });
-          result = plan.parseSection(r.text, { beat, passages: s.passages, voice: s.voice, scholarName: s.scholar?.name || null });
-          if (result.violations.length === 0 && result.selfReferences.length === 0) break;
-          strictVoice = strictVoice || result.violations.length > 0;
-          strictSelf = strictSelf || result.selfReferences.length > 0;
+          result = plan.parseSection(r.text, { beat, passages: s.passages });
+          await progress("judge_voice", `Reading section ${beat.index} of ${total} for whose voice it is in…`, { index: beat.index, total, round, attempt });
+          voiced = await voiceJudge.judgeBlocks({ blocks: result.blocks, voice: s.voice, scholarName: s.scholar?.name || null, generate: judgeVoice, plain: plainText });
+          calls.push(...voiced.calls.map((c) => ({ ...c, beat: beat.index, round, attempt })));
+          if (voiced.speaking.length === 0 && voiced.naming.length === 0) break;
+          strictVoice = strictVoice || voiced.speaking.length > 0;
+          strictSelf = strictSelf || voiced.naming.length > 0;
+          voiceNote = voiced.note;
         }
-        /* First person that survives the retry costs the paragraph, not the
-           article. It used to throw, and a scholar who had approved six
+        /* What the judge leaves to the scholar travels with this round's
+           section, so a redraft does not repeat it. */
+        const voiceWarnings = [
+          ...(voiced.unchecked ? [`The voice of "${beat.heading}" could not be checked just now. Read it for any sentence that speaks as you${authorVoiceOf(s) ? " or names you" : ""} before publishing.`] : []),
+          ...voiced.sentences.pronouns.map((x) => `A sentence in "${beat.heading}" uses a personal pronoun: “${x.slice(0, 120)}”. If it stands for you, rewrite it with the work as the subject.`),
+        ];
+        result = { ...result, warnings: [...result.warnings, ...voiceWarnings] };
+        /* Speaking as the author after the retries costs the paragraph, not
+           the article. It used to throw, and a scholar who had approved six
            sections was told to try a different paper because one sentence in
            section one said "we". The paragraph goes, the rest stands, and the
            warning says what went — the same answer unsupported claims get.
            A section left with no prose still refuses, as it did. */
-        if (result.violations.length > 0) {
-          const offends = (b) => composer.firstPersonSentences(plainText(b.html)).length > 0;
-          const kept = result.blocks.filter((b) => !offends(b));
+        if (voiced.speaking.length > 0) {
+          const offending = new Set(voiced.speaking);
+          const kept = result.blocks.filter((_, i) => !offending.has(i));
           if (!kept.some((b) => b.type === "paragraph")) {
             throw new Error(`Section ${beat.index} kept writing in the first person after a retry.`);
           }
           const gone = result.blocks.length - kept.length;
+          const quoted = voiced.sentences.speaking.slice(0, 2).map((x) => `“${x.slice(0, 100)}”`).join(" ");
           warnings.push(
-            `${gone} paragraph${gone === 1 ? "" : "s"} in "${beat.heading}" ${gone === 1 ? "was" : "were"} left out because ${gone === 1 ? "it kept" : "they kept"} writing as you rather than about you: ` +
-            `${result.violations.slice(0, 2).map((x) => `“${x.trim().slice(0, 100)}”`).join(" ")} Ask the agent for ${gone === 1 ? "another" : "more"} on this point if you want ${gone === 1 ? "it" : "them"} back.`,
+            `${gone} paragraph${gone === 1 ? "" : "s"} in "${beat.heading}" ${gone === 1 ? "was" : "were"} left out because ${gone === 1 ? "it kept" : "they kept"} writing as you rather than about you${quoted ? `: ${quoted}` : "."} ` +
+            `Ask the agent for ${gone === 1 ? "another" : "more"} on this point if you want ${gone === 1 ? "it" : "them"} back.`,
           );
           result = { ...result, blocks: kept };
         }
         /* A name that survives the retry is not worth losing the draft over:
            it is one word for the scholar to cut, and the warning says where. */
-        if (result.selfReferences.length > 0) {
+        if (voiced.naming.length > 0) {
+          const named = voiced.sentences.naming;
           warnings.push(
-            `"${beat.heading}" still refers to you by name, which an article under your own byline should not: ` +
-            `${result.selfReferences.slice(0, 2).map((x) => `“${x.trim().slice(0, 100)}”`).join(" ")} Rewrite ${result.selfReferences.length === 1 ? "it" : "them"} with the work as the subject, or ask the agent to.`,
+            `"${beat.heading}" still refers to you, which an article under your own byline should not` +
+            `${named.length ? `: ${named.slice(0, 2).map((x) => `“${x.slice(0, 100)}”`).join(" ")}` : "."} Rewrite ${named.length === 1 ? "it" : "them"} with the work as the subject, or ask the agent to.`,
           );
         }
 
@@ -263,7 +294,7 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
           accepted = { ...result, blocks };
           break;
         }
-        if (round < FIDELITY_RETRIES) {
+        if (round < L.fidelityRetries) {
           fidelityNote = failingF.length ? fidelity.fidelityNote(blocks, failingF) : null;
           reachNote = failingR.length ? reach.reachNote(blocks, failingR) : null;
           contextNote = failingC.length ? context.contextNote(blocks, failingC) : null;
@@ -463,18 +494,29 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
   }
 
   async function verify(s) {
-    const readability = assessDraftReadability({ text: s.draft.prose, audience: s.audience });
+    /* The formula measures; an editor model reads the prose as its reader
+       would and decides whether it fits, with the measurement as evidence. */
+    const measured = assessDraftReadability({ text: s.draft.prose, audience: s.audience });
+    await progress("verify", "Reading the draft as its reader would…", { fkGrade: measured.fkGrade });
+    /* A re-read after a rewrite is shown the ruling it answered, so the bar stays where it was. */
+    const previous = s.readabilityRounds ? s.readability?.judged || null : null;
+    const ruling = await bandJudge.judgeBand({ text: s.draft.prose, audience: s.audience, measured, previous, generate: judgeBand });
+    const readability = placeReadability(measured, ruling);
     const failing = readability.verdict === VERDICT.FAIL;
+    const rounds = s.readabilityRounds || 0;
+    const again = failing && rounds < L.bandRetries;
+    const readers = composer.AUDIENCES[composer.normaliseAudience(s.audience)].readers;
     await progress(
       "verify",
       failing
-        ? `Measured at reading grade ${readability.fkGrade} for a target of ${readability.targetGrade}` +
-          (s.readabilityRetried ? "; shipping with a note." : "; simplifying once.")
-        : `Measured at reading grade ${readability.fkGrade ?? "n/a"} for a target of ${readability.targetGrade}.`,
-      { verdict: readability.verdict, fkGrade: readability.fkGrade, drift: readability.drift },
+        ? `Read as too ${ruling.verdict === "too_hard" ? "hard" : "simple"} for ${readers}${again ? "; rewriting it for them." : "; keeping it, with a note."}`
+        : ruling.verdict === "unchecked"
+          ? `The reading level could not be judged just now (measured at grade ${measured.fkGrade ?? "n/a"}).`
+          : `Read as right for ${readers} (measured at grade ${measured.fkGrade ?? "n/a"}).`,
+      { verdict: readability.verdict, ruling: ruling.verdict, fkGrade: measured.fkGrade, drift: measured.drift },
     );
-    if (failing && !s.readabilityRetried) {
-      return { readability, readabilityNote: simplificationNote(readability), readabilityRetried: true };
+    if (again) {
+      return { readability, readabilityNote: bandJudge.bandNote(ruling, s.audience), readabilityRounds: rounds + 1, calls: ruling.calls };
     }
     const warnings = [];
     if (readability.verdict !== VERDICT.PASS && readability.reason) warnings.push(`This draft ${readability.reason}.`);
@@ -547,7 +589,7 @@ function buildDraftNodes({ generate, onProgress = async () => {} }) {
     const borrow = checks.borrowed({ blocks: s.draft.bodyBlocks, passages: s.passages });
     if (borrow.ok === false) warnings.push(borrow.sentence);
 
-    return { readability, readabilityNote: null, warnings, checks: { numbers, limitations, worldClaims, budget, pronouns, attribution, verify: verifyItems, headings, repetition: repeats, borrowed: borrow } };
+    return { readability, readabilityNote: null, warnings, calls: ruling.calls, checks: { numbers, limitations, worldClaims, budget, pronouns, attribution, verify: verifyItems, headings, repetition: repeats, borrowed: borrow } };
   }
 
   return { pick_source, plan_outline, draft_blocks, assemble, verify };
@@ -645,7 +687,7 @@ async function runDraftGraph(input, deps) {
     coverage: final.outline.coverage || null,
     passages: final.passages.map((p) => ({ id: p.id, words: p.words })),
     readability: final.readability
-      ? { verdict: final.readability.verdict, fkGrade: final.readability.fkGrade, targetGrade: final.readability.targetGrade, drift: final.readability.drift, tolerance: final.readability.tolerance, reliable: final.readability.reliable }
+      ? { verdict: final.readability.verdict, reason: final.readability.reason || null, judged: final.readability.judged || null, fkGrade: final.readability.fkGrade, targetGrade: final.readability.targetGrade, drift: final.readability.drift, tolerance: final.readability.tolerance, reliable: final.readability.reliable }
       : null,
     warnings,
     checks: final.checks || null,
@@ -658,4 +700,4 @@ function dedupe(list) {
   return [...new Set(list)];
 }
 
-module.exports = { GRAPH_VERSION, SECTION_VOICE_RETRIES, FIDELITY_RETRIES, buildDraftNodes, buildDraftGraph, runDraftGraph, runOutlineOnly, normaliseApprovedOutline };
+module.exports = { GRAPH_VERSION, buildDraftNodes, buildDraftGraph, runDraftGraph, runOutlineOnly, normaliseApprovedOutline };

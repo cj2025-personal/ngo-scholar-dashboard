@@ -25,8 +25,14 @@
  * Too easy never fails. Prose a little below target is still readable; the
  * drafter padding sentences to hit a number is worse.
  *
- * Pure. The drafting service decides what to do with a verdict; this file
- * only says what the text measured.
+ * ── What it decides now: nothing ──────────────────────────────────────────
+ * Whether prose suits its reader is judged by a model that reads it as an
+ * editor would (agents/bandJudge.js); the formula is one piece of evidence it
+ * is given, and the numbers the scholar is shown. `placeReadability` puts the
+ * editor's ruling on the measurement: the ruling is the verdict, and the
+ * formula's own view is kept beside it as `formula`.
+ *
+ * Pure. This file only says what the text measured.
  */
 
 const { measureReadability, RELIABLE_WORD_FLOOR } = require("./readability");
@@ -110,34 +116,29 @@ function assessDraftReadability({ text, audience }) {
 }
 
 /**
- * What to tell the model on a retry, in terms of what it can change.
- * Sentence length and word length are the two levers Flesch-Kincaid sees.
+ * The measurement, with an editor's ruling on whether the prose suits its
+ * reader. The ruling decides the verdict; the numbers stay for display.
+ *
+ * @param {object} measured   from assessDraftReadability
+ * @param {{verdict: "fits"|"too_hard"|"too_simple"|"unchecked", reason: string, sentences?: string[]}} ruling
  */
-function simplificationNote(assessment) {
-  if (!assessment || assessment.verdict !== VERDICT.FAIL) return null;
-  const t = AUDIENCE_TARGETS[normaliseAudience(assessment.audience)] || AUDIENCE_TARGETS[DEFAULT_AUDIENCE];
-
-  /* Too simple. The correction is the same machinery pointed the other way:
-     write for the reader you have. Nothing here asks for a new fact — a
-     sentence joined to the one after it says exactly what the two said. */
-  if (assessment.tooSimple) {
-    return (
-      `Your previous draft measured at reading grade ${assessment.fkGrade}; the target for ${t.label} is grade ${t.grade}, ` +
-      `so it reads well below the reader it is for. Rewrite at their level: join sentences that belong together with ` +
-      `"which", "because", "so" and "while" rather than leaving each on its own, and vary the length — around ${t.grade >= 10 ? "18" : "14"} words on ` +
-      "average, with some noticeably longer and some short for emphasis. Where you are describing a named thing in a long " +
-      "plain phrase, name it once with a short definition and use the name after that. " +
-      "Do not otherwise move closer to the paper's own sentences: this is the article's wording, not the paper's, and " +
-      "copying its phrasing to raise the reading level is the wrong fix. Add no fact that is not already in the draft; " +
-      "say what is there in fewer, fuller sentences of your own."
-    );
-  }
-
-  return (
-    `Your previous draft measured at reading grade ${assessment.fkGrade}; the target for ${t.label} is grade ${t.grade}. ` +
-    "Shorten sentences to 15–20 words, prefer one- and two-syllable words, and define each technical term in " +
-    "the sentence that introduces it. Keep every fact; simplify only the wording."
-  );
+function placeReadability(measured, ruling) {
+  const t = AUDIENCE_TARGETS[normaliseAudience(measured.audience)] || AUDIENCE_TARGETS[DEFAULT_AUDIENCE];
+  const verdict = ruling.verdict === "fits" ? VERDICT.PASS : ruling.verdict === "unchecked" ? VERDICT.WARN : VERDICT.FAIL;
+  const said = String(ruling.reason || "").trim().replace(/[.\s]+$/, "");
+  const reason = verdict === VERDICT.PASS
+    ? null
+    : ruling.verdict === "unchecked"
+      ? `could not be placed for ${t.label}${said ? ` (${said})` : ""}`
+      : `reads too ${ruling.verdict === "too_hard" ? "hard" : "simple"} for ${t.label}${said ? `: ${said}` : ""}`;
+  return {
+    ...measured,
+    verdict,
+    reason,
+    tooSimple: ruling.verdict === "too_simple",
+    formula: measured.verdict,
+    judged: { verdict: ruling.verdict, reason: ruling.reason || "", guidance: ruling.guidance || "", sentences: ruling.sentences || [] },
+  };
 }
 
 module.exports = {
@@ -147,5 +148,5 @@ module.exports = {
   NOTE_BELOW_GRADES,
   VERDICT,
   assessDraftReadability,
-  simplificationNote,
+  placeReadability,
 };

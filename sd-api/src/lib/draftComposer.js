@@ -226,10 +226,11 @@ function buildSystemInstruction({ voice = DEFAULT_VOICE, scholarName = null } = 
  * @param {string} p.text         the prepared source text
  * @param {boolean} [p.truncated]
  * @param {string} [p.audience]
- * @param {boolean} [p.strictVoice]  set on retry after a first-person violation
- * @param {string|null} [p.readabilityNote]  set on retry after the draft measured too hard
+ * @param {boolean} [p.strictVoice]  set on retry after the voice judge found the author speaking
+ * @param {string|null} [p.voiceNote]  the voice judge's sentences and reasons, on that retry
+ * @param {string|null} [p.readabilityNote]  set on retry after an editor read the draft as wrong for its reader
  */
-function buildDraftPrompt({ scholar = {}, source = {}, text, truncated = false, audience, strictVoice = false, readabilityNote = null }) {
+function buildDraftPrompt({ scholar = {}, source = {}, text, truncated = false, audience, strictVoice = false, voiceNote = null, readabilityNote = null }) {
   const aud = AUDIENCES[normaliseAudience(audience)];
   const name = scholar.name || "the scholar";
   const lines = [
@@ -252,6 +253,9 @@ function buildDraftPrompt({ scholar = {}, source = {}, text, truncated = false, 
       `written about ${name}, never as ${name}. Rewrite every such sentence in the third person.`,
     );
   }
+  if (voiceNote) {
+    lines.push("", voiceNote);
+  }
   if (readabilityNote) {
     lines.push("", readabilityNote);
   }
@@ -273,95 +277,8 @@ function buildDraftPrompt({ scholar = {}, source = {}, text, truncated = false, 
 
 /* ── Output checks ──────────────────────────────────────────────────────── */
 
-/* Exact forms, case-sensitive, so "US" (the country) and "Us" do not trip it
-   while "I", "We" at sentence start and "we" mid-sentence do. */
-/* The singular first person is the author, always, with no second reading. */
-const FIRST_PERSON = new Set([
-  "I", "I'm", "I've", "I'd", "I'll", "me", "my", "mine", "myself",
-  "My", "Me", "Mine", "Myself",
-]);
-
-/**
- * "We" has two meanings and only one of them is forbidden.
- *
- * ── What this cost ──────────────────────────────────────────────────────────
- * Every `we`, `us` and `our` counted as the author speaking, so an article
- * for a child — where "things we use every day" and "it helps us find" are
- * ordinary English for everyone, the reader included — tripped the guard on
- * the first section and the run refused. A scholar approved six sections and
- * got a sentence telling them to try a different paper. Measured on the real
- * model: three such sentences in the first section, none of them the author.
- *
- * ── The line ────────────────────────────────────────────────────────────────
- * The authorial "we" attaches to the work: a verb for doing research, or a
- * possessive over what was produced. The inclusive "we" attaches to the
- * world. So `we found`, `we measured`, `our method`, `our results` are the
- * author; `we use every day`, `helps us find`, `tells us about the weather`
- * are not. Everyday verbs are deliberately absent from the list — "we use"
- * and "we see" are how you explain anything to anyone.
- *
- * A heuristic, so it can miss: "we wanted to know whether" is the author and
- * passes. That is the cheap failure — one sentence in front of the scholar,
- * who is reading the draft anyway. The expensive failure was the other
- * direction, and it threw six sections away.
- */
-const RESEARCH_VERB = /\b[Ww]e\s+(?:\w+ly\s+|also\s+|then\s+|first\s+|next\s+|have\s+|had\s+|here\s+)*(?:found|find|show|showed|shown|present|presented|propose|proposed|develop|developed|design|designed|build|built|test|tested|measure|measured|ran|run|observe|observed|report|reported|conclude|concluded|demonstrate|demonstrated|evaluate|evaluated|compare|compared|analyse|analysed|analyze|analyzed|derive|derived|simulate|simulated|investigate|investigated|introduce|introduced|implement|implemented|collect|collected|record|recorded|obtain|obtained|establish|established|verify|verified|confirm|confirmed|validate|validated|quantify|quantified|assess|assessed|examine|examined|estimate|estimated|calculate|calculated|compute|computed|apply|applied|carried\s+out|carry\s+out|set\s+out|cut|reduce|reduced|improve|improved|achieve|achieved|increase|increased|decrease|decreased|eliminate|eliminated|suppress|suppressed|solve|solved)\b/;
-const OUR_WORK = /\b[Oo]ur\s+(?:\w+\s+){0,2}(?:method|methods|approach|approaches|work|paper|papers|study|studies|research|result|results|finding|findings|data|dataset|experiment|experiments|simulation|simulations|analysis|algorithm|algorithms|technique|techniques|model|models|array|arrays|system|systems|design|implementation|measurement|measurements|trial|trials|test|tests|contribution|contributions|proposal|hypothesis)\b/;
-
-/** Sentences of `text` that speak in the author's own first person. */
-function firstPersonSentences(text) {
-  const sentences = String(text || "").split(/(?<=[.!?])\s+/);
-  return sentences.filter((raw) => {
-    const sentence = raw.replace(/[“”"]/g, "");
-    const singular = sentence
-      .split(/\s+/)
-      .map((w) => w.replace(/^[^A-Za-z']+|[^A-Za-z']+$/g, ""))
-      .some((w) => FIRST_PERSON.has(w));
-    return singular || RESEARCH_VERB.test(sentence) || OUR_WORK.test(sentence);
-  });
-}
-
-/* Ways an article refers to its own author without naming them. */
-const AUTHOR_NOUNS = /\b(?:the|this|its)\s+(?:present\s+|current\s+)?(?:author|authors|researcher|researchers|investigator|investigators|writer)\b/i;
-/* Singular personal pronouns. In an impersonal account there is rarely a
-   legitimate one, and the failure this guards is a real person's pronoun
-   being guessed — so they are reported, but as a warning, not a refusal. */
-const PERSONAL_PRONOUN = /\b(?:he|him|his|she|her|hers)\b/i;
-
-/** The forms a name is referred to by: the full name, and each part long enough to be distinctive. */
-function nameForms(scholarName) {
-  const full = String(scholarName || "").replace(/\s+/g, " ").trim();
-  if (!full) return [];
-  const parts = full.split(" ").filter((p) => p.replace(/[^A-Za-z]/g, "").length >= 3);
-  return [...new Set([full, ...parts])].filter(Boolean);
-}
-
-/**
- * Sentences that refer to the article's own author, which VOICE.AUTHOR
- * forbids. Two severities, because they deserve different answers:
- *
- *   named     the author is named, or called "the author". Unambiguous, and
- *             the drafter is sent back to rewrite it.
- *   pronouns  a gendered pronoun, which usually means the author crept in as
- *             a subject but may legitimately refer to someone else the paper
- *             names. Reported to the scholar, never a refusal — guessing
- *             which is which is exactly the judgement a person should make.
- *
- * @param {string} text
- * @param {string|null} scholarName
- * @returns {{named: string[], pronouns: string[]}}
- */
-function selfReferenceSentences(text, scholarName = null) {
-  const forms = nameForms(scholarName).map((f) => new RegExp(`\\b${f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"));
-  const named = [];
-  const pronouns = [];
-  for (const sentence of String(text || "").split(/(?<=[.!?])\s+/)) {
-    if (!sentence.trim()) continue;
-    if (forms.some((re) => re.test(sentence)) || AUTHOR_NOUNS.test(sentence)) named.push(sentence);
-    else if (PERSONAL_PRONOUN.test(sentence)) pronouns.push(sentence);
-  }
-  return { named, pronouns };
-}
+/* Whose voice the prose is in — speaking as the author, or naming them in
+   their own account — is judged by a model: see agents/voiceJudge.js. */
 
 /**
  * Whether an article written ABOUT a scholar keeps one pronoun for them
@@ -438,9 +355,8 @@ function stripCodeFence(raw) {
 /**
  * Turn the model's JSON into editor blocks, applying the checks.
  *
- * Returns the draft plus the list of `violations` (first-person sentences,
- * which the caller treats as grounds to retry) and `warnings` (what was
- * dropped or trimmed, which the caller shows the scholar). Throws only when
+ * Returns the draft plus `warnings` (what was dropped or trimmed, which the
+ * caller shows the scholar). Its voice is judged by the caller, by a model. Throws only when
  * the response is not usable at all.
  *
  * @param {string} raw            the model's text
@@ -458,7 +374,6 @@ function parseDraftResponse(raw, sourceText) {
   }
 
   const warnings = [];
-  const violations = [];
   const bodyBlocks = [];
   /* The prose the readability gate measures: paragraphs only. Headings are
      fragments and quotes are the scholar's own register, not the draft's. */
@@ -479,7 +394,6 @@ function parseDraftResponse(raw, sourceText) {
       continue;
     }
 
-    violations.push(...firstPersonSentences(text));
     if (kind !== "heading") prose.push(text);
     bodyBlocks.push({ type: kind === "heading" ? "subheading" : "paragraph", html: escapeHtml(text) });
   }
@@ -507,9 +421,8 @@ function parseDraftResponse(raw, sourceText) {
 
   const title = clampToSentence(data.title, LIMITS.MAX_TITLE_CHARS);
   const deck = clampToSentence(data.deck, LIMITS.MAX_DECK_CHARS);
-  violations.push(...firstPersonSentences(deck));
 
-  return { title, deck, bodyBlocks, words, warnings, violations, prose: prose.join("\n\n") };
+  return { title, deck, bodyBlocks, words, warnings, prose: prose.join("\n\n") };
 }
 
 module.exports = {
@@ -527,9 +440,6 @@ module.exports = {
   buildSystemInstruction,
   buildDraftPrompt,
   parseDraftResponse,
-  firstPersonSentences,
-  nameForms,
-  selfReferenceSentences,
   pronounConsistency,
   isVerbatim,
 };

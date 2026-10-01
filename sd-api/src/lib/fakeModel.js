@@ -473,7 +473,7 @@ function answerConverse(prompt) {
   const setReader = (prompt.match(/; reader: ([a-z0-9_]+)/) || [])[1] || null;
   const stage = (prompt.match(/^stage: (\w+)/m) || [])[1] || "start";
 
-  const out = (action, extra = {}) => JSON.stringify({ action, paper_key: "", audience: "", voice: "", extra_audiences: [], brief: "", reply: "", rationale: `fake: ${action}`, ...extra });
+  const out = (action, extra = {}) => JSON.stringify({ action, paper_key: "none", audience: "none", voice: "none", extra_audiences: [], brief: "", reply: "", rationale: `fake: ${action}`, ...extra });
 
   if (stage === "outline_waiting") {
     if (/^(looks good|approve|approved|go ahead|yes|draft it|perfect)\b/i.test(said)) return out("approve", { reply: "Drafting it now." });
@@ -554,6 +554,138 @@ function answerIdeas(prompt) {
   return JSON.stringify({ groups });
 }
 
+/* ── Voice and reading level, as the test double judges them ──────────────
+   The rules the composer once enforced, kept here only so the fake voice
+   judge answers the way the suite expects. Production asks a model. */
+
+/* Exact forms, case-sensitive, so "US" (the country) and "Us" do not trip it
+   while "I", "We" at sentence start and "we" mid-sentence do. */
+/* The singular first person is the author, always, with no second reading. */
+const FIRST_PERSON = new Set([
+  "I", "I'm", "I've", "I'd", "I'll", "me", "my", "mine", "myself",
+  "My", "Me", "Mine", "Myself",
+]);
+
+/**
+ * "We" has two meanings and only one of them is forbidden.
+ *
+ * ── What this cost ──────────────────────────────────────────────────────────
+ * Every `we`, `us` and `our` counted as the author speaking, so an article
+ * for a child — where "things we use every day" and "it helps us find" are
+ * ordinary English for everyone, the reader included — tripped the guard on
+ * the first section and the run refused. A scholar approved six sections and
+ * got a sentence telling them to try a different paper. Measured on the real
+ * model: three such sentences in the first section, none of them the author.
+ *
+ * ── The line ────────────────────────────────────────────────────────────────
+ * The authorial "we" attaches to the work: a verb for doing research, or a
+ * possessive over what was produced. The inclusive "we" attaches to the
+ * world. So `we found`, `we measured`, `our method`, `our results` are the
+ * author; `we use every day`, `helps us find`, `tells us about the weather`
+ * are not. Everyday verbs are deliberately absent from the list — "we use"
+ * and "we see" are how you explain anything to anyone.
+ *
+ * A heuristic, so it can miss: "we wanted to know whether" is the author and
+ * passes. That is the cheap failure — one sentence in front of the scholar,
+ * who is reading the draft anyway. The expensive failure was the other
+ * direction, and it threw six sections away.
+ */
+const RESEARCH_VERB = /\b[Ww]e\s+(?:\w+ly\s+|also\s+|then\s+|first\s+|next\s+|have\s+|had\s+|here\s+)*(?:found|find|show|showed|shown|present|presented|propose|proposed|develop|developed|design|designed|build|built|test|tested|measure|measured|ran|run|observe|observed|report|reported|conclude|concluded|demonstrate|demonstrated|evaluate|evaluated|compare|compared|analyse|analysed|analyze|analyzed|derive|derived|simulate|simulated|investigate|investigated|introduce|introduced|implement|implemented|collect|collected|record|recorded|obtain|obtained|establish|established|verify|verified|confirm|confirmed|validate|validated|quantify|quantified|assess|assessed|examine|examined|estimate|estimated|calculate|calculated|compute|computed|apply|applied|carried\s+out|carry\s+out|set\s+out|cut|reduce|reduced|improve|improved|achieve|achieved|increase|increased|decrease|decreased|eliminate|eliminated|suppress|suppressed|solve|solved)\b/;
+const OUR_WORK = /\b[Oo]ur\s+(?:\w+\s+){0,2}(?:method|methods|approach|approaches|work|paper|papers|study|studies|research|result|results|finding|findings|data|dataset|experiment|experiments|simulation|simulations|analysis|algorithm|algorithms|technique|techniques|model|models|array|arrays|system|systems|design|implementation|measurement|measurements|trial|trials|test|tests|contribution|contributions|proposal|hypothesis)\b/;
+
+/** Sentences of `text` that speak in the author's own first person. */
+function firstPersonSentences(text) {
+  const sentences = String(text || "").split(/(?<=[.!?])\s+/);
+  return sentences.filter((raw) => {
+    const sentence = raw.replace(/[“”"]/g, "");
+    const singular = sentence
+      .split(/\s+/)
+      .map((w) => w.replace(/^[^A-Za-z']+|[^A-Za-z']+$/g, ""))
+      .some((w) => FIRST_PERSON.has(w));
+    return singular || RESEARCH_VERB.test(sentence) || OUR_WORK.test(sentence);
+  });
+}
+
+/* Ways an article refers to its own author without naming them. */
+const AUTHOR_NOUNS = /\b(?:the|this|its)\s+(?:present\s+|current\s+)?(?:author|authors|researcher|researchers|investigator|investigators|writer)\b/i;
+/* Singular personal pronouns. In an impersonal account there is rarely a
+   legitimate one, and the failure this guards is a real person's pronoun
+   being guessed — so they are reported, but as a warning, not a refusal. */
+const PERSONAL_PRONOUN = /\b(?:he|him|his|she|her|hers)\b/i;
+
+/** The forms a name is referred to by: the full name, and each part long enough to be distinctive. */
+function nameForms(scholarName) {
+  const full = String(scholarName || "").replace(/\s+/g, " ").trim();
+  if (!full) return [];
+  const parts = full.split(" ").filter((p) => p.replace(/[^A-Za-z]/g, "").length >= 3);
+  return [...new Set([full, ...parts])].filter(Boolean);
+}
+
+/**
+ * Sentences that refer to the article's own author, which VOICE.AUTHOR
+ * forbids. Two severities, because they deserve different answers:
+ *
+ *   named     the author is named, or called "the author". Unambiguous, and
+ *             the drafter is sent back to rewrite it.
+ *   pronouns  a gendered pronoun, which usually means the author crept in as
+ *             a subject but may legitimately refer to someone else the paper
+ *             names. Reported to the scholar, never a refusal — guessing
+ *             which is which is exactly the judgement a person should make.
+ *
+ * @param {string} text
+ * @param {string|null} scholarName
+ * @returns {{named: string[], pronouns: string[]}}
+ */
+function selfReferenceSentences(text, scholarName = null) {
+  const forms = nameForms(scholarName).map((f) => new RegExp(`\\b${f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"));
+  const named = [];
+  const pronouns = [];
+  for (const sentence of String(text || "").split(/(?<=[.!?])\s+/)) {
+    if (!sentence.trim()) continue;
+    if (forms.some((re) => re.test(sentence)) || AUTHOR_NOUNS.test(sentence)) named.push(sentence);
+    else if (PERSONAL_PRONOUN.test(sentence)) pronouns.push(sentence);
+  }
+  return { named, pronouns };
+}
+
+
+/** The voice judge, for the test double: the rules above over the paragraphs it is shown. */
+function answerVoice(prompt) {
+  const voice = (prompt.match(/^THE VOICE: (author|about)/m) || [])[1] || "about";
+  const name = (prompt.match(/^THE SCHOLAR: (.+)$/m) || [])[1] || "";
+  const scholar = /^\(name not known\)$/.test(name) ? null : name;
+  const body = prompt.slice(prompt.indexOf("PARAGRAPHS TO CHECK FOR VOICE:"));
+  const paragraphs = [...body.matchAll(/^\[P(\d+)\] (.*)$/gm)].map((m) => ({ index: Number(m[1]), text: m[2] }));
+  return JSON.stringify({
+    paragraphs: paragraphs.map((p) => {
+      const self = voice === "author" ? selfReferenceSentences(p.text, scholar) : { named: [], pronouns: [] };
+      return {
+        id: `P${p.index}`,
+        findings: [
+          ...firstPersonSentences(p.text).map((sentence) => ({ sentence, kind: "speaks_as_author", reason: "It speaks as the researchers." })),
+          ...self.named.map((sentence) => ({ sentence, kind: "names_author", reason: "It names the author in their own account." })),
+          ...self.pronouns.map((sentence) => ({ sentence, kind: "pronoun_for_author", reason: "A pronoun may stand for the author." })),
+        ],
+      };
+    }),
+  });
+}
+
+/** The band judge, for the test double: the reading-grade formula decides, as it once did. */
+function answerBand(prompt) {
+  const { AUDIENCES } = require("./audiences");
+  const { assessDraftReadability, VERDICT } = require("./draftReadability");
+  const readers = (prompt.match(/^THE READER: (.+?)\. What they need:/m) || [])[1];
+  const audience = Object.keys(AUDIENCES).find((k) => AUDIENCES[k].readers === readers) || "adults";
+  const text = prompt.slice(prompt.indexOf("PROSE TO PLACE FOR ITS READER:") + "PROSE TO PLACE FOR ITS READER:".length).trim();
+  const a = assessDraftReadability({ text, audience });
+  if (a.verdict !== VERDICT.FAIL) return JSON.stringify({ verdict: "fits", reason: "It reads at the reader's level.", guidance: "", sentences: [] });
+  const longest = text.split(/(?<=[.!?])\s+/).sort((x, y) => y.length - x.length).slice(0, 2);
+  return JSON.stringify(a.tooSimple
+    ? { verdict: "too_simple", reason: `It reads well below ${AUDIENCES[audience].readers}.`, guidance: "Join sentences that belong together and vary their length; name a thing once and use the name after that.", sentences: [] }
+    : { verdict: "too_hard", reason: `It reads above ${AUDIENCES[audience].readers} (grade ${a.fkGrade} against ${a.targetGrade}).`, guidance: "Shorten sentences to 15–20 words, prefer one- and two-syllable words, and define each technical term in the sentence that introduces it.", sentences: longest });
+}
+
 /**
  * Embeddings for the test double: words hashed into a fixed space, so texts
  * that share words point the same way and texts that share none are near
@@ -590,6 +722,8 @@ async function generateContent({ prompt, contents = null, tools = null, signal =
   else if (p.includes("THREAD TO SUMMARISE:")) text = answerMemory(p);
   else if (p.includes("QUESTIONS TO SUGGEST FOR:")) text = answerSuggest(p);
   else if (p.includes("THE SCHOLAR JUST SAID:")) text = answerConverse(p);
+  else if (p.includes("PARAGRAPHS TO CHECK FOR VOICE:")) text = answerVoice(p);
+  else if (p.includes("PROSE TO PLACE FOR ITS READER:")) text = answerBand(p);
   else if (p.includes("DRAFT TO SUGGEST EDITS FOR:") || p.includes("PAPERS TO SUGGEST ARTICLES FROM:")) text = answerIdeas(p);
   else if (p.includes("PARAGRAPHS OF THE AUTHOR'S OWN CONTEXT:")) text = answerContext(p);
   else if (p.includes("PARAGRAPHS THAT BUILD ON THEM:")) text = answerReach(p);

@@ -24,7 +24,11 @@ const { assessScholar } = require("./standing.service");
 const { rolloutAllows } = require("../lib/rollout");
 const { env } = require("../config/env");
 const composer = require("../lib/draftComposer");
-const { assessDraftReadability, simplificationNote, VERDICT } = require("../lib/draftReadability");
+const { assessDraftReadability, placeReadability, VERDICT } = require("../lib/draftReadability");
+const voiceJudge = require("../lib/agents/voiceJudge");
+const bandJudge = require("../lib/agents/bandJudge");
+const { getPolicy } = require("./policy.service");
+const { routerFor } = require("./models.service");
 const vertex = require("../lib/vertex");
 
 /* Harvested sources are keyed by a slug of the display name, not by
@@ -211,15 +215,13 @@ async function loadSourceText(db, source) {
 }
 
 /**
- * How many model calls one draft may cost.
- *
- * A first-person draft earns one retry with a sterner prompt; a draft that
- * measures too hard for its reader earns one with a simplification note. Three
- * calls covers both once, with the voice retry taking priority because a voice
- * failure is refused outright and a readability failure is handed over with a
- * warning.
+ * How many drafting calls one draft may cost: the first, plus the retries the
+ * drafting policy allows for voice and for reading level. The voice retries
+ * come first, because a draft still speaking as the scholar is refused
+ * outright, while one that reads wrong for its reader is handed over with
+ * the editor's reason.
  */
-const MAX_ATTEMPTS = 3;
+const attemptsAllowed = (policy) => 1 + policy.sectionVoiceRetries + policy.bandRetries;
 
 /**
  * Draft an article from one of the scholar's own sources.
@@ -284,9 +286,19 @@ async function draftFromSource({ profileId, origin, sourceId, audience }) {
   let readability = null;
   const attempts = [];
   let strictVoice = false;
+  let voiceNote = null;
   let readabilityNote = null;
+  let voiced = null;
+  let voiceRounds = 0;
+  let bandRounds = 0;
+  /* The voice and reading-level judges, each on its own model route. */
+  const policy = await getPolicy("drafting", { db });
+  const router = await routerFor({ db });
+  const judgeVoice = router.bound("drafting.voice");
+  const judgeBand = router.bound("drafting.band");
+  const plain = (html) => String(html || "").replace(/<[^>]+>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= attemptsAllowed(policy); attempt += 1) {
     const prompt = composer.buildDraftPrompt({
       scholar,
       source: { title: source.title, year: source.year, origin: source.origin },
@@ -294,6 +306,7 @@ async function draftFromSource({ profileId, origin, sourceId, audience }) {
       truncated: prepared.truncated,
       audience: chosenAudience,
       strictVoice,
+      voiceNote,
       readabilityNote,
     });
 
@@ -323,28 +336,40 @@ async function draftFromSource({ profileId, origin, sourceId, audience }) {
     generation = result;
     draft = parsed;
 
-    if (parsed.violations.length > 0) {
-      attempts.push({ attempt, usage: result.usage, outcome: "first_person", violations: parsed.violations.length });
-      if (strictVoice) break; /* already retried for voice once; refuse below */
+    /* Whose voice: an article about the scholar, never as them. The deck is
+       read with the paragraphs; quotes are the paper's own words. */
+    voiced = await voiceJudge.judgeBlocks({
+      blocks: [...parsed.bodyBlocks, ...(parsed.deck ? [{ type: "paragraph", html: parsed.deck }] : [])],
+      voice: composer.VOICE.ABOUT, scholarName: scholar.name, generate: judgeVoice, plain,
+    });
+    if (voiced.speaking.length > 0) {
+      attempts.push({ attempt, usage: result.usage, outcome: "first_person", violations: voiced.speaking.length, judge: voiced.calls.map((c) => c.usage) });
+      if (voiceRounds >= policy.sectionVoiceRetries) break; /* out of voice retries; refuse below */
+      voiceRounds += 1;
       strictVoice = true;
+      voiceNote = voiced.note;
       continue;
     }
 
-    readability = assessDraftReadability({ text: parsed.prose, audience: chosenAudience });
+    /* Whether it reads right for its reader: an editor model decides, with the formula's measurement as evidence. */
+    const measured = assessDraftReadability({ text: parsed.prose, audience: chosenAudience });
+    const ruling = await bandJudge.judgeBand({ text: parsed.prose, audience: chosenAudience, measured, previous: bandRounds ? readability?.judged || null : null, generate: judgeBand });
+    readability = placeReadability(measured, ruling);
     attempts.push({
       attempt,
       usage: result.usage,
-      outcome: readability.verdict === VERDICT.FAIL ? "too_hard" : "ok",
-      readability: { verdict: readability.verdict, fkGrade: readability.fkGrade, drift: readability.drift },
+      outcome: readability.verdict === VERDICT.FAIL ? ruling.verdict : "ok",
+      readability: { verdict: readability.verdict, ruling: ruling.verdict, fkGrade: readability.fkGrade, drift: readability.drift },
     });
-    if (readability.verdict === VERDICT.FAIL && !readabilityNote) {
-      readabilityNote = simplificationNote(readability);
+    if (readability.verdict === VERDICT.FAIL && bandRounds < policy.bandRetries) {
+      bandRounds += 1;
+      readabilityNote = bandJudge.bandNote(ruling, chosenAudience);
       continue;
     }
     break;
   }
 
-  if (draft.violations.length > 0) {
+  if (voiced && voiced.speaking.length > 0) {
     /* Two attempts, still speaking as the scholar. Refuse rather than hand
        over a draft that says "I" under a living person's name. */
     await recordRun(db, { profileId, source, chosenAudience, prepared, startedAt, attempts, generation, draft, readability, refused: true });
@@ -357,9 +382,10 @@ async function draftFromSource({ profileId, origin, sourceId, audience }) {
   const runId = await recordRun(db, { profileId, source, chosenAudience, prepared, startedAt, attempts, generation, draft, readability });
 
   const warnings = [...draft.warnings];
+  if (voiced?.unchecked) warnings.push("The voice of this draft could not be checked just now. Read it for any sentence that speaks as you before publishing.");
   if (readability && readability.verdict !== VERDICT.PASS && readability.reason) {
-    /* Not refused: the scholar is about to edit it, and knowing the measured
-       level is what makes the edit purposeful. */
+    /* Not refused: the scholar is about to edit it, and knowing why it reads
+       wrong for its reader is what makes the edit purposeful. */
     warnings.push(`This draft ${readability.reason}.`);
   }
   if (prepared.truncated) {
@@ -377,7 +403,7 @@ async function draftFromSource({ profileId, origin, sourceId, audience }) {
     words: draft.words,
     warnings,
     readability: readability
-      ? { verdict: readability.verdict, fkGrade: readability.fkGrade, targetGrade: readability.targetGrade, drift: readability.drift }
+      ? { verdict: readability.verdict, reason: readability.reason || null, judged: readability.judged || null, fkGrade: readability.fkGrade, targetGrade: readability.targetGrade, drift: readability.drift }
       : null,
     provenance: {
       origin: source.origin,

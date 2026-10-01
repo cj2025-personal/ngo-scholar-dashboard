@@ -1,0 +1,33 @@
+{"id":"inclusive-find","voice":"author","scholar":"Inder Gupta","text":"It helps us find where sounds or radio signals come from.","speaks":false,"names":false}
+{"id":"inclusive-every-day","voice":"author","scholar":"Inder Gupta","text":"This is very useful for many things we use every day.","speaks":false,"names":false}
+{"id":"inclusive-weather","voice":"author","scholar":"Inder Gupta","text":"This helps weather forecasters tell us about the weather.","speaks":false,"names":false}
+{"id":"inclusive-doa","voice":"author","scholar":"Inder Gupta","text":"DOA is important for many technologies we use every day.","speaks":false,"names":false}
+{"id":"inclusive-direction","voice":"author","scholar":"Inder Gupta","text":"It tells us the exact direction of a signal source.","speaks":false,"names":false}
+{"id":"everyday-radios","voice":"about","scholar":"Inder Gupta","text":"We use radios every day without thinking about them.","speaks":false}
+{"id":"everyday-crowd","voice":"about","scholar":"Inder Gupta","text":"We all know how hard it is to hear in a crowd.","speaks":false}
+{"id":"everyday-pockets","voice":"author","scholar":"Inder Gupta","text":"Think about the phone in our pockets.","speaks":false,"names":false}
+{"id":"everyday-notice","voice":"author","scholar":"Inder Gupta","text":"This is the sort of thing we notice only when it fails.","speaks":false,"names":false}
+{"id":"singular-found","voice":"author","scholar":"Inder Gupta","text":"I found that the array improved the ratio.","speaks":true,"sentence":"I found that the array improved the ratio."}
+{"id":"singular-my-method","voice":"about","scholar":"Inder Gupta","text":"My method updates the weights every two milliseconds.","speaks":true}
+{"id":"singular-me","voice":"about","scholar":"Inder Gupta","text":"The idea came to me in the field.","speaks":true}
+{"id":"singular-reporting","voice":"author","scholar":"Inder Gupta","text":"I'm reporting the trials that failed as well.","speaks":true}
+{"id":"singular-mine","voice":"author","scholar":"Inder Gupta","text":"The design is mine.","speaks":true}
+{"id":"authorial-found","voice":"author","scholar":"Inder Gupta","text":"We found that performance degrades with four interferers.","speaks":true}
+{"id":"authorial-measured","voice":"about","scholar":"Inder Gupta","text":"We measured power consumption at 1.8 watts.","speaks":true}
+{"id":"authorial-present","voice":"author","scholar":"Inder Gupta","text":"In this paper we present a mixed-window method.","speaks":true}
+{"id":"authorial-compared","voice":"author","scholar":"Inder Gupta","text":"We also compared the two approaches under multipath.","speaks":true}
+{"id":"authorial-shown","voice":"about","scholar":"Inder Gupta","text":"We have shown that the weaker signal can be recovered.","speaks":true}
+{"id":"authorial-our-method","voice":"author","scholar":"Inder Gupta","text":"Our method builds a dictionary of possible signals.","speaks":true}
+{"id":"authorial-our-results","voice":"author","scholar":"Inder Gupta","text":"Our results show fewer failed trials.","speaks":true}
+{"id":"authorial-carried-out","voice":"about","scholar":"Inder Gupta","text":"We carried out forty trials in an anechoic chamber.","speaks":true}
+{"id":"authorial-cut","voice":"author","scholar":"Inder Gupta","text":"We cut interference by eleven decibels.","speaks":true}
+{"id":"authorial-quoted","voice":"author","scholar":"Inder Gupta","text":"“We found that the array improved the ratio.”","speaks":true}
+{"id":"authorial-wanted-to-know","voice":"author","scholar":"Inder Gupta","text":"We wanted to know whether the array could keep up with sources that move.","speaks":true,"note":"the word rules missed this one"}
+{"id":"not-first-person","voice":"about","scholar":"Inder Gupta","text":"The US trial ran in 2011. Wei led the analysis. Part II follows.","speaks":false}
+{"id":"mixed-paragraph","voice":"author","scholar":"Inder Gupta","text":"Imagine a noisy room. It helps us find where a voice comes from. We measured the improvement at eleven decibels. Everyone has been in that room.","speaks":true,"names":false,"sentence":"We measured the improvement at eleven decibels."}
+{"id":"names-surname","voice":"author","scholar":"Inder Gupta","text":"Gupta built a dictionary of possible signals.","speaks":false,"names":true}
+{"id":"names-the-authors","voice":"author","scholar":"Inder Gupta","text":"The authors note a limit on how many interferers the array can null.","speaks":false,"names":true}
+{"id":"names-other-scholar","voice":"author","scholar":"Inder Gupta","text":"Bartlett's method came first, decades earlier.","speaks":false,"names":false}
+{"id":"names-none","voice":"author","scholar":"Inder Gupta","text":"The method finds weak signals beside strong ones.","speaks":false,"names":false}
+{"id":"names-another-researcher","voice":"author","scholar":"Inder Gupta","text":"Bartlett proposed the first such beamformer in 1948; he was working on radar at the time.","speaks":false,"names":false}
+{"id":"about-may-name","voice":"about","scholar":"Inder Gupta","text":"Gupta built a dictionary of possible signals.","speaks":false}

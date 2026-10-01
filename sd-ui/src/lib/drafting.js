@@ -137,6 +137,11 @@ export async function getAgentIdeas({ storyId = null, paperKey = null, focusInde
   });
 }
 
+/** Whether the saved story reads right for its reader: a model's ruling, with the measured grade. */
+export async function getStoryReadingLevel(storyId) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/reading-level`, { method: "GET" });
+}
+
 /** Approve the outline, edited or not. Drafting resumes from it. */
 export async function approveDraftOutline(jobId, outline) {
   return request(`/api/drafting/jobs/${encodeURIComponent(jobId)}/outline`, {
@@ -404,11 +409,12 @@ const STEP_LABELS = {
   pick_source: "Reading the paper…",
   plan_outline: "Planning the article's sections…",
   draft_blocks: "Drafting sections…",
+  judge_voice: "Reading each section for whose voice it is in…",
   judge_fidelity: "Checking the draft against the paper…",
   judge_reach: "Checking what the draft draws from the paper…",
   judge_context: "Checking your own context for what it claims of the paper…",
   assemble: "Assembling the draft…",
-  verify: "Checking reading level…",
+  verify: "Reading the draft as its reader would…",
   create_story: "Opening the draft in your workspace…",
 };
 

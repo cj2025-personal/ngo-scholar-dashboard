@@ -13,16 +13,17 @@ const levels = require("../lib/levels");
 const fidelity = require("../lib/fidelity");
 const reach = require("../lib/reach");
 const composer = require("../lib/draftComposer");
-const { assessDraftReadability } = require("../lib/draftReadability");
+const { assessDraftReadability, placeReadability } = require("../lib/draftReadability");
+const voiceJudge = require("../lib/agents/voiceJudge");
+const bandJudge = require("../lib/agents/bandJudge");
 const { AUDIENCES, normaliseAudience } = require("../lib/audiences");
 const storyVersion = require("../lib/storyVersion");
 const vertex = require("../lib/vertex");
 const { traced } = require("../lib/tracing");
 const { serializeMongoValue } = require("../lib/serialize");
 const { passagesFor } = require("./passages.service");
-
-/** One retry per paragraph for voice; then the level is refused. */
-const VOICE_RETRIES = 1;
+const { getPolicy } = require("./policy.service");
+const { routerFor } = require("./models.service");
 
 /**
  * Write the story for other readers.
@@ -34,9 +35,10 @@ const VOICE_RETRIES = 1;
  * @param {string} p.actor
  * @param {number|null} [p.baseVersion]
  * @param {Function} [p.generate]         a model call, for the worker to pass its traced one
+ * @param {{voice?: Function, band?: Function}} [p.judges]   the voice and reading-level judges; their policy routes when not given
  * @param {Function} [p.onProgress]
  */
-async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, baseVersion = null, generate = null, onProgress = async () => {} }) {
+async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, baseVersion = null, generate = null, judges = null, onProgress = async () => {} }) {
   const editorial = require("./editorial.service");
   const gen = generate || traced("levels.generateContent", (req) => vertex.generateContent(req), { metadata: { storyId: String(storyDoc._id) } });
 
@@ -79,6 +81,10 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
   const system = composer.buildSystemInstruction({ voice, scholarName: author?.name || null });
   const made = {};
   const calls = [];
+  const policy = await getPolicy("drafting", { db });
+  const router = judges?.voice && judges?.band ? null : await routerFor({ db });
+  const judgeVoice = judges?.voice || router.bound("drafting.voice");
+  const judgeBand = judges?.band || router.bound("drafting.band");
 
   for (const audience of targets) {
     /* `detail` is what the job's event log keeps beside the step, so the
@@ -87,23 +93,45 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
     const rewrites = new Map();
     const warnings = [];
 
-    for (const { index } of toRewrite) {
-      const block = mapped.bodyBlocks[index];
-      let parsed = null;
-      for (let attempt = 0; attempt <= VOICE_RETRIES; attempt += 1) {
-        const prompt = levels.buildLevelPrompt({ scholar: { name: author?.name }, title: mapped.title, block, passages, audience, sourceAudience, voice, strictVoice: attempt > 0, selfGrounded });
-        const r = await gen({ prompt, systemInstruction: system, responseSchema: levels.LEVEL_SCHEMA, temperature: attempt ? 0.2 : 0.4, maxOutputTokens: 1024 });
-        calls.push({ step: "draft_levels", audience, block: index + 1, usage: r.usage || null, model: r.modelVersion || null });
-        parsed = levels.parseLevelResponse(r.text);
-        if (parsed.violations.length === 0) break;
+    const write = async (index, { voiceNote = null } = {}) => {
+      const prompt = levels.buildLevelPrompt({ scholar: { name: author?.name }, title: mapped.title, block: mapped.bodyBlocks[index], passages, audience, sourceAudience, voice, strictVoice: Boolean(voiceNote), voiceNote, selfGrounded });
+      const r = await gen({ prompt, systemInstruction: system, responseSchema: levels.LEVEL_SCHEMA, temperature: voiceNote ? 0.2 : 0.4, maxOutputTokens: 1024 });
+      calls.push({ step: "draft_levels", audience, block: index + 1, usage: r.usage || null, model: r.modelVersion || null, strictVoice: Boolean(voiceNote) });
+      return levels.parseLevelResponse(r.text).text;
+    };
+    for (const { index } of toRewrite) rewrites.set(index, { text: await write(index) });
+
+    /* Whose voice: the level's paragraphs read together by the voice judge.
+       One that speaks as the author — or, in their own account, refers to
+       them — is written again with what the judge found, as often as the
+       policy allows; one that still does is carried as the scholar wrote it,
+       and the level says so. It must not cost the level. */
+    let pending = [...rewrites.keys()];
+    for (let round = 0; pending.length; round += 1) {
+      const judged = await voiceJudge.judgeVoice({ paragraphs: pending.map((i, k) => ({ index: k + 1, text: rewrites.get(i).text })), voice, scholarName: author?.name || null, generate: judgeVoice });
+      calls.push(...judged.calls.map((c) => ({ ...c, audience })));
+      if (!judged.verdicts) {
+        warnings.push("The voice of this level could not be checked just now. Read it for any sentence that speaks as you before approving it.");
+        break;
       }
-      if (parsed.violations.length) {
-        /* One paragraph the writer cannot voice must not cost the level: it
-           is carried as the scholar wrote it, and the level says so. */
-        warnings.push(`Block ${index + 1} was carried as written: the level writer kept using the first person for it.`);
-        continue;
+      const flagged = pending.map((i, k) => ({ i, v: judged.verdicts.get(k + 1) })).filter(({ v }) => v.speaksAsAuthor || v.namesAuthor);
+      if (!flagged.length) break;
+      if (round >= policy.sectionVoiceRetries) {
+        for (const { i } of flagged) {
+          rewrites.delete(i);
+          warnings.push(`Block ${i + 1} was carried as written: the level writer kept writing as you for it.`);
+        }
+        break;
       }
-      rewrites.set(index, { text: parsed.text });
+      for (const { i, v } of flagged) {
+        const voiceNote = [
+          "A reviewer found your last attempt in the wrong voice.",
+          ...(v.sentences.length ? [`These sentences: ${v.sentences.map((x) => `“${x.slice(0, 160)}”`).join(" ")}`] : []),
+          ...(v.reason ? [`Why: ${v.reason}`] : []),
+        ].join("\n");
+        rewrites.set(i, { text: await write(i, { voiceNote }) });
+      }
+      pending = flagged.map(({ i }) => i);
     }
     if (!rewrites.size) throw new ApiError(502, `The level writer could not rewrite any paragraph for ${AUDIENCES[audience].label.toLowerCase()}; nothing was saved.`);
 
@@ -127,8 +155,14 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
     const verdicts = paperIndexes.map((i) => draft[i].fidelity?.verdict || null);
     const reachVerdicts = reachIndexes.map((i) => draft[i].reach?.verdict || null);
 
+    /* Whether the level reads right for its reader: an editor model rules,
+       with the formula's measurement as evidence and as the number shown. */
     const prose = draft.filter((b) => b.type === "paragraph").map((b) => levels.plain(b.html)).join("\n\n");
-    const readability = assessDraftReadability({ text: prose, audience });
+    const measured = assessDraftReadability({ text: prose, audience });
+    const ruling = await bandJudge.judgeBand({ text: prose, audience, measured, generate: judgeBand });
+    calls.push(...ruling.calls.map((c) => ({ ...c, audience })));
+    const readability = placeReadability(measured, ruling);
+    if (readability.verdict !== "pass" && readability.reason) warnings.push(`This level ${readability.reason}.`);
 
     /* Stored: rewritten paragraphs normalised like any saved block; carried
        blocks copied from the story as stored, so pictures keep their shape. */
@@ -153,7 +187,7 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
          paragraphs. Every surface that reports fidelity has to be able to say
          which, because they are not the same claim. */
       grounding: selfGrounded ? "self" : "source",
-      readability: { verdict: readability.verdict, fkGrade: readability.fkGrade, targetGrade: readability.targetGrade, drift: readability.drift },
+      readability: { verdict: readability.verdict, reason: readability.reason || null, judged: readability.judged, fkGrade: readability.fkGrade, targetGrade: readability.targetGrade, drift: readability.drift },
       fidelity: {
         paragraphs: verdicts.length,
         supported: verdicts.filter((v) => v === "supported").length,

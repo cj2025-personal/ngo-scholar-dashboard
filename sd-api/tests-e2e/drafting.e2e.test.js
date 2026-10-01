@@ -519,6 +519,23 @@ test("ideas are written for the story the scholar is on, and before there is one
   assert.match(fresh.data.groups[1].ideas[0].text, /Adaptive nulling in small antenna arrays/);
 });
 
+test("the publish check's reading level is a ruling on the saved version, cached until the story changes, and on the record", async () => {
+  const anon = await fetch(`${base}/api/editorial-stories/${state.storyId}/reading-level`);
+  assert.equal(anon.status, 401);
+  const first = await call("GET", `/api/editorial-stories/${state.storyId}/reading-level`);
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.ok(["pass", "warn", "fail"].includes(first.data.verdict));
+  assert.ok(["fits", "too_hard", "too_simple"].includes(first.data.judged.verdict), "a model ruled");
+  assert.equal(typeof first.data.fkGrade, "number", "the formula's grade is still measured, for display");
+  assert.equal(first.data.cached, false);
+  const again = await call("GET", `/api/editorial-stories/${state.storyId}/reading-level`);
+  assert.equal(again.data.cached, true);
+  assert.deepEqual(again.data.judged, first.data.judged);
+  const audit = await db.collection("agent_audit").find({ agent: "drafting.band", "subject.id": state.storyId }).toArray();
+  assert.equal(audit.length, 1, "one ruling, one record");
+  assert.equal(audit[0].decision.version, first.data.version);
+});
+
 test("the scholar edits by instruction: a proposal with checks, accepted onto the story", async () => {
   const before = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
   const paragraphs = before.bodyBlocks.map((b, i) => ({ b, n: i + 1 })).filter(({ b }) => b.type === "paragraph");
@@ -1010,7 +1027,7 @@ test("a brief that asks what the work means gets a section beyond the paper, jud
        authors note that…". An article under the author's own byline may not,
        so the check fires — and says which sentence, rather than losing the
        draft over it. */
-    const named = done.warnings.filter((w) => /refers to you by name/.test(w));
+    const named = done.warnings.filter((w) => /still refers to you/.test(w));
     assert.equal(named.length, 1, done.warnings.join(" | "));
     assert.match(named[0], /The authors note that performance degrades/);
 

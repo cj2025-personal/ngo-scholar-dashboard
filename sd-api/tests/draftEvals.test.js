@@ -30,6 +30,8 @@ test("partial verdicts, a warn band, first person and a missing citation each co
     ...good,
     bodyBlocks: [para("Supported.", "supported"), para("Partly.", "partial"), para("I think so.", "supported", []), para("Nothing.", "unsupported")],
     readability: { verdict: "warn", fkGrade: 13.2, drift: 3.2 },
+    /* What a second reading by the voice judge found, filled in by the eval script. */
+    voiceFlags: 1,
   });
   assert.equal(s.entailment, 0.5);
   assert.equal(s.partial, 1);

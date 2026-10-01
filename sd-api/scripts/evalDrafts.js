@@ -35,6 +35,10 @@ const { THRESHOLDS, EVAL_VERSION, scoreDraft, summarise, validateRow, parseJsonl
 const { FIDELITY_VERSION } = require("../src/lib/fidelity");
 const vertex = require("../src/lib/vertex");
 const { traced, isTracingConfigured } = require("../src/lib/tracing");
+const { env } = require("../src/config/env");
+const { createRouter } = require("../src/lib/modelRouter");
+const { defaultsFor } = require("../src/lib/policyDefaults");
+const voiceJudge = require("../src/lib/agents/voiceJudge");
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -70,6 +74,11 @@ const main = async () => {
   console.log("=".repeat(78));
 
   const generate = traced("eval.generateContent", (req) => vertex.generateContent(req));
+  /* The judges on their policy routes, as production runs them. */
+  const router = createRouter({ models: defaultsFor("models"), deploymentModel: env.llm.model, call: traced("eval.judge.generateContent", (req) => vertex.generateContent(req)) });
+  const judges = { voice: router.bound("drafting.voice"), band: router.bound("drafting.band") };
+  const limits = defaultsFor("drafting");
+  const plain = (html) => String(html || "").replace(/<[^>]+>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
   const results = [];
 
   for (const row of queue) {
@@ -77,7 +86,10 @@ const main = async () => {
     let result = null;
     let error = null;
     try {
-      result = await runDraftGraph(inputFor(row), { generate });
+      result = await runDraftGraph(inputFor(row), { generate, judges, limits });
+      /* The voice score is a second, independent reading of the finished draft. */
+      const second = await voiceJudge.judgeBlocks({ blocks: result.bodyBlocks, voice: inputFor(row).voice || composer.DEFAULT_VOICE, scholarName: inputFor(row).scholar?.name || null, generate: judges.voice, plain });
+      result.voiceFlags = second.unchecked ? 0 : second.speaking.length + second.naming.length;
     } catch (e) {
       error = e;
     }

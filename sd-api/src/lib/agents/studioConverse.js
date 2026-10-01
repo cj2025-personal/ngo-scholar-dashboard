@@ -18,7 +18,17 @@
  * Pure: the model is injected.
  */
 
-const CONVERSE_VERSION = "studio-converse-2026.1";
+const { AUDIENCES } = require("../audiences");
+const { VOICE } = require("../draftComposer");
+
+const CONVERSE_VERSION = "studio-converse-2026.3";
+
+/* The words the scholar sees for each voice and reader, as the composer shows them. */
+const VOICES = [
+  { value: VOICE.AUTHOR, label: "My own account", hint: "the scholar's own account of their work, under their byline; the scholar is never named in it" },
+  { value: VOICE.ABOUT, label: "An account about me", hint: "an article about the scholar and their work, in the third person" },
+];
+const AUDIENCE_LIST = Object.entries(AUDIENCES).filter(([k]) => !["general", "students"].includes(k)).map(([value, a]) => ({ value, label: a.label }));
 
 const ACTIONS = ["reply", "ask_paper", "set_paper", "ask_audience", "plan", "propose", "replan", "approve", "discard"];
 const STAGES = ["start", "outline_waiting", "drafting", "done"];
@@ -47,18 +57,31 @@ const SYSTEM = [
   "it unless they now name another. Lines like `Use “<title>”.` or `For ages 12–14.` are the scholar's taps on cards",
   "you showed them; read them together with what they said before.",
   "",
+  "How it goes after you: you plan an outline from the paper; the scholar approves it, cuts sections or asks for",
+  "changes; the approved outline is drafted into the page beside you, under their name; they read it, edit it, run the",
+  "publish check and publish it on Archivyn themselves, or schedule it. You cannot publish, schedule, send or delete",
+  "anything, or change their account. When asked to, say so plainly and tell them the step that does it.",
+  "",
+  "Whatever the action, set `audience` as soon as the scholar has said or clearly implied who the article is for, in",
+  "this message or an earlier one, and `paper_key` once a paper is chosen or named; if a phrase could mean more than",
+  "one reading age, ask rather than guess. Set `voice` only when they said whose account it is. Use none for anything",
+  "not known.",
+  "",
   "Rules: use only the paper keys listed. Never say you have done something you have not. `reply` is what the scholar",
   "reads: one or two plain sentences, warm and direct, about their work. Give a one-sentence `rationale` for the record.",
 ].join("\n");
+
+/* "none" where nothing is meant: the model API refuses an empty enum value. */
+const NONE = "none";
 
 function schema({ paperKeys, audiences, voices }) {
   return {
     type: "OBJECT",
     properties: {
       action: { type: "STRING", enum: ACTIONS },
-      paper_key: { type: "STRING", enum: ["", ...paperKeys] },
-      audience: { type: "STRING", enum: ["", ...audiences] },
-      voice: { type: "STRING", enum: ["", ...voices] },
+      paper_key: { type: "STRING", enum: [NONE, ...paperKeys] },
+      audience: { type: "STRING", enum: [NONE, ...audiences] },
+      voice: { type: "STRING", enum: [NONE, ...voices] },
       extra_audiences: { type: "ARRAY", items: { type: "STRING", enum: audiences } },
       brief: { type: "STRING" },
       reply: { type: "STRING" },
@@ -110,10 +133,12 @@ function parseDecision(raw, { paperKeys, audiences, voices }) {
   let j;
   try { j = JSON.parse(stripFence(raw)); } catch { return null; }
   if (!j || !ACTIONS.includes(j.action)) return null;
+  const said = (v) => (v && v !== NONE ? String(v) : "");
+  const paper = said(j.paper_key);
   return {
     action: j.action,
-    paperKey: String(j.paper_key || "") || null,
-    paperKnown: !j.paper_key || paperKeys.includes(j.paper_key),
+    paperKey: paper || null,
+    paperKnown: !paper || paperKeys.includes(paper),
     audience: audiences.includes(j.audience) ? j.audience : null,
     voice: voices.includes(j.voice) ? j.voice : null,
     extraAudiences: [...new Set((Array.isArray(j.extra_audiences) ? j.extra_audiences : []).filter((a) => audiences.includes(a)))],
@@ -156,4 +181,4 @@ async function decide({ messages, papers, audiences, voices, state, scholarName,
   return { decision: fallback, usage, model: last?.model || null };
 }
 
-module.exports = { CONVERSE_VERSION, ACTIONS, STAGES, MARKER, SYSTEM, schema, buildPrompt, parseDecision, decide };
+module.exports = { CONVERSE_VERSION, ACTIONS, STAGES, VOICES, AUDIENCE_LIST, MARKER, SYSTEM, schema, buildPrompt, parseDecision, decide };

@@ -36,6 +36,7 @@ const composer = require("./draftComposer");
 const AGENT_VERSION = "story-agent-2026.3";
 /* Step and tool budgets come from the studio policy (edit); the baseline is read when none is passed. */
 const { defaultsFor } = require("./policyDefaults");
+const voiceJudge = require("./agents/voiceJudge");
 
 /* ── tools ───────────────────────────────────────────────────────────────── */
 
@@ -196,11 +197,9 @@ function renderPassages(passages) {
   return passages.map((p) => `[${p.id}] ${p.text}`).join("\n\n");
 }
 
-/* One definition of "the author speaking", shared with the drafter: "I" and
-   "my" always, "we" and "our" only where they stand for the people who did
-   the work. Two copies of this rule drifted apart once already — this one
-   refused "things we use every day" in a paragraph written for a child. */
-const FIRST_PERSON = { test: (t) => composer.firstPersonSentences(t).length > 0 };
+/* Whose voice a write is in — speaking as the scholar, or naming them in
+   their own account — is not this reducer's to decide: the loop has the
+   voice judge read every text before it reaches here (see `voiceTexts`). */
 
 /**
  * Apply one tool call to a state. Returns { state, result } where result is
@@ -224,13 +223,6 @@ function applyTool(state, call, ctx) {
   const checkText = (text, refs, ownView, kind, extension = false) => {
     const t = String(text || "").trim();
     if (!t) return "refused: empty text";
-    if (kind !== "quote" && FIRST_PERSON.test(t)) return "refused: first-person wording; write about the scholar, not as them";
-    /* An article published as the scholar's own work names them nowhere, so
-       an edit must not put them back in. Their own view is theirs to assert,
-       but it is still written without naming themselves. */
-    if (kind !== "quote" && ctx.authorVoice && composer.selfReferenceSentences(t, ctx.scholarName).named.length) {
-      return "refused: this article is the scholar's own work and never refers to them; make the work the subject of the sentence";
-    }
     if (extension && refs.length === 0) return "refused: a paragraph that goes beyond the paper must cite the passages it builds on in passage_ids";
     if (refs.length === 0 && !ownView) return "refused: no valid passage_ids; cite the passages the text comes from, or set own_view if the scholar asked for their own commentary";
     if (kind === "quote" && refs.length && !refs.some((id) => ctx.isVerbatim(t, id))) return "refused: a quote must be copied word for word from the cited passage";
@@ -279,7 +271,6 @@ function applyTool(state, call, ctx) {
       const changed = [];
       for (const f of ["title", "subtitle", "excerpt"]) {
         if (typeof args[f] === "string" && args[f].trim()) {
-          if (FIRST_PERSON.test(args[f])) return { state, result: `refused: ${f} uses first-person wording` };
           next[f] = composer.clampToSentence(args[f], f === "title" ? composer.LIMITS.MAX_TITLE_CHARS : composer.LIMITS.MAX_DECK_CHARS);
           changed.push(f);
         }
@@ -341,7 +332,43 @@ function diffStates(before, after) {
  * @param {boolean} [p.imagesAllowed]
  * @param {(text:string, passageId:string)=>boolean} [p.isVerbatim]
  */
-async function runStoryAgent({ state, passages, instruction, history = [], audience = "general", voice = composer.VOICE.ABOUT, scholarName = null, generate, imagesAllowed = false, isVerbatim = () => true, search = null, limits = defaultsFor("studio").edit, onProgress = async () => {} }) {
+/**
+ * The prose a write would put on the page, for the voice judge to read
+ * first: the text of a paragraph replaced or inserted, and any title, deck
+ * or excerpt. Quotes are the paper's words and headings are labels; neither
+ * is the article's own voice.
+ */
+function voiceTexts(state, call) {
+  const args = call.args || {};
+  if (call.name === "replace_block") {
+    const b = state.blocks[Number(args.index) - 1];
+    return b && b.type === "paragraph" && String(args.text || "").trim() ? [{ label: `block ${args.index}`, text: String(args.text) }] : [];
+  }
+  if (call.name === "insert_block") {
+    const kind = ["paragraph", "subheading", "quote"].includes(args.kind) ? args.kind : "paragraph";
+    return kind === "paragraph" && String(args.text || "").trim() ? [{ label: "the new paragraph", text: String(args.text) }] : [];
+  }
+  if (call.name === "set_heading_fields") {
+    return ["title", "subtitle", "excerpt"].filter((f) => typeof args[f] === "string" && args[f].trim()).map((f) => ({ label: `the ${f}`, text: args[f] }));
+  }
+  return [];
+}
+
+/** What the agent is told when the voice judge sends a write back, in the judge's words. */
+async function voiceVerdict({ texts, voice, scholarName, judgeVoice }) {
+  const judged = await voiceJudge.judgeVoice({ paragraphs: texts.map((t, k) => ({ index: k + 1, text: t.text })), voice, scholarName, generate: judgeVoice });
+  const usage = judged.calls.map((c) => c.usage).filter(Boolean);
+  if (!judged.verdicts) return { refusal: "refused: the voice of this text could not be checked just now; write it again", usage };
+  for (const [k, t] of texts.entries()) {
+    const v = judged.verdicts.get(k + 1);
+    const why = `${v.reason ? ` ${v.reason}` : ""}${v.sentences[0] ? ` (“${v.sentences[0].slice(0, 140)}”)` : ""}`;
+    if (v.speaksAsAuthor) return { refusal: `refused: first-person wording in ${t.label}:${why || " it speaks as the scholar"}; write about the scholar, not as them`, usage };
+    if (v.namesAuthor) return { refusal: `refused: ${t.label} refers to the scholar, and this article is their own work, which never does:${why || " it names them"}; make the work the subject of the sentence`, usage };
+  }
+  return { refusal: null, usage };
+}
+
+async function runStoryAgent({ state, passages, instruction, history = [], audience = "general", voice = composer.VOICE.ABOUT, scholarName = null, generate, judgeVoice = null, imagesAllowed = false, isVerbatim = () => true, search = null, limits = defaultsFor("studio").edit, onProgress = async () => {} }) {
   let working = { ...state, blocks: state.blocks.map((b) => ({ ...b })) };
   let counter = 0;
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
@@ -386,7 +413,12 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
         const hits = q ? await search(q) : [];
         out = { state: working, result: hits.length ? hits.map((h) => `[${h.id}] (similarity ${h.score.toFixed(2)}) ${h.text.slice(0, 400)}`).join("\n\n") : "no passages are close to that; the paper may not say it" };
       } else {
-        out = applyTool(working, fc, ctx);
+        /* A write is read for its voice before it lands; a refusal tells the
+           agent which text and why, so it can write it again. */
+        const texts = judgeVoice ? voiceTexts(working, fc) : [];
+        const judged = texts.length ? await voiceVerdict({ texts, voice: authorVoice ? composer.VOICE.AUTHOR : composer.VOICE.ABOUT, scholarName, judgeVoice }) : null;
+        if (judged) usage.push(...judged.usage);
+        out = judged?.refusal ? { state: working, result: judged.refusal } : applyTool(working, fc, ctx);
       }
       working = out.state;
       calls.push({ name: fc.name, args: fc.args, result: out.result });
@@ -404,4 +436,4 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
   return { state: working, changes, summary, calls, usage, agentVersion: AGENT_VERSION };
 }
 
-module.exports = { AGENT_VERSION, TOOL_DECLARATIONS, SYSTEM, buildSystem, stateFromStory, renderState, applyTool, diffStates, runStoryAgent, plain };
+module.exports = { AGENT_VERSION, TOOL_DECLARATIONS, SYSTEM, buildSystem, stateFromStory, renderState, applyTool, voiceTexts, diffStates, runStoryAgent, plain };

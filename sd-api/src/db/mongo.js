@@ -55,6 +55,7 @@ const COLLECTIONS = {
   readerSuggestions: "reader_suggestions",
   /* Ideas the studio agent wrote for a scholar's page. Expiring. */
   agentIdeas: "agent_ideas",
+  agentRulings: "agent_rulings",
 };
 
 let clientPromise;
@@ -362,6 +363,8 @@ async function ensureIndexes() {
       await db.collection(COLLECTIONS.readerSuggestions).createIndex({ expires_at: 1 }, { expireAfterSeconds: 0, name: "idx_reader_suggestions_expires_at_ttl" });
       await db.collection(COLLECTIONS.agentIdeas).createIndex({ key: 1 }, { unique: true, name: "idx_agent_ideas_key_unique" });
       await db.collection(COLLECTIONS.agentIdeas).createIndex({ expires_at: 1 }, { expireAfterSeconds: 0, name: "idx_agent_ideas_expires_at_ttl" });
+      await db.collection(COLLECTIONS.agentRulings).createIndex({ key: 1 }, { unique: true, name: "idx_agent_rulings_key_unique" });
+      await db.collection(COLLECTIONS.agentRulings).createIndex({ expires_at: 1 }, { expireAfterSeconds: 0, name: "idx_agent_rulings_expires_at_ttl" });
     })();
   }
 

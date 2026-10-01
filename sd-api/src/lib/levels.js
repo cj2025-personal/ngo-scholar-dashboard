@@ -119,8 +119,9 @@ function groundInSelf(blocks) {
  * @param {string} p.audience         the band to write for
  * @param {string} p.sourceAudience   the band the article was written for
  * @param {boolean} [p.strictVoice]
+ * @param {string|null} [p.voiceNote]   what the voice judge found, on a retry
  */
-function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sourceAudience, strictVoice = false, voice = composer.DEFAULT_VOICE, selfGrounded = false }) {
+function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sourceAudience, strictVoice = false, voiceNote = null, voice = composer.DEFAULT_VOICE, selfGrounded = false }) {
   const to = AUDIENCES[normaliseAudience(audience)];
   const from = AUDIENCES[normaliseAudience(sourceAudience)];
   const name = scholar.name || "the scholar";
@@ -164,6 +165,7 @@ function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sour
         : `- Your previous attempt used first-person language. Third person only, about ${name}.`,
     );
   }
+  if (voiceNote) lines.push(voiceNote);
   lines.push("", PASSAGES_MARKER, ...cited.map((p) => `[${p.id}] ${p.text}`), "", LEVEL_MARKER, plain(block.html));
   return lines.join("\n");
 }
@@ -177,7 +179,8 @@ function parseLevelResponse(raw) {
   }
   const text = String(data?.text || "").replace(/\s+/g, " ").trim().slice(0, MAX_LEVEL_CHARS);
   if (!text) throw new Error("The level writer returned an empty paragraph.");
-  return { text, violations: composer.firstPersonSentences(text) };
+  /* Whose voice it is in is judged by a model, across the level: see agents/voiceJudge.js. */
+  return { text };
 }
 
 /** A block carried into a level unchanged, in the shape the judge and the store both read. */

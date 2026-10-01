@@ -9,6 +9,8 @@
     "test": "node --test \"tests/**/*.test.js\"",
     "eval:drafts": "node scripts/evalDrafts.js",
     "eval:reader": "node scripts/evalReader.js",
+    "eval:voice": "node scripts/evalVoice.js",
+    "eval:converse": "node scripts/evalConverse.js",
     "sandbox": "node scripts/sandbox.js",
     "record:check": "node scripts/checkRecord.js",
     "eval:capture": "node scripts/captureDraftEvals.js",

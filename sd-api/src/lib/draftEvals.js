@@ -14,10 +14,12 @@
  *   entailment  share of paragraphs drawn from the paper that the fidelity
  *               judge marked supported. The judge is a separate prompt; this
  *               reads its verdicts.
- *   bandFit     readability against the audience: pass 1, warn 0.5, fail 0.
- *   voice       first-person sentences in the prose. Must be zero: a draft
- *               that says "I" under a living scholar's name is refused
- *               upstream, so any here is a regression in that refusal.
+ *   bandFit     the editor model's ruling on the reading level: fits 1,
+ *               unchecked 0.5, too hard or too simple 0.
+ *   voice       paragraphs a second reading by the voice judge finds speaking
+ *               as the scholar, or naming them in their own account. Must be
+ *               zero: those are dropped or refused upstream, so any here is a
+ *               regression in that refusal. The eval script fills it in.
  *   provenance  share of paragraphs carrying at least one passage citation —
  *               drawn from the paper or built on it; either way it points at
  *               a passage.
@@ -67,8 +69,8 @@ function scoreDraft(result) {
   const anchored = extension.filter((b) => Array.isArray(b.sourceRefs) && b.sourceRefs.length > 0).length;
   const follows = extension.filter((b) => b.reach?.verdict === "follows").length;
   const overreach = extension.filter((b) => b.reach?.verdict === "overreach").length;
-  const prose = paragraphs.map((b) => unescapeHtml(b.html)).join("\n\n");
-  const voice = composer.firstPersonSentences(prose).length;
+  /* Read again by the voice judge in the eval script; a result scored without it counts none. */
+  const voice = Number.isInteger(result?.voiceFlags) ? result.voiceFlags : 0;
   const verdict = result?.readability?.verdict || null;
   const bandFit = verdict === "pass" ? 1 : verdict === "warn" ? 0.5 : 0;
 
@@ -168,10 +170,6 @@ function inputFor(row) {
     brief: typeof row.brief === "string" && row.brief.trim() ? row.brief.trim() : null,
     prepared,
   };
-}
-
-function unescapeHtml(value) {
-  return String(value || "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
 module.exports = { EVAL_VERSION, THRESHOLDS, scoreDraft, summarise, validateRow, parseJsonl, inputFor };

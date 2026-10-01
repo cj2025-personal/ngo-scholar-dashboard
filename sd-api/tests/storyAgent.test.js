@@ -2,15 +2,16 @@
  * The story agent's reducer and loop, against scripted tool calls.
  *
  * What must hold: an untouched block is byte-identical and keeps its receipt;
- * a written block carries only the passages it cited; first person, empty
- * text, invented passages and unverifiable quotes are refused with a reason;
- * the diff names exactly what changed; the loop stops on finish.
+ * a written block carries only the passages it cited; empty text, invented
+ * passages and unverifiable quotes are refused with a reason; a write the
+ * voice judge finds speaking as the scholar is refused in the loop, with the
+ * judge's reason; the diff names exactly what changed; the loop stops on finish.
  */
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { stateFromStory, applyTool, diffStates, runStoryAgent, renderState, TOOL_DECLARATIONS } = require("../src/lib/storyAgent");
+const { stateFromStory, applyTool, voiceTexts, diffStates, runStoryAgent, renderState, TOOL_DECLARATIONS } = require("../src/lib/storyAgent");
 
 const story = {
   title: "Networks that hold", subtitle: "A deck", excerpt: "A summary",
@@ -46,7 +47,8 @@ test("replace keeps the key, cites only known passages, and refuses the rules", 
   assert.equal(ok.state.blocks[1].changed, true);
   assert.equal(ok.state.blocks[2], s.blocks[2], "an untouched block is the same object");
 
-  assert.match(applyTool(s, { name: "replace_block", args: { index: 2, text: "I think so.", passage_ids: ["p2"] } }, c).result, /first-person/);
+  /* Voice is the judge's to decide, in the loop; the reducer does not read it. */
+  assert.match(applyTool(s, { name: "replace_block", args: { index: 2, text: "I think so.", passage_ids: ["p2"] } }, c).result, /^ok/);
   assert.match(applyTool(s, { name: "replace_block", args: { index: 2, text: "A claim.", passage_ids: [] } }, c).result, /no valid passage_ids/);
   assert.match(applyTool(s, { name: "replace_block", args: { index: 2, text: "A claim.", passage_ids: [], own_view: true } }, c).result, /^ok/, "own view needs no citation");
   assert.match(applyTool(s, { name: "replace_block", args: { index: 9, text: "x", passage_ids: ["p2"] } }, c).result, /no block 9/);
@@ -69,7 +71,6 @@ test("insert, delete, move, heading fields and search behave and renumber", () =
   const hf = applyTool(s, { name: "set_heading_fields", args: { title: "New title" } }, c);
   assert.equal(hf.state.title, "New title");
   assert.equal(hf.state.subtitle, "A deck");
-  assert.match(applyTool(s, { name: "set_heading_fields", args: { title: "My story" } }, c).result, /first-person/);
   /* Search is by meaning and runs in the loop, not the reducer. */
   assert.match(applyTool(s, { name: "search_passages", args: { query: "infrastructure failed" } }, c).result, /search is not available here/);
   assert.match(applyTool(s, { name: "nonsense", args: {} }, c).result, /unknown tool/);
@@ -129,6 +130,39 @@ test("the loop applies calls, feeds results back, stops on finish, and reports",
   assert.equal(r.changes[0].kind, "changed");
   assert.equal(r.state.blocks[2].html, s.blocks[2].html);
   assert.equal(r.usage.length, 2);
+});
+
+test("a write is read by the voice judge before it lands; what it finds is refused with its reason, and the agent can write it again", async () => {
+  const s = stateFromStory(story);
+  assert.deepEqual(voiceTexts(s, { name: "replace_block", args: { index: 2, text: "We measured it." } }), [{ label: "block 2", text: "We measured it." }]);
+  assert.deepEqual(voiceTexts(s, { name: "replace_block", args: { index: 1, text: "A heading" } }), [], "a heading is a label, not the article's voice");
+  assert.deepEqual(voiceTexts(s, { name: "insert_block", args: { after: 1, kind: "quote", text: "We found it." } }), [], "a quote is the paper's words");
+  assert.deepEqual(voiceTexts(s, { name: "set_heading_fields", args: { title: "T", excerpt: "E" } }).map((t) => t.label), ["the title", "the excerpt"]);
+  assert.deepEqual(voiceTexts(s, { name: "delete_block", args: { index: 2 } }), []);
+
+  const tries = ["We suspended our allocations.", "Twelve boards suspended allocations."];
+  let step = 0;
+  const generate = async () => {
+    step += 1;
+    if (step <= 2) return { functionCalls: [{ name: "replace_block", args: { index: 2, text: tries[step - 1], passage_ids: ["p2"] } }] };
+    return { functionCalls: [{ name: "finish", args: { summary: "Rewrote block 2 about the boards." } }] };
+  };
+  const judged = [];
+  const judgeVoice = async ({ prompt }) => {
+    judged.push(prompt);
+    const text = prompt.match(/^\[P1\] (.*)$/m)[1];
+    const speaks = /\bWe\b|\bour\b/.test(text);
+    return { text: JSON.stringify({ paragraphs: [{ id: "P1", findings: speaks ? [{ kind: "speaks_as_author", sentence: text, reason: "It speaks as the researchers." }] : [] }] }), usage: { input: 3 } };
+  };
+  const r = await runStoryAgent({ state: s, passages, instruction: "rewrite block 2", generate, judgeVoice, voice: "author", scholarName: "Test Scholar", isVerbatim: () => true });
+  assert.equal(judged.length, 2, "both writes were read before landing");
+  assert.match(judged[0], /THE VOICE: author/);
+  assert.match(r.calls[0].result, /^refused: first-person wording in block 2: It speaks as the researchers\. \(“We suspended our allocations\.”\)/);
+  assert.match(r.calls[1].result, /^ok/);
+  assert.match(r.state.blocks[1].html, /Twelve boards suspended/);
+
+  const unreadable = await runStoryAgent({ state: s, passages, instruction: "x", generate: async () => ({ functionCalls: [{ name: "replace_block", args: { index: 2, text: "Twelve boards.", passage_ids: ["p2"] } }] }), judgeVoice: async () => ({ text: "not json" }), limits: { maxSteps: 1, maxToolCalls: 4 } });
+  assert.match(unreadable.calls[0].result, /could not be checked just now/, "an unread voice is never waved through");
 });
 
 test("prose instead of a tool ends the loop as a summary, and the step cap holds", async () => {

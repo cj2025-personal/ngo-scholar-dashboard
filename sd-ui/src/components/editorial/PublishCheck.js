@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { FaCheck, FaEye, FaTriangleExclamation } from "react-icons/fa6";
 
-import { getStoryEvidence } from "@/lib/drafting";
+import { getStoryEvidence, getStoryReadingLevel } from "@/lib/drafting";
 
 import { AUDIENCE_TARGETS, normaliseAudience } from "@/lib/readability";
 import { needsAttention, summariseBlocks } from "@/components/editorial/ChecksRail";
@@ -27,6 +27,18 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
     getStoryEvidence(storyId).then((r) => { if (alive && r.ok) setFresh(r.data); });
     return () => { alive = false; };
   }, [storyId]);
+  /* Whether it reads right for its reader is an editor model's ruling on the
+     saved story; the grade measured in the page is shown beside it. A ruling
+     that cannot be had is said, and does not hold publishing back. */
+  const [level, setLevel] = useState({ state: storyId ? "reading" : "none", data: null, error: "" });
+  useEffect(() => {
+    if (!storyId) return undefined;
+    let alive = true;
+    getStoryReadingLevel(storyId).then((r) => {
+      if (alive) setLevel(r.ok ? { state: "ruled", data: r.data, error: "" } : { state: "failed", data: null, error: r.error });
+    });
+    return () => { alive = false; };
+  }, [storyId]);
   const numbers = fresh?.checks?.numbers || draftChecks?.numbers || null;
   const limitations = fresh?.checks?.limitations || draftChecks?.limitations || null;
   const worldClaims = fresh?.checks?.worldClaims || draftChecks?.worldClaims || null;
@@ -40,7 +52,18 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
   const firstAttention = blocks.findIndex(needsAttention);
   const firstLost = blocks.findIndex((b) => b.traceable === false);
   const firstUnverified = blocks.findIndex((b) => b.ownView && b.context?.toVerify?.some((v) => !v.verified));
-  const levelOk = !assessment || assessment.verdict !== "fail";
+  const ruled = level.state === "ruled" ? level.data : null;
+  const levelOk = ruled ? ruled.verdict !== "fail" : level.state !== "reading";
+  const grade = ruled?.fkGrade ?? assessment?.fkGrade ?? null;
+  const levelItem = level.state === "reading"
+    ? { ok: false, pending: true, title: "Reading it as its reader would…", detail: grade !== null ? `Measured grade ${grade} for ${target.label}.` : "Nothing measured yet." }
+    : !ruled || ruled.verdict === "warn"
+      ? { ok: false, warn: true, title: "Reading level not judged", detail: `${ruled?.reason ? `This article ${ruled.reason}.` : level.error || "The reading level could not be judged just now."} Read it for ${target.label} yourself${grade !== null ? ` (measured grade ${grade})` : ""}.` }
+      : {
+        ok: levelOk,
+        title: levelOk ? `Reads right for ${target.label}` : `Reads too ${ruled.judged?.verdict === "too_simple" ? "simple" : "hard"} for ${target.label}`,
+        detail: `${ruled.judged?.reason || ""}${grade !== null ? ` Measured grade ${grade}.` : ""}${levelOk ? "" : " Ask the agent to rewrite it for them, or edit."}`.trim(),
+      };
   const troubles = [
     s.partial ? `${s.partial} partly supported` : "",
     s.unsupported ? `${s.unsupported} not supported` : "",
@@ -91,11 +114,7 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
         : "The agent brought them in from outside the paper. Tick each in Checks once you have checked it, or cut it. Nothing it invented reaches a reader without your eyes on it.",
       action: s.unverified ? { label: "Go to it", onClick: () => onGoTo?.(firstUnverified) } : null,
     }] : []),
-    {
-      ok: levelOk,
-      title: levelOk ? "Reading level on target" : "Reading level above target",
-      detail: assessment?.fkGrade !== null && assessment?.fkGrade !== undefined ? `Measured grade ${assessment.fkGrade} for ${target.label}${levelOk ? "." : `, ${assessment.drift} above.`}` : "Nothing measured.",
-    },
+    levelItem,
     {
       ok: s.edited === 0,
       warn: s.edited > 0,
@@ -131,18 +150,22 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
       detail: (levels || []).length === 0 ? "Readers of other ages get the article as written. You can write it for every age from the bar above the article." : levelsStale ? "An out-of-date level is never shown. Rewrite it from the bar above the article." : "Readers can switch between the levels you approved.",
     },
   ];
+  /* A check still being read holds publishing until it has an answer. */
   const blocking = items.some((i) => !i.ok && !i.warn);
+  const pending = items.some((i) => i.pending);
 
   return (
     <div className="pc-scrim" role="dialog" aria-modal="true" aria-labelledby="pc-title">
       <div className="pc-modal">
         <span className="sc-kicker">Before it goes out under your name</span>
         <h2 id="pc-title" className="st-h2" style={{ fontSize: 22, marginTop: 6 }}>Publish check</h2>
-        <p className="st-sub">{blocking ? "Something still needs you." : "The machine's part is done. The rest is yours."}</p>
+        <p className="st-sub">{pending ? "Still reading it…" : blocking ? "Something still needs you." : "The machine's part is done. The rest is yours."}</p>
         <div className="pc-items">
           {items.map((it, i) => (
             <div key={i} className="pc-item">
-              <span className={`pc-ic ${it.ok ? "is-ok" : it.warn ? "is-warn" : "is-bad"}`} aria-hidden>{it.ok ? <FaCheck size={11} /> : <FaTriangleExclamation size={11} />}</span>
+              {it.pending
+                ? <span className="pc-ic is-info" aria-hidden><span className="ag-spinner" /></span>
+                : <span className={`pc-ic ${it.ok ? "is-ok" : it.warn ? "is-warn" : "is-bad"}`} aria-hidden>{it.ok ? <FaCheck size={11} /> : <FaTriangleExclamation size={11} />}</span>}
               <div>
                 <b>{it.title}</b>
                 <p>{it.detail}</p>
@@ -175,7 +198,7 @@ export default function PublishCheck({ blocks, assessment, audience, author, pro
           <button type="button" className="sc-write-ghost" onClick={onClose}>Back to the draft</button>
           <div style={{ display: "flex", gap: 8 }}>
             {onSchedule ? <button type="button" className="sc-write-secondary" disabled={busy} onClick={onSchedule}>Schedule…</button> : null}
-            <button type="button" className="sc-write-publish pc-publish" disabled={busy || blocking} onClick={onPublish}>{busy ? "Publishing…" : "Publish now"}</button>
+            <button type="button" className="sc-write-publish pc-publish" disabled={busy || blocking || pending} onClick={onPublish}>{busy ? "Publishing…" : "Publish now"}</button>
           </div>
         </div>
       </div>

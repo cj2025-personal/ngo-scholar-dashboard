@@ -39,6 +39,8 @@ const job = require("../lib/draftJob");
 const { traced } = require("../lib/tracing");
 const vertex = require("../lib/vertex");
 const { listDraftSources, loadSourceText } = require("./drafting.service");
+const { getPolicy } = require("./policy.service");
+const { routerFor } = require("./models.service");
 
 /**
  * The brief a proposal carries when the scholar has not written one.
@@ -387,6 +389,11 @@ async function runClaimedJob(db, doc) {
   const generate = traced("draft.generateContent", (req) => vertex.generateContent(req), {
     metadata: { jobId: String(doc._id), profileId: doc.profile_id, promptVersion: doc.prompt_version },
   });
+  /* The voice and reading-level judges each run on their own route, with
+     its own model and fallback; the retries they may cause are policy. */
+  const router = await routerFor({ db });
+  const judges = { voice: router.bound("drafting.voice"), band: router.bound("drafting.band") };
+  const limits = await getPolicy("drafting", { db });
 
   let calls = [];
   const input = {
@@ -404,7 +411,7 @@ async function runClaimedJob(db, doc) {
   try {
     /* Phase one, when asked for: read and outline, then wait for the scholar. */
     if (doc.approve_outline && !doc.outline_approved) {
-      const planned = await runOutlineOnly(input, { generate, onProgress });
+      const planned = await runOutlineOnly(input, { generate, onProgress, judges, limits });
       calls = planned.calls;
       const finishedAt = new Date();
       const event = job.nextEvent(await eventsNow(), "outline_ready", { beats: planned.outline.beats.length }, finishedAt);
@@ -419,7 +426,7 @@ async function runClaimedJob(db, doc) {
       return;
     }
 
-    const result = await runDraftGraph(input, { generate, onProgress });
+    const result = await runDraftGraph(input, { generate, onProgress, judges, limits });
     calls = result.calls;
     const tokens = sumTokens([...calls, ...(doc.tokens ? [{ usage: doc.tokens }] : [])]);
     const { calls: _omit, ...draft } = result;
@@ -438,7 +445,7 @@ async function runClaimedJob(db, doc) {
           const { generateLevelsForDoc } = require("./levels.service");
           const storyDoc = await db.collection(COLLECTIONS.scholarEditorials).findOne({ _id: storyId });
           const audiences = Array.isArray(doc.levels_requested) ? doc.levels_requested : null;
-          const made = await generateLevelsForDoc(db, storyDoc, { audiences, actor: `drafter:${doc.graph_version || "draft-graph"}`, generate, onProgress });
+          const made = await generateLevelsForDoc(db, storyDoc, { audiences, actor: `drafter:${doc.graph_version || "draft-graph"}`, generate, judges, onProgress });
           calls.push(...made.calls);
         } catch (error) {
           console.error(`[drafting] job ${doc._id}: reading levels failed:`, error?.message || error);

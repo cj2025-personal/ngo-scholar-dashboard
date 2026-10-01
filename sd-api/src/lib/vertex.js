@@ -216,6 +216,9 @@ async function generateContent({
     if (!response.ok) {
       const snippet = (await response.text().catch(() => "")).slice(0, 300);
       lastError = new Error(`Vertex generateContent error ${response.status}: ${snippet}`);
+      /* The status travels with the error, so a router can tell a request the
+         model refused as malformed from a model that is down. */
+      lastError.status = response.status;
       if (RETRYABLE.has(response.status) && attempt < MAX_ATTEMPTS) {
         const retryAfter = Number(response.headers.get("retry-after"));
         await sleep(Math.max(Number.isFinite(retryAfter) ? retryAfter * 1000 : 0, 500 * 2 ** (attempt - 1)));

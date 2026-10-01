@@ -11,7 +11,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { assessDraftReadability, simplificationNote, VERDICT } = require("../src/lib/draftReadability");
+const { assessDraftReadability, VERDICT } = require("../src/lib/draftReadability");
 const { repetition, borrowed } = require("../src/lib/checks");
 const { AUDIENCES } = require("../src/lib/audiences");
 
@@ -27,14 +27,6 @@ test("prose far below its reader now fails, where it used to pass silently", () 
   assert.match(a.reason, /below the level for adult readers/);
 });
 
-test("the note for a draft that is too simple asks for fuller sentences and no new facts", () => {
-  const note = simplificationNote(assessDraftReadability({ text: SIMPLE, audience: "adults" }));
-  assert.match(note, /join sentences/i);
-  assert.match(note, /Add no fact that is not already in the draft/);
-  /* And it is not the old note pointed the wrong way. */
-  assert.ok(!/Shorten sentences/.test(note));
-});
-
 test("the youngest band has no floor: simpler than a child needs is right for a child", () => {
   assert.equal(AUDIENCES.ages_8_11.maxBelow, null);
   const a = assessDraftReadability({ text: SIMPLE, audience: "ages_8_11" });
@@ -42,11 +34,10 @@ test("the youngest band has no floor: simpler than a child needs is right for a 
   assert.equal(a.tooSimple, undefined);
 });
 
-test("too hard still fails, and its note still says shorten", () => {
+test("too hard still measures as a failure by the formula", () => {
   const a = assessDraftReadability({ text: HARD, audience: "ages_8_11" });
   assert.equal(a.verdict, VERDICT.FAIL);
   assert.ok(!a.tooSimple);
-  assert.match(simplificationNote(a), /Shorten sentences/);
 });
 
 test("repetition is counted: one word carrying the article, runs of three, and paragraphs that join", () => {

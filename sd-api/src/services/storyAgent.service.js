@@ -29,7 +29,8 @@ const plan = require("../lib/draftPlan");
 const fidelity = require("../lib/fidelity");
 const reach = require("../lib/reach");
 const checksLib = require("../lib/checks");
-const { assessDraftReadability, VERDICT } = require("../lib/draftReadability");
+const { assessDraftReadability, placeReadability, VERDICT } = require("../lib/draftReadability");
+const bandJudge = require("../lib/agents/bandJudge");
 const agent = require("../lib/storyAgent");
 const imageGen = require("../lib/imageGen");
 const vertex = require("../lib/vertex");
@@ -106,7 +107,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const author = await editorial.resolveStoryAuthor(db, storyDoc.profile_id);
   const result = await agent.runStoryAgent({
     state: stateBefore, passages, instruction, history, audience, voice, scholarName: author?.name || null, generate,
-    imagesAllowed: imageGen.isConfigured(), isVerbatim, search, limits: studio.edit,
+    judgeVoice: router.bound("drafting.voice"), imagesAllowed: imageGen.isConfigured(), isVerbatim, search, limits: studio.edit,
   });
 
   /* Check what the agent wrote, and only that: paragraphs drawn from the
@@ -173,7 +174,13 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
 
   /* Reading level over the whole draft as it would be. */
   const prose = result.state.blocks.filter((b) => b.type === "paragraph").map((b) => agent.plain(b.html)).join("\n\n");
-  const readability = prose ? assessDraftReadability({ text: prose, audience }) : null;
+  /* An editor model reads the draft as it would be, for its reader; the formula's grade is evidence and display. */
+  let readability = null;
+  if (prose) {
+    const measured = assessDraftReadability({ text: prose, audience });
+    const ruling = await bandJudge.judgeBand({ text: prose, audience, measured, generate: router.bound("drafting.band") });
+    readability = placeReadability(measured, ruling);
+  }
 
   const paperChanged = changed.filter(({ i }) => !result.state.blocks[i].extension);
   const reachChanged = changed.filter(({ i }) => result.state.blocks[i].extension);
@@ -190,7 +197,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
     reachPartial: reachVerdicts.filter((v) => v === "partial").length,
     overreach: reachVerdicts.filter((v) => v === "overreach").length,
     worldClaims: checksLib.worldClaims({ blocks: reachChanged.map(({ i }) => result.state.blocks[i]) }),
-    readability: readability ? { verdict: readability.verdict, fkGrade: readability.fkGrade, targetGrade: readability.targetGrade } : null,
+    readability: readability ? { verdict: readability.verdict, reason: readability.reason || null, fkGrade: readability.fkGrade, targetGrade: readability.targetGrade } : null,
     imagesGenerated: newImages.length,
     imagesFailed: imageFailures.length,
     refused: result.calls.filter((c) => String(c.result).startsWith("refused")).length,

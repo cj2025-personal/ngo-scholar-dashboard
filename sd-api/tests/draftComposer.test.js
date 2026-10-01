@@ -21,7 +21,6 @@ const {
   buildSystemInstruction,
   buildDraftPrompt,
   parseDraftResponse,
-  firstPersonSentences,
   isVerbatim,
   clampToSentence,
 } = require("../src/lib/draftComposer");
@@ -131,22 +130,6 @@ test("the system instruction states the rules the parser enforces, in the voice 
   assert.deepEqual(RESPONSE_SCHEMA.required, ["title", "deck", "blocks"]);
 });
 
-test("an article published as the scholar's own work may not refer to them; a pronoun is reported, not refused", () => {
-  const { selfReferenceSentences, nameForms } = require("../src/lib/draftComposer");
-  assert.deepEqual(nameForms("Inder Jeet Gupta"), ["Inder Jeet Gupta", "Inder", "Jeet", "Gupta"]);
-  assert.deepEqual(nameForms(" "), []);
-
-  const r = selfReferenceSentences(
-    "The method builds a dictionary. Gupta built a dictionary. The authors note a limit. He tested it on four signals. Bartlett's method came first.",
-    "Inder Gupta",
-  );
-  assert.deepEqual(r.named, ["Gupta built a dictionary.", "The authors note a limit."]);
-  assert.deepEqual(r.pronouns, ["He tested it on four signals."]);
-  assert.deepEqual(selfReferenceSentences("The method finds weak signals beside strong ones.", "Inder Gupta"), { named: [], pronouns: [] });
-  /* A name is matched whole: "Gupta" does not hide inside another word. */
-  assert.deepEqual(selfReferenceSentences("The guptagram is unrelated.", "Inder Gupta").named, []);
-});
-
 test("an article written about a scholar must not change their pronoun halfway through", () => {
   const { pronounConsistency } = require("../src/lib/draftComposer");
   const p = (html) => ({ type: "paragraph", html });
@@ -158,22 +141,6 @@ test("an article written about a scholar must not change their pronoun halfway t
   assert.deepEqual(mixed.used, ["he", "she"]);
   assert.deepEqual(mixed.blocks, [3], "the rarer pronoun is the one that slipped; headings are not prose");
   assert.match(mixed.sentence, /One of them is wrong about a real person/);
-});
-
-/* ── voice check ───────────────────────────────────────────────────────── */
-
-test("first-person sentences are found, whichever form the pronoun takes", () => {
-  const text =
-    "Lovelace describes the engine. I found the notes persuasive. " +
-    "We show that it loops. The method uses our data. It affects me personally.";
-  const hits = firstPersonSentences(text);
-  assert.equal(hits.length, 4);
-  assert.ok(hits.every((s) => !s.startsWith("Lovelace")));
-});
-
-test("the country, roman numerals in quotes and an author named Wei do not trip the voice check", () => {
-  // "US" and "Us" are not first-person forms; "Wei" is not "we".
-  assert.deepEqual(firstPersonSentences("The US trial ran in 2011. Wei led the analysis. Part II follows."), []);
 });
 
 /* ── quote grounding ───────────────────────────────────────────────────── */
@@ -204,7 +171,7 @@ test("a clean response becomes editor blocks with headings mapped and HTML escap
   assert.match(d.bodyBlocks[0].html, /&lt;b&gt;steer&lt;\/b&gt; &amp; cancel/);
   assert.equal(d.bodyBlocks[1].type, "subheading");
   assert.equal(d.bodyBlocks[2].type, "quote");
-  assert.deepEqual(d.violations, []);
+  assert.equal("violations" in d, false, "voice is judged by a model after parsing, not here");
   assert.deepEqual(d.warnings, []);
   assert.ok(d.words >= LIMITS.MIN_DRAFT_WORDS);
 });
@@ -221,21 +188,6 @@ test("a quote that is not in the paper is dropped and the scholar is told", () =
   assert.equal(d.bodyBlocks.filter((b) => b.type === "quote").length, 1);
   assert.equal(d.warnings.length, 1);
   assert.match(d.warnings[0], /1 quotation was left out/);
-});
-
-test("first-person prose outside quotes is reported as a violation, inside quotes it is not", () => {
-  const raw = response({
-    deck: "We cut interference by 11 dB.",
-    blocks: [
-      { kind: "paragraph", text: "I found the nulls steer well. Lovelace agrees. ".repeat(40) },
-      { kind: "quote", text: "The authors note that performance degrades when more than four interferers are present." },
-    ],
-  });
-  const d = parseDraftResponse(raw, PAPER);
-  assert.ok(d.violations.length >= 2);
-  assert.ok(d.violations.some((s) => s.startsWith("I found")));
-  assert.ok(d.violations.some((s) => s.startsWith("We cut")));
-  assert.ok(d.violations.every((s) => !s.includes("authors note")));
 });
 
 test("a fenced JSON reply is still JSON", () => {

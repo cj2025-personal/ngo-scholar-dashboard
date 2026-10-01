@@ -7,8 +7,6 @@
 
 const { getDb, COLLECTIONS } = require("../db/mongo");
 const { ApiError } = require("../lib/api-error");
-const { AUDIENCES } = require("../lib/audiences");
-const { VOICE } = require("../lib/draftComposer");
 const converse = require("../lib/agents/studioConverse");
 const ideasAgent = require("../lib/agents/studioIdeas");
 const vertex = require("../lib/vertex");
@@ -18,12 +16,7 @@ const { getPolicy } = require("./policy.service");
 const { routerFor } = require("./models.service");
 const { recordDecision } = require("./agentAudit.service");
 
-/* The words the scholar sees for each voice, as the composer shows them. */
-const VOICES = [
-  { value: VOICE.AUTHOR, label: "My own account", hint: "the scholar's own account of their work, under their byline; the scholar is never named in it" },
-  { value: VOICE.ABOUT, label: "An account about me", hint: "an article about the scholar and their work, in the third person" },
-];
-const AUDIENCE_LIST = Object.entries(AUDIENCES).filter(([k]) => !["general", "students"].includes(k)).map(([value, a]) => ({ value, label: a.label }));
+const { VOICES, AUDIENCE_LIST } = converse;
 
 const paperKey = (p) => `${p.origin}:${p.id}`;
 

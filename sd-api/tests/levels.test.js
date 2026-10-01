@@ -74,13 +74,12 @@ test("a level lines up block for block, rewritten paragraphs keep their passages
   assert.equal(escaped[1].html, "a &lt; b &amp; c");
 });
 
-test("the writer's answer is parsed, bounded, and checked for voice", () => {
+test("the writer's answer is parsed and bounded; its voice is judged later, by a model", () => {
   assert.equal(levels.parseLevelResponse('{"text":"  The array  helped. "}').text, "The array helped.");
   assert.equal(levels.parseLevelResponse("```json\n{\"text\":\"Fenced.\"}\n```").text, "Fenced.");
   assert.throws(() => levels.parseLevelResponse("nope"), /valid JSON/);
   assert.throws(() => levels.parseLevelResponse('{"text":"   "}'), /empty/);
-  const v = levels.parseLevelResponse('{"text":"I built this array myself. It worked."}');
-  assert.equal(v.violations.length, 1);
+  assert.deepEqual(Object.keys(levels.parseLevelResponse('{"text":"I built this array myself."}')), ["text"]);
 });
 
 test("a level records what it was made from, and an edit to the article makes it stale", () => {

@@ -15,8 +15,18 @@ const composer = require("../src/lib/draftComposer");
 const plan = require("../src/lib/draftPlan");
 const fidelity = require("../src/lib/fidelity");
 const reach = require("../src/lib/reach");
-const { runDraftGraph, normaliseApprovedOutline, SECTION_VOICE_RETRIES, FIDELITY_RETRIES } = require("../src/lib/draftGraph");
+const { runDraftGraph, normaliseApprovedOutline } = require("../src/lib/draftGraph");
 const { USE } = require("../src/lib/draftEligibility");
+const { defaultsFor } = require("../src/lib/policyDefaults");
+const voiceJudge = require("../src/lib/agents/voiceJudge");
+const bandJudge = require("../src/lib/agents/bandJudge");
+const shared = require("../src/lib/fakeModel");
+
+const { sectionVoiceRetries: SECTION_VOICE_RETRIES, fidelityRetries: FIDELITY_RETRIES } = defaultsFor("drafting");
+/* The voice and reading-level judges are answered by the shared test double,
+   which stands in for their models; these tests script the writer and the
+   fidelity judge. */
+const forJudges = (prompt) => [voiceJudge.MARKER, bandJudge.MARKER].some((m) => String(prompt || "").includes(m));
 
 const PAPER = [
   "Adaptive antenna arrays reduce interference by steering nulls toward unwanted sources. The method updates weights with a least-mean-squares rule every two milliseconds, which is fast enough for fixed interferers.",
@@ -44,6 +54,7 @@ const PLAIN = "The array steers a null toward each source of noise, so the recei
 function fakeModel({ sectionText = PLAIN, quote = null, voiceOnFirstTry = false, judge = () => "supported" } = {}) {
   const calls = [];
   const generate = async ({ prompt, responseSchema }) => {
+    if (forJudges(prompt)) return shared.generateContent({ prompt });
     calls.push(prompt);
     if (responseSchema === plan.OUTLINE_SCHEMA) {
       return {
@@ -105,7 +116,7 @@ test("a clean run: outline → sections with provenance → judged → assembled
   const r = await runDraftGraph(input, { generate: model.generate, onProgress: (e) => progress.push(e.step) });
 
   assert.equal(r.title, "Steering silence toward the noise");
-  assert.deepEqual([...new Set(progress)], ["pick_source", "plan_outline", "draft_blocks", "judge_fidelity", "section_drafted", "assemble", "verify"]);
+  assert.deepEqual([...new Set(progress)], ["pick_source", "plan_outline", "draft_blocks", "judge_voice", "judge_fidelity", "section_drafted", "assemble", "verify"]);
   assert.equal(r.outline.length, 3);
 
   const paragraphs = r.bodyBlocks.filter((b) => b.type === "paragraph");
@@ -120,10 +131,14 @@ test("a clean run: outline → sections with provenance → judged → assembled
   assert.equal(quotes.length, 1, "the verbatim quote in section 1 (p2) is kept; the others cite passages that lack it");
   assert.equal(r.bodyBlocks[0].type, "subheading");
   assert.ok(r.warnings.some((w) => /left out because it does not appear/.test(w)));
-  assert.ok(r.readability && typeof r.readability.fkGrade === "number");
+  assert.ok(r.readability && typeof r.readability.fkGrade === "number", "the formula's grade is still shown");
+  assert.equal(r.readability.verdict, "pass");
+  assert.equal(r.readability.judged.verdict, "fits", "the editor's ruling decided it");
   assert.equal(r.calls.filter((c) => c.step === "draft_blocks").length, 3);
+  assert.equal(r.calls.filter((c) => c.step === "judge_voice").length, 3, "every section is read for its voice");
   assert.equal(r.calls.filter((c) => c.step === "judge_fidelity").length, 3, "one judge call per section");
-  assert.equal(r.calls.length, 7);
+  assert.equal(r.calls.filter((c) => c.step === "judge_band").length, 1, "the whole draft is placed for its reader once");
+  assert.equal(r.calls.length, 11);
 });
 
 test("first-person prose earns one retry per section, then the run refuses", async () => {
@@ -245,9 +260,11 @@ test("a draft too hard for its audience loops through draft_blocks once with a n
   const steps = [];
   const r = await runDraftGraph({ ...input, audience: "students" }, { generate: model.generate, onProgress: (e) => steps.push(e.step) });
   assert.equal(steps.filter((s) => s === "draft_blocks").length, 6, "three sections, drafted twice");
-  assert.ok(model.calls.some((p) => /measured at reading grade/.test(p)), "the retry prompt names the measured grade");
+  assert.ok(model.calls.some((p) => /An editor read your previous draft as too hard for readers aged 15 to 18/.test(p) && /Shorten sentences/.test(p)), "the retry prompt carries the editor's guidance");
   assert.equal(r.readability.verdict, "fail");
-  assert.ok(r.warnings.some((w) => /grades above the level for readers aged 15 to 18/.test(w)));
+  assert.equal(r.readability.judged.verdict, "too_hard");
+  assert.ok(r.warnings.some((w) => /reads too hard for readers aged 15 to 18/.test(w)), r.warnings.join(" | "));
+  assert.equal(r.calls.filter((c) => c.step === "judge_band").length, 2, "placed, rewritten once, placed again");
   assert.equal(r.calls.filter((c) => c.step === "draft_blocks").length, 6);
   assert.equal(r.calls.filter((c) => c.step === "judge_fidelity").length, 6);
 });
@@ -281,7 +298,7 @@ test("an article the scholar publishes as their own work never refers to them; a
   const r = await runDraftGraph(input, named);
   assert.equal(toldNotTo, 3, "each section was sent back once with the name quoted at it");
   assert.ok(r.bodyBlocks.filter((b) => b.type === "paragraph").every((b) => !/Test Scholar/.test(b.html)));
-  assert.ok(!r.warnings.some((w) => /refers to you by name/.test(w)));
+  assert.ok(!r.warnings.some((w) => /still refers to you/.test(w)));
 
   /* A drafter that will not stop naming them ships, with the sentence named. */
   const stubborn = {
@@ -294,7 +311,7 @@ test("an article the scholar publishes as their own work never refers to them; a
   };
   const shipped = await runDraftGraph(input, stubborn);
   assert.equal(shipped.bodyBlocks.filter((b) => b.type === "paragraph").length, 3, "the draft is not lost over a name");
-  assert.equal(shipped.warnings.filter((w) => /refers to you by name/.test(w)).length, 3);
+  assert.equal(shipped.warnings.filter((w) => /still refers to you/.test(w)).length, 3);
   assert.ok(shipped.warnings.some((w) => /Test Scholar steers a null/.test(w)), "the sentence is quoted so it can be found");
 });
 
@@ -334,6 +351,7 @@ const IMPLIED = "Which means any receiver that must hear one signal beside a str
 function briefedModel({ reachJudge = () => "follows", implied = IMPLIED, coverage = { met: "full", note: "" }, beats = null } = {}) {
   const calls = [];
   const generate = async ({ prompt, responseSchema }) => {
+    if (forJudges(prompt)) return shared.generateContent({ prompt });
     calls.push(prompt);
     if (responseSchema === plan.OUTLINE_SCHEMA) {
       return {

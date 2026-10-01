@@ -11,7 +11,7 @@ const {
   AUDIENCE_TARGETS,
   VERDICT,
   assessDraftReadability,
-  simplificationNote,
+  placeReadability,
 } = require("../src/lib/draftReadability");
 
 /* Sentences built to land at known grades. Repeated to clear the reliability
@@ -101,12 +101,27 @@ test("an unknown audience is judged as a general reader, and empty text is a war
   assert.equal(e.fkGrade, null);
 });
 
-test("the retry note names the measured grade and the target, and is absent on a pass", () => {
-  const fail = assessDraftReadability({ text: repeat(DENSE, 8), audience: "ages_15_18" });
-  const note = simplificationNote(fail);
-  assert.match(note, new RegExp(`grade ${fail.fkGrade}`));
-  assert.match(note, /target for readers aged 15 to 18 is grade 9/);
-  assert.equal(simplificationNote(assessDraftReadability({ text: repeat(MID, 12), audience: "adults" })), null);
+test("the editor's ruling is the verdict; the formula's grade stays for display, its own view beside it", () => {
+  const measured = assessDraftReadability({ text: repeat(DENSE, 8), audience: "ages_15_18" });
+  assert.equal(measured.verdict, VERDICT.FAIL, "the formula alone would fail it");
+  const fits = placeReadability(measured, { verdict: "fits", reason: "Each term is explained where it first appears.", sentences: [] });
+  assert.equal(fits.verdict, VERDICT.PASS);
+  assert.equal(fits.reason, null);
+  assert.equal(fits.formula, VERDICT.FAIL);
+  assert.equal(fits.fkGrade, measured.fkGrade);
+
+  const hard = placeReadability(assessDraftReadability({ text: repeat(MID, 12), audience: "ages_8_11" }), { verdict: "too_hard", reason: "Convergence is never explained.", sentences: ["x"] });
+  assert.equal(hard.verdict, VERDICT.FAIL);
+  assert.equal(hard.reason, "reads too hard for readers aged 8 to 11: Convergence is never explained");
+  assert.deepEqual(hard.judged, { verdict: "too_hard", reason: "Convergence is never explained.", guidance: "", sentences: ["x"] });
+
+  const simple = placeReadability(measured, { verdict: "too_simple", reason: "It talks down." });
+  assert.equal(simple.verdict, VERDICT.FAIL);
+  assert.equal(simple.tooSimple, true);
+
+  const unchecked = placeReadability(measured, { verdict: "unchecked", reason: "the reading level could not be judged" });
+  assert.equal(unchecked.verdict, VERDICT.WARN, "never a pass it did not earn");
+  assert.match(unchecked.reason, /could not be placed for readers aged 15 to 18/);
 });
 
 test("the older audience keys still resolve, to the age bands they meant", () => {

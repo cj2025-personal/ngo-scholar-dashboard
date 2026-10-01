@@ -13,8 +13,16 @@ const composer = require("../src/lib/draftComposer");
 const plan = require("../src/lib/draftPlan");
 const fidelity = require("../src/lib/fidelity");
 const context = require("../src/lib/context");
-const { runDraftGraph, normaliseApprovedOutline, FIDELITY_RETRIES } = require("../src/lib/draftGraph");
+const { runDraftGraph, normaliseApprovedOutline } = require("../src/lib/draftGraph");
 const { USE } = require("../src/lib/draftEligibility");
+const { defaultsFor } = require("../src/lib/policyDefaults");
+const voiceJudge = require("../src/lib/agents/voiceJudge");
+const bandJudge = require("../src/lib/agents/bandJudge");
+const shared = require("../src/lib/fakeModel");
+
+const FIDELITY_RETRIES = defaultsFor("drafting").fidelityRetries;
+/* The voice and reading-level judges are answered by the shared test double. */
+const forJudges = (prompt) => [voiceJudge.MARKER, bandJudge.MARKER].some((m) => String(prompt || "").includes(m));
 
 const PAPER = [
   "Adaptive antenna arrays reduce interference by steering nulls toward unwanted sources. The method updates weights with a least-mean-squares rule every two milliseconds, which is fast enough for fixed interferers.",
@@ -36,6 +44,7 @@ const MISATTRIBUTED = "The paper shows this method is used in every phone sold t
 function fakeModel({ contextTexts = [CONTEXT], judgeContext = () => "clear" } = {}) {
   const prompts = [];
   const generate = async ({ prompt, responseSchema }) => {
+    if (forJudges(prompt)) return shared.generateContent({ prompt });
     prompts.push(prompt);
     if (responseSchema === plan.OUTLINE_SCHEMA) {
       assert.match(prompt, /answers the scholar's brief/);

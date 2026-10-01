@@ -20,6 +20,7 @@ const { askStoryAgent, listStoryTurns, resolveStoryTurn, streamProposalImage, st
 const evidence = require("../services/evidence.service");
 const { generateLevels, approveLevels, discardLevels } = require("../services/levels.service");
 const recordService = require("../services/record.service");
+const { readingLevelFor } = require("../services/readingLevel.service");
 const { recheckBlock } = require("../services/recheck.service");
 const { recordStoryRead } = require("../services/reads.service");
 const { env } = require("../config/env");
@@ -240,6 +241,19 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     res.status(200).json(await evidence.getOwnerEvidence(await getDb(), {
+      storyId: req.params.storyId,
+      scholarId: req.auth.user.scholar_id,
+      profileId: req.auth.user.profile_id,
+    }));
+  }),
+);
+
+/** Whether the saved story reads right for its reader: the reading-level judge's ruling, with the measured grade. */
+router.get(
+  "/:storyId/reading-level",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await readingLevelFor({
       storyId: req.params.storyId,
       scholarId: req.auth.user.scholar_id,
       profileId: req.auth.user.profile_id,

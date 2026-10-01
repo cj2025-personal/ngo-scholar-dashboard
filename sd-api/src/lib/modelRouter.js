@@ -28,6 +28,12 @@
 
 const breakers = new Map(); // model -> { failures, openUntil }
 
+/** A 4xx other than a timeout or a rate limit: the request, not the model. */
+function isRequestError(error) {
+  const s = Number(error?.status);
+  return s >= 400 && s < 500 && s !== 408 && s !== 429;
+}
+
 function breakerOpen(model, now) {
   const b = breakers.get(model);
   return Boolean(b && b.openUntil && b.openUntil > now);
@@ -103,8 +109,12 @@ function createRouter({ models, call, embedCall = null, deploymentModel = null, 
           onCall({ purpose, model, fallback: i > 0, ms: now() - t, usage: null, ok: false, error: error.code || error.name });
           throw error;
         }
-        breakerFailure(model, now(), breaker);
-        onCall({ purpose, model, fallback: i > 0, ms: now() - t, usage: null, ok: false, error: String(error.message).slice(0, 160) });
+        /* A request the model refused as malformed says nothing about the
+           model's health, and the breaker is shared by every purpose: counting
+           it would take the model away from routes whose requests are fine.
+           The next model is still tried, in case the refusal is its own. */
+        if (!isRequestError(error)) breakerFailure(model, now(), breaker);
+        onCall({ purpose, model, fallback: i > 0, ms: now() - t, usage: null, ok: false, error: String(error.message).slice(0, 160), status: error?.status || null });
         lastError = error;
       }
     }
@@ -146,4 +156,4 @@ function createRouter({ models, call, embedCall = null, deploymentModel = null, 
   return { generate, embed, bound, routeFor };
 }
 
-module.exports = { createRouter, resetBreakers, thinkingFor };
+module.exports = { createRouter, resetBreakers, thinkingFor, isRequestError };
