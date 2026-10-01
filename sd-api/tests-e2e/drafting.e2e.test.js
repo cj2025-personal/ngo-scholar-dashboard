@@ -471,6 +471,54 @@ test("the public reads the story with its byline and its source line, and never 
   assert.match(list[0].text, /Adaptive antenna arrays/);
 });
 
+test("the studio agent decides what the scholar means, from their own papers only, and every decision is on the record", async () => {
+  const anon = await fetch(`${base}/api/drafting/converse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  assert.equal(anon.status, 401);
+  const empty = await call("POST", "/api/drafting/converse", { body: { messages: [{ role: "agent", text: "Hello" }] } });
+  assert.equal(empty.status, 400, "the last word must be the scholar's");
+
+  const brief = "Explain how the experiment was done, step by step";
+  const first = await call("POST", "/api/drafting/converse", { body: { messages: [{ role: "scholar", text: brief }], state: {} } });
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(first.data.decision.action, "ask_paper");
+  assert.equal("rationale" in first.data.decision, false, "the rationale is kept for the record, not sent to the page");
+
+  /* A paper the page says is set, that the scholar does not hold, never reaches the model. */
+  const forged = await call("POST", "/api/drafting/converse", { body: { messages: [{ role: "scholar", text: `${brief}, for adults` }], state: { paperKey: "harvested:not-theirs", audience: "adults" } } });
+  assert.equal(forged.data.decision.action, "ask_paper");
+
+  const planned = await call("POST", "/api/drafting/converse", { body: {
+    messages: [{ role: "scholar", text: brief }, { role: "agent", text: first.data.decision.reply }, { role: "scholar", text: "Use “Second paper”." }, { role: "agent", text: "Who is this for?" }, { role: "scholar", text: "For adults." }],
+    state: { paperKey: "harvested:src-e2e-2", paperFrom: "conversation", audience: "adults", stage: "start" },
+  } });
+  assert.equal(planned.data.decision.action, "plan");
+  assert.equal(planned.data.decision.paperKey, "harvested:src-e2e-2");
+  assert.equal(planned.data.decision.audience, "adults");
+  assert.equal(planned.data.decision.brief, brief, "the brief said first is the one planned");
+
+  const audit = await db.collection("agent_audit").find({ agent: "studio.converse", "subject.id": PROFILE_ID }).toArray();
+  assert.equal(audit.length, 3);
+  assert.ok(audit.every((a) => a.rationale && a.prompt_version && a.model && a.expires_at > a.created_at));
+  assert.deepEqual(audit.map((a) => a.decision.action).sort(), ["ask_paper", "ask_paper", "plan"]);
+});
+
+test("ideas are written for the story the scholar is on, and before there is one, cached until the page changes", async () => {
+  const one = await call("POST", "/api/drafting/ideas", { body: { storyId: state.storyId, focusIndex: 2 } });
+  assert.equal(one.status, 200, JSON.stringify(one.data));
+  assert.equal(one.data.cached, false);
+  assert.ok(one.data.groups.some((g) => g.title === "The paragraph you are on" && g.ideas.some((i) => /paragraph 2/.test(i.text))));
+  assert.ok(one.data.groups.every((g) => g.ideas.every((i) => ["prefill", "propose"].includes(i.action))));
+  const again = await call("POST", "/api/drafting/ideas", { body: { storyId: state.storyId, focusIndex: 2 } });
+  assert.equal(again.data.cached, true);
+  assert.deepEqual(again.data.groups, one.data.groups);
+  const elsewhere = await call("POST", "/api/drafting/ideas", { body: { storyId: state.storyId, focusIndex: 3 } });
+  assert.equal(elsewhere.data.cached, false, "another paragraph is another reading");
+
+  const fresh = await call("POST", "/api/drafting/ideas", { body: { paperKey: "harvested:src-e2e-1" } });
+  assert.deepEqual(fresh.data.groups[0].ideas, [{ text: "What could this paper become?", action: "propose" }]);
+  assert.match(fresh.data.groups[1].ideas[0].text, /Adaptive nulling in small antenna arrays/);
+});
+
 test("the scholar edits by instruction: a proposal with checks, accepted onto the story", async () => {
   const before = (await call("GET", `/api/editorial-stories/${state.storyId}`)).data.story;
   const paragraphs = before.bodyBlocks.map((b, i) => ({ b, n: i + 1 })).filter(({ b }) => b.type === "paragraph");

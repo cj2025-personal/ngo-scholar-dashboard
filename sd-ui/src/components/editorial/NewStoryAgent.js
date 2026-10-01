@@ -4,15 +4,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FaCheck, FaXmark } from "react-icons/fa6";
 import { HiOutlineArrowUp, HiOutlinePlus } from "react-icons/hi2";
 
-import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
+import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, converseWithAgent, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 import AgentFace from "./AgentFace";
 import { useStudioPersona } from "./StudioAgentShell";
 
 /**
  * The agent, in the rail of a story that has no paper behind it yet.
  *
- * A conversation. The scholar picks a paper and a reader, says what the
- * article should be, and the agent answers with an outline. What they
+ * A conversation. Whatever the scholar says — or taps: a paper card, an age —
+ * goes to the studio agent's model with what is set so far, and the model
+ * decides what it means: ask which paper, ask who it is for, plan, propose,
+ * replan, approve, discard, or just answer. This component carries the
+ * decision out; it does not read the scholar's words itself. What they
  * approve is drafted and handed to the workspace, which lands it in the page
  * beside this rail — the page they may already have started typing in. The
  * page saves it under their name, linked to the paper's passages, and from
@@ -30,40 +33,16 @@ function paperKey(p) {
   return `${p.origin}:${p.id}`;
 }
 
-/* ── understanding what the scholar typed ────────────────────────────────── */
+/* ── the conversation, as the studio agent's model reads it ──────────────── */
 
-const STOP = new Set(["the", "and", "for", "with", "from", "that", "this", "into", "over", "about", "paper", "study", "article", "research", "using", "based", "small", "large", "their", "there", "what", "which", "when", "have", "been", "were", "will", "would", "should", "could", "than", "then", "them", "they", "your", "some", "more", "most", "very", "also", "just", "like", "make", "write", "want", "generate", "draft", "create"]);
-const words = (t) => String(t || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3 && !STOP.has(w));
-
-/** The paper the scholar named, by title words, or null when no single paper stands out. */
-function matchPaper(text, papers) {
-  const asked = new Set(words(text));
-  if (!asked.size) return null;
-  const scored = papers.map((p) => {
-    const title = words(p.title);
-    const hits = title.filter((w) => asked.has(w)).length;
-    return { p, hits, share: title.length ? hits / title.length : 0 };
-  }).filter((s) => s.hits >= 2 || (s.hits >= 1 && s.share >= 0.5)).sort((a, b) => b.hits - a.hits || b.share - a.share);
-  if (!scored.length) return null;
-  if (scored.length > 1 && scored[0].hits === scored[1].hits) return null;
-  return scored[0].p;
-}
-
-/** "Write from one of my papers": a request for a paper, with no article described yet. */
-function isBarePaperRequest(text) {
-  const t = String(text || "").toLowerCase();
-  const mentionsPaper = /\b(paper|papers|study|research|publication|article)\b/.test(t);
-  return mentionsPaper && words(t).length <= 3;
-}
-
-/** A reading age said in words, when the scholar answers by typing. */
-function audienceIn(text) {
-  const t = String(text || "").toLowerCase();
-  if (/\b(8|eight|nine|ten|eleven|11|kids?|children|child|primary|young readers)\b/.test(t) && !/\b1[2-8]\b/.test(t)) return "ages_8_11";
-  if (/\b(12|13|14|twelve|thirteen|fourteen|middle school|tweens?)\b/.test(t)) return "ages_12_14";
-  if (/\b(15|16|17|18|fifteen|sixteen|seventeen|eighteen|teens?|teenagers?|high school|sixth form|secondary school)\b/.test(t)) return "ages_15_18";
-  if (/\b(adults?|general readers?|the public|grown-?ups?)\b/.test(t)) return "adults";
-  return null;
+/** The thread in words: what the scholar said or tapped, and what the agent said back. */
+function transcript(messages) {
+  return messages.flatMap((m) => {
+    if (m.role === "user") return [{ role: "scholar", text: m.text }];
+    if (m.role === "outline") return [{ role: "agent", text: `Proposed an outline, “${m.outline?.title || "untitled"}”: ${(m.outline?.beats || []).map((b) => b.heading).join("; ")}${m.approved ? " (approved)" : m.superseded ? " (replaced)" : ""}` }];
+    if (["agent", "papers", "audience", "story", "error"].includes(m.role) && m.text) return [{ role: "agent", text: m.text }];
+    return [];
+  });
 }
 
 function PaperCards({ papers, onPick, disabled }) {
@@ -89,9 +68,14 @@ function AudienceChips({ onPick, disabled }) {
   );
 }
 
-function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, persona }) {
+function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, persona }) {
   const [beats, setBeats] = useState(() => (msg.outline.beats || []).map((b) => ({ ...b, kept: true })));
   const kept = beats.filter((b) => b.kept);
+  /* The outline as it stands, sections cut or kept, so an approval said in
+     words approves what the scholar sees. */
+  useEffect(() => {
+    if (latest) onKept?.({ title: msg.outline.title, deck: msg.outline.deck, beats: beats.filter((b) => b.kept).map(({ kept: _k, ...b }) => b) });
+  }, [latest, beats, msg.outline.title, msg.outline.deck, onKept]);
   const beyond = beats.filter((b) => b.kind === "extension").length;
   const coverage = msg.outline.coverage || null;
   return (
@@ -171,11 +155,16 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   const [job, setJob] = useState(null);
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
-  /* A brief said before the paper was chosen, waiting for it. */
-  const pendingBriefRef = useRef(null);
+  /* Whether the reader has been chosen — tapped, picked in the menu, or
+     understood by the agent — rather than standing at the default. A paper
+     brought from the Papers shelf comes with the reader shown beside it. */
+  const [audienceSet, setAudienceSet] = useState(Boolean(initialSource));
   /* The agent has asked who the article is for and is waiting on the answer. */
-  const [askingAudience, setAskingAudience] = useState(false);
+  const [awaitingAudience, setAwaitingAudience] = useState(false);
   const stopRef = useRef(null);
+  /* The waiting outline as the scholar has trimmed it. */
+  const keptRef = useRef(null);
+  const onKept = useCallback((outline) => { keptRef.current = outline; }, []);
   const threadRef = useRef(null);
   const inputRef = useRef(null);
   const bandsRef = useRef(null);
@@ -319,12 +308,12 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
      holds it — and never when a job is already in hand, so a reload of a
      proposal that exists picks it up rather than paying for a second one. */
   const proposedRef = useRef(false);
-  async function propose() {
-    if (!ready || busy || job || !selectedPaper) return;
-    push({ role: "user", text: "What could this paper become?" });
+  async function propose({ from = selectedPaper, said = true } = {}) {
+    if (!ready || busy || job || !from) return;
+    if (said) push({ role: "user", text: "What could this paper become?" });
     setBusy(true);
     setProgress("Reading the paper…");
-    const r = await proposeFromPaper({ origin: selectedPaper.origin, sourceId: selectedPaper.id });
+    const r = await proposeFromPaper({ origin: from.origin, sourceId: from.id });
     if (!r.ok) {
       setBusy(false);
       clearProgress();
@@ -377,9 +366,9 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   /* The line under the agent's name, in the pane's head. */
   const progressText = messages.find((m) => m.role === "progress")?.text || "";
   useEffect(() => {
-    const text = busy ? (progressText || "Working") : outlineWaiting ? "An outline is waiting for your approval" : locked ? "Draft in hand" : !ready ? "Looking at your papers" : selectedPaper ? `Ready to plan from “${String(selectedPaper.title || "").length > 26 ? `${String(selectedPaper.title).slice(0, 25).trim()}…` : selectedPaper.title}”` : askingAudience ? "Who is the article for?" : "Tell me what to write";
+    const text = busy ? (progressText || "Working") : outlineWaiting ? "An outline is waiting for your approval" : locked ? "Draft in hand" : !ready ? "Looking at your papers" : awaitingAudience ? "Who is the article for?" : selectedPaper ? `Ready to plan from “${String(selectedPaper.title || "").length > 26 ? `${String(selectedPaper.title).slice(0, 25).trim()}…` : selectedPaper.title}”` : "Tell me what to write";
     onStatus?.({ text, busy });
-  }, [busy, progressText, outlineWaiting, locked, ready, selectedPaper, askingAudience, onStatus]);
+  }, [busy, progressText, outlineWaiting, locked, ready, selectedPaper, awaitingAudience, onStatus]);
   useEffect(() => { onPaperChange?.(selectedPaper); }, [selectedPaper, onPaperChange]);
 
   /* Coming back to a job from Studio. */
@@ -391,6 +380,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       setJob(j);
       setPaper(j.source ? `${j.source.origin}:${j.source.id}` : null);
       setAudience(j.audience || DEFAULT_AUDIENCE);
+      setAudienceSet(true);
       setVoice(j.voice || DEFAULT_VOICE);
       if (j.brief) push({ role: "user", text: j.brief });
       if (j.status === "awaiting_outline") { showOutline(j, { replans: j.replans || 0 }); return; }
@@ -421,14 +411,14 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     return true;
   }
 
-  /** Plan the article from a brief, with the paper, reader and voice as set. */
-  async function startJob(brief, { from = selectedPaper, forAudience = audience } = {}) {
+  /** Plan the article from a brief, with the paper, reader and voice given or as set. */
+  async function startJob(brief, { from = selectedPaper, forAudience = audience, forVoice = voice, extras = levelBands } = {}) {
     if (!from) return;
     setBusy(true);
     setProgress("Reading the paper…");
-    wantedLevelsRef.current = levelBands.filter((a) => a !== forAudience);
+    wantedLevelsRef.current = extras.filter((a) => a !== forAudience);
     /* No story from the job: the page beside us is the story. */
-    const r = await createDraftJob({ origin: from.origin, sourceId: from.id, audience: forAudience, voice, brief, approveOutline: true, createStory: false, levels: false });
+    const r = await createDraftJob({ origin: from.origin, sourceId: from.id, audience: forAudience, voice: forVoice, brief, approveOutline: true, createStory: false, levels: false });
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     const j = r.data.job;
     if (r.data.reused && j.terminal) {
@@ -451,30 +441,96 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     push({ role: "papers", text: lead || "Which of your papers should this come from? Tap one, or name it. Only papers we hold in full and may reproduce are listed." });
   }
 
-  /** The scholar tapped a paper, or named one. */
-  function pickPaper(p, { said = true } = {}) {
-    setPaper(paperKey(p));
-    if (said) push({ role: "user", text: `Use “${p.title}”.` });
-    const brief = pendingBriefRef.current;
-    if (brief) {
-      /* The article is described; one question left before planning. */
-      setAskingAudience(true);
-      push({ role: "audience", text: `Working from “${p.title}”. Who is this for? Tap an age, or tell me; adults unless you say otherwise.` });
-      return;
-    }
-    push({ role: "agent", text: `Working from “${p.title}”. Now tell me what the article should be: what to focus on, what to leave out, who it is for — or ask what the paper could become.` });
+  /**
+   * What the scholar said — typed, or a tap on a paper or an age — goes to the
+   * studio agent with what is set, and the page carries out what it decides.
+   * `set` is what a tap has just changed, which this render's state does not
+   * show yet.
+   */
+  async function converse(said, set = {}) {
+    const now = {
+      paperKey: set.paperKey !== undefined ? set.paperKey : paper,
+      audience: set.audience !== undefined ? set.audience : audience,
+      audienceSet: set.audience !== undefined ? true : audienceSet,
+    };
+    const thread = [...transcript(messages), { role: "scholar", text: said }];
+    push({ role: "user", text: said });
+    setBusy(true);
+    setProgress("Reading what you said…");
+    const r = await converseWithAgent({
+      messages: thread,
+      state: {
+        paperKey: now.paperKey || null,
+        paperFrom: now.paperKey ? (now.paperKey === initialSource ? "shelf" : "conversation") : null,
+        audience: now.audienceSet ? now.audience : null,
+        voice,
+        extraAudiences: extraBands,
+        stage: outlineWaiting ? "outline_waiting" : job ? "drafting" : "start",
+        outlineTitle: outlineWaiting ? job?.outline?.title || null : null,
+      },
+    });
+    setBusy(false);
+    clearProgress();
+    if (!r.ok) { push({ role: "error", text: r.error }); return; }
+    act(r.data.decision, now);
   }
 
-  /** The reader's age, tapped or typed, and then the plan. */
-  function pickAudience(value, { said = true } = {}) {
+  /** Carry out what the agent decided: set what it understood, then do it. */
+  function act(d, now) {
+    const from = draftable.find((p) => paperKey(p) === (d.paperKey || now.paperKey)) || null;
+    if (d.paperKey && from) setPaper(d.paperKey);
+    if (d.audience) { setAudience(d.audience); setAudienceSet(true); }
+    if (d.voice) setVoice(d.voice);
+    if (d.extraAudiences?.length) setLevelBands(d.extraAudiences);
+    const forAudience = d.audience || now.audience;
+    const forVoice = d.voice || voice;
+    const extras = d.extraAudiences?.length ? d.extraAudiences : levelBands;
+    setAwaitingAudience(d.action === "ask_audience");
+
+    switch (d.action) {
+      case "ask_paper":
+        askWhichPaper(d.reply);
+        return;
+      case "ask_audience":
+        push({ role: "audience", text: d.reply || "Who is this for? Tap an age, or tell me." });
+        return;
+      case "plan":
+        if (d.reply) push({ role: "agent", text: d.reply });
+        startJob(d.brief, { from, forAudience, forVoice, extras });
+        return;
+      case "propose":
+        if (!from) { askWhichPaper(d.reply); return; }
+        if (d.reply) push({ role: "agent", text: d.reply });
+        propose({ from, said: false });
+        return;
+      case "replan":
+        if (outlineWaiting) replan(d.brief);
+        return;
+      case "approve":
+        if (outlineWaiting && keptRef.current) approve(keptRef.current, { said: false });
+        return;
+      case "discard":
+        if (job) discard({ reply: d.reply });
+        else if (d.reply) push({ role: "agent", text: d.reply });
+        return;
+      default:
+        if (d.reply) push({ role: "agent", text: d.reply });
+    }
+  }
+
+  /** The scholar tapped a paper card. */
+  function pickPaper(p) {
+    setPaper(paperKey(p));
+    converse(`Use “${p.title}”.`, { paperKey: paperKey(p) });
+  }
+
+  /** The scholar tapped an age. */
+  function pickAudience(value) {
     const label = DRAFT_AUDIENCES.find((a) => a.value === value)?.label || value;
     setAudience(value);
-    setAskingAudience(false);
-    if (said) push({ role: "user", text: `For ${label.toLowerCase()}.` });
-    const brief = pendingBriefRef.current;
-    pendingBriefRef.current = null;
-    const from = draftable.find((p) => paperKey(p) === paper) || selectedPaper;
-    startJob(brief || "", { from, forAudience: value });
+    setAudienceSet(true);
+    setAwaitingAudience(false);
+    converse(`For ${label.toLowerCase()}.`, { audience: value });
   }
 
   async function send() {
@@ -482,47 +538,25 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     /* Enter reaches here even when the button is disabled. */
     if (!ask || busy || !ready) return;
     setText("");
-    push({ role: "user", text: ask });
-
-    /* An age, typed in answer to the question; or a fuller brief instead. */
-    if (askingAudience && !locked) {
-      const said = audienceIn(ask);
-      if (said && words(ask).length <= 4) { pickAudience(said, { said: false }); return; }
-      pendingBriefRef.current = ask;
-      pickAudience(audienceIn(ask) || DEFAULT_AUDIENCE, { said: false });
-      return;
-    }
-
-    if (!locked && !selectedPaper) {
-      /* The paper may be named in the brief itself. */
-      const named = matchPaper(ask, draftable);
-      pendingBriefRef.current = isBarePaperRequest(ask) ? null : ask;
-      if (named) { pickPaper(named, { said: false }); return; }
-      if (draftable.length === 1) { pickPaper(draftable[0], { said: false }); return; }
-      askWhichPaper(pendingBriefRef.current ? "Which of your papers should this come from? Tap one, or name it." : null);
-      return;
-    }
-
-    setBusy(true);
-    if (outlineWaiting) {
-      setProgress("Replanning the outline from what you said…");
-      const r = await replanDraftOutline(job.id, ask);
-      if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
-      setJob(r.data.job);
-      watch(r.data.job, r.data.job.lastSequence || 0);
-      return;
-    }
-    setBusy(false);
-    /* The reader, if the brief names one; else as set, adults by default. */
-    const forAudience = audienceIn(ask) || audience;
-    if (forAudience !== audience) setAudience(forAudience);
-    await startJob(ask, { forAudience });
+    await converse(ask);
   }
 
-  async function approve(outline) {
+  /** The outline again, changed as the scholar asked. */
+  async function replan(instruction) {
+    if (!job) return;
+    setBusy(true);
+    setProgress("Replanning the outline from what you said…");
+    const r = await replanDraftOutline(job.id, instruction);
+    if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
+    setJob(r.data.job);
+    watch(r.data.job, r.data.job.lastSequence || 0);
+  }
+
+  /** Approve the outline: from the button, or because the scholar said so in words. */
+  async function approve(outline, { said = true } = {}) {
     if (!job || busy) return;
     setBusy(true);
-    push({ role: "user", text: `Approved${outline.beats.length ? `: ${outline.beats.length} section${outline.beats.length === 1 ? "" : "s"}` : ""}.` });
+    if (said) push({ role: "user", text: `Approved${outline.beats.length ? `: ${outline.beats.length} section${outline.beats.length === 1 ? "" : "s"}` : ""}.` });
     setProgress("Drafting…");
     /* The page knows what is coming, and shows each section as it is written. */
     onDraftingStart?.({ title: outline.title || "", beats: outline.beats.map((b, i) => ({ index: b.index ?? i + 1, heading: b.heading })) });
@@ -533,7 +567,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     watch(r.data.job, r.data.job.lastSequence || 0);
   }
 
-  async function discard() {
+  async function discard({ reply = "" } = {}) {
     if (!job || busy) return;
     setBusy(true);
     const r = await discardDraftJob(job.id);
@@ -541,7 +575,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     if (!r.ok) { push({ role: "error", text: r.error }); return; }
     setJob(null);
     setMessages((cur) => cur.map((m) => (m.role === "outline" ? { ...m, superseded: true } : m)));
-    push({ role: "agent", text: "Discarded. Pick a paper and describe another article whenever you like." });
+    push({ role: "agent", text: reply || "Discarded. Pick a paper and describe another article whenever you like." });
   }
 
   function startAnother() {
@@ -558,7 +592,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       <div className="ch-thread" ref={threadRef}>
         {messages.map((m) => {
           if (m.role === "outline") {
-            return <OutlineMessage key={m.id} msg={m} latest={m.id === latestOutlineId && outlineWaiting} busy={busy} onApprove={approve} onDiscard={discard} persona={persona} />;
+            return <OutlineMessage key={m.id} msg={m} latest={m.id === latestOutlineId && outlineWaiting} busy={busy} onApprove={(o) => approve(o)} onDiscard={() => discard()} onKept={onKept} persona={persona} />;
           }
           if (m.role === "user") return <div key={m.id} className="ch-msg is-user"><div className="ch-bubble">{m.text}</div></div>;
           if (m.role === "papers") {
@@ -589,7 +623,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
                 <AgentFace persona={persona} />
                 <div className="ch-bubble">
                   <p className="ch-text">{m.text}</p>
-                  <AudienceChips disabled={busy || locked || !askingAudience} onPick={(a) => pickAudience(a)} />
+                  <AudienceChips disabled={busy || locked || !awaitingAudience} onPick={(a) => pickAudience(a)} />
                 </div>
               </div>
             );
@@ -631,7 +665,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
                     </select>
                   </label>
                   <label className="ch-field"><span>Reader age</span>
-                    <select aria-label="Reader age" value={audience} onChange={(e) => setAudience(e.target.value)}>
+                    <select aria-label="Reader age" value={audience} onChange={(e) => { setAudience(e.target.value); setAudienceSet(true); }}>
                       {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label} · grade {a.grade}</option>)}
                     </select>
                   </label>
@@ -674,7 +708,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
               ref={inputRef}
               className="ag-input"
               rows={1}
-              placeholder={outlineWaiting ? PLACEHOLDER_REPLY : askingAudience ? "Tap an age above, or tell me who it is for…" : PLACEHOLDER_START}
+              placeholder={outlineWaiting ? PLACEHOLDER_REPLY : awaitingAudience ? "Tap an age above, or tell me who it is for…" : PLACEHOLDER_START}
               value={text}
               disabled={!ready || busy || (locked && !outlineWaiting)}
               onChange={(e) => setText(e.target.value)}

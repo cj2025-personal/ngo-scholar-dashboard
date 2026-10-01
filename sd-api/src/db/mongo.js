@@ -40,6 +40,21 @@ const COLLECTIONS = {
   /* One row per reader per UTC day, and one for every reader together:
      how many questions were asked. The caps read them. Private, expiring. */
   readerQuota: "reader_quota",
+  /* Agent policies: every limit, model choice and threshold an agent works
+     to, versioned, with who set it. The baseline is src/policies/defaults.json;
+     a row here overrides it at runtime. Private to this service. */
+  agentPolicies: "agent_policies",
+  /* One row per decision an agent took — what it decided, why, on which
+     model and prompt version — for review and audit. Expiring. Private. */
+  agentAudit: "agent_audit",
+  /* A published story's blocks and passages as embeddings, per version and
+     reading level, so a question finds what it is about by meaning. */
+  readerIndex: "reader_story_index",
+  /* Questions worth asking about a story, written by a model, per version,
+     level and paragraph in focus. Expiring. */
+  readerSuggestions: "reader_suggestions",
+  /* Ideas the studio agent wrote for a scholar's page. Expiring. */
+  agentIdeas: "agent_ideas",
 };
 
 let clientPromise;
@@ -326,6 +341,27 @@ async function ensureIndexes() {
         { expires_at: 1 },
         { expireAfterSeconds: 0, name: "idx_reader_quota_expires_at_ttl" },
       );
+
+      /* Policies: the active version of each, newest first. */
+      await db.collection(COLLECTIONS.agentPolicies).createIndex(
+        { name: 1, version: -1 },
+        { unique: true, name: "idx_agent_policies_name_version_unique" },
+      );
+      /* Audit: by agent and time, by subject, and the expiry. */
+      const agentAudit = db.collection(COLLECTIONS.agentAudit);
+      await agentAudit.createIndex({ agent: 1, created_at: -1 }, { name: "idx_agent_audit_agent_created" });
+      await agentAudit.createIndex({ "subject.kind": 1, "subject.id": 1, created_at: -1 }, { name: "idx_agent_audit_subject_created" });
+      await agentAudit.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0, name: "idx_agent_audit_expires_at_ttl" });
+      /* Caches keyed by what they were made from; each row carries its own expiry. */
+      await db.collection(COLLECTIONS.readerIndex).createIndex(
+        { story_id: 1, story_version: 1, audience: 1, model: 1 },
+        { unique: true, name: "idx_reader_story_index_key_unique" },
+      );
+      await db.collection(COLLECTIONS.readerIndex).createIndex({ expires_at: 1 }, { expireAfterSeconds: 0, name: "idx_reader_story_index_expires_at_ttl" });
+      await db.collection(COLLECTIONS.readerSuggestions).createIndex({ key: 1 }, { unique: true, name: "idx_reader_suggestions_key_unique" });
+      await db.collection(COLLECTIONS.readerSuggestions).createIndex({ expires_at: 1 }, { expireAfterSeconds: 0, name: "idx_reader_suggestions_expires_at_ttl" });
+      await db.collection(COLLECTIONS.agentIdeas).createIndex({ key: 1 }, { unique: true, name: "idx_agent_ideas_key_unique" });
+      await db.collection(COLLECTIONS.agentIdeas).createIndex({ expires_at: 1 }, { expireAfterSeconds: 0, name: "idx_agent_ideas_expires_at_ttl" });
     })();
   }
 

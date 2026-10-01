@@ -306,23 +306,27 @@ function answerAgent(contents) {
   return { text: "", functionCalls: calls, parts: calls.map((fc) => ({ functionCall: fc })), usage: usageOf(2), modelVersion: MODEL_VERSION, resourceName: "fake/model" };
 }
 
+/* ── the reading companion and its sub-agents, answered by wording ──────── */
+
+const fakeFc = (name, args) => ({ text: "", functionCalls: [{ name, args }], parts: [{ functionCall: { name, args } }], usage: { input: 500, output: 40, total: 540 }, modelVersion: MODEL_VERSION, resourceName: "fake/model" });
+
 /**
  * The reading companion's tool loop, answered from the question.
  *
- * Round one reads what the question points at: the paragraph it names, or
- * a search for its longer words. Round two answers from what came back.
- * A few planted phrases drive the Sentinel's paths so the suites can assert
- * on them: "made up" writes a claim the fake Sentinel will not find in the
- * sources (rewrite, then a clean second answer); "scary" writes a sentence
- * it marks unsuitable (refuse); "what does the word X mean" defines X as
- * background when the text uses it.
+ * Round one reads what the question points at: the paragraph it names, the
+ * one the reader is looking at, or a search for the question itself. Round
+ * two answers from what came back; when the closest search hit is not close
+ * at all, the story does not say. Planted phrases drive the reviewer's
+ * paths so the suites can assert on them: "made up" writes a claim the fake
+ * Sentinel sends back (revise, then a clean second answer); "scary" writes a
+ * sentence it refuses; "what does the word X mean" defines X as background;
+ * "that thing" asks the reader which they mean.
  */
 function answerReader(contents, signal = null) {
-  const fc = (name, args) => ({ text: "", functionCalls: [{ name, args }], parts: [{ functionCall: { name, args } }], usage: { input: 500, output: 40, total: 540 }, modelVersion: MODEL_VERSION, resourceName: "fake/model" });
   const opening = String(contents[0]?.parts?.[0]?.text || "");
   const ask = (opening.split("THE READER ASKS:")[1] || "").trim();
   const low = ask.toLowerCase();
-  const revising = opening.includes("YOUR LAST ANSWER WAS SENT BACK");
+  const revising = opening.includes("A REVIEWER SENT YOUR LAST ANSWER BACK");
   const last = contents[contents.length - 1];
   const responses = (last?.parts || []).filter((p) => p.functionResponse).map((p) => String(p.functionResponse.response?.result || ""));
 
@@ -330,72 +334,263 @@ function answerReader(contents, signal = null) {
     /* "take your time" stalls the first call, for the deadline path; an abort ends it the way it ends a real request. */
     if (/take your time/.test(low)) {
       return new Promise((resolve, reject) => {
-        const t = setTimeout(() => resolve(fc("read_block", { index: 1 })), Number(process.env.FAKE_MODEL_STALL_MS || 4000));
+        const t = setTimeout(() => resolve(fakeFc("read_block", { index: 1, reason: "Reading the first paragraph" })), Number(process.env.FAKE_MODEL_STALL_MS || 4000));
         signal?.addEventListener("abort", () => { clearTimeout(t); const e = new Error("aborted"); e.name = "AbortError"; reject(e); }, { once: true });
       });
     }
+    if (/that thing/.test(low)) {
+      return fakeFc("answer", { text: "Do you mean the array itself, or the trials it was tested in? Tell me which and I'll look it up.", grounding: "clarify", intent: "clarify", block_ids: ["b1"], follow_ups: [], reason: "Asking which part you mean" });
+    }
     /* The paragraph named in the question, else the one the reader is looking at. */
     const m = low.match(/paragraph (\d+)/) || opening.match(/THE READER IS LOOKING AT: \[b(\d+)\]/);
-    if (m) return fc("read_block", { index: Number(m[1]) });
-    const words = low.replace(/what does the word|mean\??/g, " ").split(/\W+/).filter((w) => w.length > 4);
-    return fc("search_passages", { query: words.slice(0, 4).join(" ") || "story" });
+    if (m) return fakeFc("read_block", { index: Number(m[1]), reason: `Reading paragraph ${m[1]}` });
+    const term = (low.match(/what does the word ([a-z-]+)/) || [])[1];
+    return fakeFc("search", { query: term || ask, reason: term ? `Looking for where the story uses “${term}”` : "Searching the story and the paper for what you asked" });
   }
 
   const found = responses.join("\n");
   const ids = [...found.matchAll(/^\s*\[([bp]\d+)\]/gm)].map((m) => m[1]);
   const blockIds = [...new Set(ids.filter((id) => id.startsWith("b")))];
   const passageIds = [...new Set(ids.filter((id) => id.startsWith("p")))];
-  const firstText = (found.match(/^\s*\[[bp]\d+\](?: \([a-z]+\))?(?: cites [p\d,]+)?:? (.+)$/m) || [])[1] || "";
+  const firstText = (found.match(/^\s*\[[bp]\d+\](?: \([^)]*\))*(?: cites [p\d,]+)?:? (.+)$/m) || [])[1] || "";
   const sentence = sentences(firstText)[0] || "The story says so.";
+  const topScore = Number((found.match(/similarity (-?[\d.]+)/) || [])[1]);
+  const followUps = ["What did the trials show?", "What was not tested?"];
 
   const word = (low.match(/what does the word ([a-z-]+)/) || [])[1];
-  if (word && (ids.length || /[bp]\d+/.test(found))) {
-    return fc("answer", { text: `“${word}” here is a plain word for the idea the paragraph is describing. Read the sentence around it and it will make sense.`, grounding: "background", term: word, block_ids: blockIds.slice(0, 1), passage_ids: [] });
+  if (word && ids.length) {
+    return fakeFc("answer", { text: `“${word}” here is a plain word for the idea the paragraph is describing. Read the sentence around it and it will make sense.`, grounding: "background", intent: "define", term: word, block_ids: blockIds.slice(0, 1), passage_ids: [], follow_ups: followUps, reason: "Explaining the word" });
   }
   if (/scary/.test(low)) {
-    return fc("answer", { text: "This is frightening and violent, and you should be afraid.", grounding: "story", block_ids: blockIds.slice(0, 1), passage_ids: passageIds.slice(0, 1) });
+    return fakeFc("answer", { text: "This is frightening and violent, and you should be afraid.", grounding: "story", intent: "explain", block_ids: blockIds.slice(0, 1), passage_ids: passageIds.slice(0, 1), follow_ups: [], reason: "Answering" });
   }
   if (/made up/.test(low) && !revising) {
-    return fc("answer", { text: `${sentence} MADE UP FACT: the array was also tested on Mars.`, grounding: "story", block_ids: blockIds.slice(0, 1), passage_ids: passageIds.slice(0, 1) });
+    return fakeFc("answer", { text: `${sentence} MADE UP FACT: the array was also tested on Mars.`, grounding: "story", intent: "explain", block_ids: blockIds.slice(0, 1), passage_ids: passageIds.slice(0, 1), follow_ups: followUps, reason: "Answering from what I read" });
   }
-  if (!ids.length || /^refused|nothing in the story/.test(found)) {
-    return fc("answer", { text: "This article doesn't say. The closest it comes is the first paragraph, which you could read again.", grounding: "not_here", block_ids: ["b1"], passage_ids: [] });
+  if (!ids.length || (Number.isFinite(topScore) && topScore < 0.2)) {
+    return fakeFc("answer", { text: "This article doesn't say. The closest it comes is the first paragraph, which you could read again.", grounding: "not_here", intent: "not_in_story", block_ids: ["b1"], passage_ids: [], follow_ups: followUps, reason: "Telling you the story doesn't cover this" });
   }
-  return fc("answer", { text: `Here is what the story says: ${sentence}`, grounding: "story", block_ids: blockIds.slice(0, 2), passage_ids: passageIds.slice(0, 2) });
+  const intent = /quiz/.test(low) ? "quiz" : "explain";
+  return fakeFc("answer", { text: `Here is what the story says: ${sentence}`, grounding: "story", intent, block_ids: blockIds.slice(0, 2), passage_ids: passageIds.slice(0, 2), follow_ups: followUps, reason: "Answering from what I read" });
 }
 
 /**
- * The Sentinel, answered by wording. A sentence with "MADE UP" is not in the
- * sources; "frightening" is unsuitable; a question about the reader is
- * personal data; a sentence saying the article doesn't say is no claim.
+ * The guard, answered by wording: contact details, names and places a
+ * reader gives about themselves are spans to mask; "hurt someone" is
+ * declined; everything else goes on to the companion.
  */
-function answerSentinel(prompt) {
-  const answer = (prompt.split("ANSWER TO CHECK:")[1] || "").trim();
+function answerGuard(prompt) {
+  const q = (prompt.split("QUESTION TO SCREEN:")[1] || "").trim();
+  const pii = [];
+  for (const m of q.matchAll(/\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g)) pii.push({ text: m[0], kind: "email" });
+  for (const m of q.matchAll(/(?:https?:\/\/|www\.)\S+/g)) pii.push({ text: m[0], kind: "link" });
+  for (const m of q.matchAll(/\+?\d[\d\s().-]{8,}\d/g)) pii.push({ text: m[0], kind: "phone" });
+  const name = q.match(/my name is ([A-Z][a-z]+)/i);
+  if (name) pii.push({ text: name[1], kind: "name" });
+  const place = q.match(/I live in ([A-Z][a-z]+)/);
+  if (place) pii.push({ text: place[1], kind: "location" });
+  const age = q.match(/I am (\d{1,2})\b/i);
+  if (age) pii.push({ text: age[1], kind: "age" });
+  const about = pii.length > 0 || /\b(my name|i live|i am \d)/i.test(q);
+  const decline = /hurt someone|kill/i.test(q);
+  const intent = decline ? "unsafe" : /quiz/i.test(q) ? "quiz" : /what does the word/i.test(q) ? "define" : /dinner|unicorn/i.test(q) ? "off_topic" : about ? "personal" : "explain";
+  return JSON.stringify({ pii, about_reader: about, intent, route: decline ? "decline" : "answer", decline_reason: decline ? "unsafe" : "none", rationale: decline ? "Asks for harm." : "A question about the article." });
+}
+
+/**
+ * The Sentinel, answered by wording. "MADE UP" is not in the sources and is
+ * sent back with guidance; "frightening" is refused; a question about the
+ * reader is refused; a link is sent back; anything else passes.
+ */
+function answerSentinelRuling(prompt) {
+  const answer = (prompt.split("ANSWER TO RULE ON:")[1] || "").trim();
   const anchors = [...prompt.matchAll(/^\[([bp]\d+)\] /gm)].map((m) => m[1]);
   const claims = sentences(answer).map((s) => {
-    const absence = /doesn't say|does not say|read it again|read the sentence/i.test(s);
+    const absence = /doesn't say|does not say|read it again|read the sentence|do you mean/i.test(s);
     const madeUp = /MADE UP/.test(s);
-    return {
-      text: s,
-      in_sources: !madeUp && (absence || anchors.length > 0),
-      anchor_ids: !madeUp && !absence ? anchors.slice(0, 1) : [],
-      unsuitable: /frightening|violent/i.test(s),
-      personal_data: /your name|where you live|how old are you/i.test(s),
-      off_topic: false,
-    };
+    return { text: s, in_sources: !madeUp, anchor_ids: !madeUp && !absence ? anchors.slice(0, 1) : [], unsuitable: /frightening|violent/i.test(s), personal_data: /your name|where you live|how old are you/i.test(s), off_topic: false };
   });
-  return JSON.stringify({ claims });
+  let verdict = "pass";
+  let reasons = [];
+  let guidance = "";
+  if (claims.some((c) => c.unsuitable)) { verdict = "refuse"; reasons = ["unsuitable"]; }
+  else if (claims.some((c) => c.personal_data)) { verdict = "refuse"; reasons = ["asks_about_reader"]; }
+  else if (/MADE UP/.test(answer)) { verdict = "revise"; reasons = ["not_in_sources"]; guidance = "Remove “the array was also tested on Mars”: the article and the cited passages do not say it."; }
+  else if (/https?:\/\/|www\./.test(answer)) { verdict = "revise"; reasons = ["link_or_contact"]; guidance = "Take the link out and say it in words."; }
+  return JSON.stringify({
+    claims, link_or_contact: /https?:\/\/|www\./.test(answer), asks_about_reader: /your name|where you live/i.test(answer),
+    reading_level: "fits", length: "fits", unchecked_specifics: false, story_answers_it: false,
+    verdict, reasons, guidance, rationale: verdict === "pass" ? "Every claim is in what it cites." : `Ruled ${verdict}.`,
+  });
+}
+
+function answerRefusal() {
+  return JSON.stringify({ text: "I can't answer that one well from this article, but I'd be glad to help with anything in its paragraphs." });
+}
+
+function answerMemory(prompt) {
+  const n = (prompt.match(/^Reader: /gm) || []).length;
+  const prev = (prompt.match(/SUMMARY SO FAR: (.+)/) || [])[1] || "";
+  const before = Number((prev.match(/asked (\d+)/) || [])[1]) || 0;
+  return JSON.stringify({ summary: `Earlier, the reader asked ${before + n} questions about the article.` });
+}
+
+function answerSuggest(prompt) {
+  const focus = (prompt.match(/THE PARAGRAPH IN FOCUS: \[b(\d+)\]/) || [])[1];
+  const headings = [...prompt.matchAll(/^\[b\d+\] \((?:sub)?heading\) (.+)$/gm)].map((m) => m[1]);
+  const groups = [];
+  if (focus) groups.push({ title: "About the paragraph you tapped", questions: [`What does paragraph ${focus} mean?`, `How did they find out what paragraph ${focus} says?`] });
+  groups.push({ title: "About the whole story", questions: ["What's the main point of this story?", "What did they actually do in this study?"] });
+  if (headings.length) groups.push({ title: "By section", questions: headings.map((h) => `What is “${h}” about?`) });
+  groups.push({ title: "Test yourself", questions: ["Quiz me on what I've read"] });
+  return JSON.stringify({ groups });
+}
+
+/**
+ * The studio agent's reading of a scholar, for the test double: plain rules
+ * over the prompt the real model is given, so the suite can walk every path
+ * the page takes. The real model reads the same prompt and decides.
+ */
+const CONVERSE_STOP = new Set(["the", "and", "for", "with", "from", "that", "this", "into", "over", "about", "paper", "study", "article", "research", "using", "based", "small", "large", "their", "there", "what", "which", "when", "have", "been", "were", "will", "would", "should", "could", "than", "then", "them", "they", "your", "some", "more", "most", "very", "also", "just", "like", "make", "write", "want", "generate", "draft", "create"]);
+const contentWords = (t) => String(t || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3 && !CONVERSE_STOP.has(w));
+
+function answerConverse(prompt) {
+  const between = (start, end) => {
+    const a = prompt.indexOf(start);
+    if (a < 0) return "";
+    const b = end ? prompt.indexOf(end, a + start.length) : -1;
+    return prompt.slice(a + start.length, b < 0 ? undefined : b);
+  };
+  const papers = between("THEIR PAPERS (key — title):", "READER AGES").split("\n")
+    .map((l) => l.trim().match(/^(\S+) — (.+?)(?: \(\d{4}\))?(?:, \d+ words)?$/)).filter(Boolean)
+    .map((m) => ({ key: m[1], title: m[2] }));
+  const labels = Object.fromEntries(between("READER AGES (value — label):", "VOICES").split("\n")
+    .map((l) => l.trim().match(/^(\S+) — (.+)$/)).filter(Boolean).map((m) => [m[1], m[2]]));
+  const said = between("THE SCHOLAR JUST SAID:", null).trim();
+  const earlier = between("THE CONVERSATION SO FAR:", "THE SCHOLAR JUST SAID:").split("\n")
+    .filter((l) => l.startsWith("Scholar: ")).map((l) => l.slice("Scholar: ".length).trim());
+  const setPaper = (prompt.match(/^paper: (\S+)/m) || [])[1];
+  const setReader = (prompt.match(/; reader: ([a-z0-9_]+)/) || [])[1] || null;
+  const stage = (prompt.match(/^stage: (\w+)/m) || [])[1] || "start";
+
+  const out = (action, extra = {}) => JSON.stringify({ action, paper_key: "", audience: "", voice: "", extra_audiences: [], brief: "", reply: "", rationale: `fake: ${action}`, ...extra });
+
+  if (stage === "outline_waiting") {
+    if (/^(looks good|approve|approved|go ahead|yes|draft it|perfect)\b/i.test(said)) return out("approve", { reply: "Drafting it now." });
+    if (/\b(discard|drop it|scrap it|start over)\b/i.test(said)) return out("discard", { reply: "Discarded. Describe another article whenever you like." });
+    return out("replan", { brief: said, reply: "Replanning the outline from what you said." });
+  }
+
+  /* The page's own taps, and a request for a paper with nothing described yet, are not briefs. */
+  const bare = (t) => /\b(paper|papers|study|research|publication|article)\b/i.test(t) && contentWords(t).length <= 3;
+  const isBrief = (t) => Boolean(t) && !/^use “/i.test(t) && !/^for [^.]{0,24}\.$/i.test(t) && !bare(t);
+  const brief = isBrief(said) ? said : [...earlier].reverse().find(isBrief) || "";
+
+  const named = (() => {
+    const asked = new Set(contentWords(`${said} ${brief}`));
+    const scored = papers.map((p) => {
+      const title = contentWords(p.title);
+      const hits = title.filter((w) => asked.has(w)).length;
+      return { p, hits, share: title.length ? hits / title.length : 0 };
+    }).filter((s) => s.hits >= 2 || (s.hits >= 1 && s.share >= 0.5)).sort((a, b) => b.hits - a.hits || b.share - a.share);
+    if (!scored.length || (scored.length > 1 && scored[0].hits === scored[1].hits)) return null;
+    return scored[0].p;
+  })();
+  const paper = papers.find((p) => p.key === setPaper) || named || (papers.length === 1 ? papers[0] : null);
+
+  const readerIn = (t) => {
+    const s = String(t || "").toLowerCase();
+    if (/\b(kids?|children|aged? 8|young readers)\b/.test(s)) return "ages_8_11";
+    if (/\b(aged? 12|middle school|tweens?)\b/.test(s)) return "ages_12_14";
+    if (/\b(aged? 15|teens?|teenagers?|high school)\b/.test(s)) return "ages_15_18";
+    if (/\b(adults?|general readers?|the public)\b/.test(s)) return "adults";
+    return null;
+  };
+  const reader = readerIn(said) || setReader || readerIn(brief);
+
+  if (/\b(what could (this|the|it)|ideas for|propose|suggest an angle)\b/i.test(said)) {
+    return paper ? out("propose", { paper_key: paper.key, reply: `I will read “${paper.title}” and propose what it could become.` }) : out("ask_paper", { reply: "Which paper should I read? Tap one, or name it." });
+  }
+  if (!paper) {
+    return out("ask_paper", { brief, reply: brief ? "Which of your papers should this come from? Tap one, or name it." : "Which of your papers should this come from? Tap one, or name it. Only papers we hold in full and may reproduce are listed." });
+  }
+  if (!brief) {
+    return out("set_paper", { paper_key: paper.key, reply: `Working from “${paper.title}”. Now tell me what the article should be: what to focus on, what to leave out, who it is for — or ask what the paper could become.` });
+  }
+  if (!reader) {
+    return out("ask_audience", { paper_key: paper.key, brief, reply: `Working from “${paper.title}”. Who is this for? Tap an age, or tell me.` });
+  }
+  return out("plan", { paper_key: paper.key, audience: reader, brief, reply: `Planning it from “${paper.title}”, for ${(labels[reader] || reader).toLowerCase()}. I will read the paper and come back with an outline.` });
+}
+
+/** Ideas for the studio, for the test double: built from what the prompt shows. */
+function answerIdeas(prompt) {
+  if (prompt.includes("PAPERS TO SUGGEST ARTICLES FROM:")) {
+    const chosen = (prompt.match(/^THE CHOSEN PAPER: (.+)$/m) || [])[1];
+    const titles = [...prompt.matchAll(/^- (.+?)(?: \(\d{4}\))?$/gm)].map((m) => m[1]);
+    const groups = [];
+    if (chosen) groups.push({ title: "Ask the agent", ideas: [{ text: "What could this paper become?", action: "propose" }] });
+    const about = chosen || titles[0] || "this paper";
+    groups.push({ title: "Briefs to start from", ideas: [
+      { text: `Explain the key finding of “${about}” and how it was reached, for readers aged 12 to 14`, action: "prefill" },
+      { text: "Focus on the limitations: what was not tested, and what that means", action: "prefill" },
+      { text: "A short piece on how the experiment was actually done, step by step", action: "prefill" },
+    ] });
+    return JSON.stringify({ groups });
+  }
+  const lines = [...prompt.matchAll(/^\[(\d+)\] \((\w+)\)(?: \{([^}]*)\})? (.*)$/gm)].map((m) => ({ index: Number(m[1]), type: m[2], notes: m[3] || "", text: m[4] }));
+  const flagged = lines.filter((b) => /checker: (?!supported)|beyond the paper: (?!follows)/.test(b.notes));
+  const focus = Number((prompt.match(/^THE SCHOLAR IS ON PARAGRAPH: (\d+)/m) || [])[1]) || null;
+  const groups = [];
+  if (flagged.length) groups.push({ title: "Needs a look", ideas: flagged.slice(0, 3).map((b) => ({ text: `Rewrite paragraph ${b.index} so every claim stays within the paper`, action: "prefill" })) });
+  if (/^THE PAPER'S RECORD: (?!nothing has changed)/m.test(prompt)) groups.push({ title: "On the record", ideas: [{ text: "Add a short notice at the top saying the paper has been updated on the record", action: "prefill" }] });
+  if (focus) groups.push({ title: "The paragraph you are on", ideas: [{ text: `Shorten paragraph ${focus} to two sentences`, action: "prefill" }, { text: `Add an illustration after paragraph ${focus}`, action: "prefill" }] });
+  groups.push({ title: "The whole article", ideas: [
+    { text: "Shorten the opening to two sentences", action: "prefill" },
+    { text: "Add a paragraph about the limitations, citing the paper", action: "prefill" },
+  ] });
+  const headings = lines.filter((b) => b.type === "heading" || b.type === "subheading").slice(0, 3);
+  if (headings.length) groups.push({ title: "By section", ideas: headings.map((h) => ({ text: `Tighten the section “${h.text.replace(/[.?!]+$/, "")}”`, action: "prefill" })) });
+  return JSON.stringify({ groups });
+}
+
+/**
+ * Embeddings for the test double: words hashed into a fixed space, so texts
+ * that share words point the same way and texts that share none are near
+ * orthogonal. Enough for "the closest passage" to mean something in a suite.
+ */
+function embed({ texts, model }) {
+  const DIMS = 256;
+  const STOP = new Set(["the", "and", "that", "this", "with", "what", "does", "from", "they", "them", "were", "have", "which", "about", "into", "their", "there", "when", "your", "mean"]);
+  const vec = (t) => {
+    const v = new Array(DIMS).fill(0);
+    for (const raw of String(t || "").toLowerCase().split(/[^a-z0-9]+/)) {
+      if (raw.length < 4 || STOP.has(raw)) continue;
+      const w = raw.replace(/(ing|ers|er|es|s)$/, "");
+      let h = 2166136261;
+      for (let i = 0; i < w.length; i += 1) { h ^= w.charCodeAt(i); h = Math.imul(h, 16777619); }
+      v[Math.abs(h) % DIMS] += 1;
+    }
+    return v;
+  };
+  return Promise.resolve({ vectors: texts.map(vec), model, usage: { input: texts.join(" ").length / 4 } });
 }
 
 /** Same signature as `vertex.generateContent`. */
-async function generateContent({ prompt, contents = null, tools = null, signal = null }) {
+async function generateContent({ prompt, contents = null, tools = null, signal = null, model = null }) {
   if (tools && Array.isArray(contents)) {
     if (String(contents[0]?.parts?.[0]?.text || "").includes("THE READER ASKS:")) return answerReader(contents, signal);
     return answerAgent(contents);
   }
   const p = String(prompt || (contents ? contents.map((c) => (c.parts || []).map((x) => x.text || "").join("\n")).join("\n") : ""));
   let text;
-  if (p.includes("ANSWER TO CHECK:")) text = answerSentinel(p);
+  if (p.includes("QUESTION TO SCREEN:")) text = answerGuard(p);
+  else if (p.includes("ANSWER TO RULE ON:")) text = answerSentinelRuling(p);
+  else if (p.includes("REFUSAL TO WRITE:")) text = answerRefusal(p);
+  else if (p.includes("THREAD TO SUMMARISE:")) text = answerMemory(p);
+  else if (p.includes("QUESTIONS TO SUGGEST FOR:")) text = answerSuggest(p);
+  else if (p.includes("THE SCHOLAR JUST SAID:")) text = answerConverse(p);
+  else if (p.includes("DRAFT TO SUGGEST EDITS FOR:") || p.includes("PAPERS TO SUGGEST ARTICLES FROM:")) text = answerIdeas(p);
   else if (p.includes("PARAGRAPHS OF THE AUTHOR'S OWN CONTEXT:")) text = answerContext(p);
   else if (p.includes("PARAGRAPHS THAT BUILD ON THEM:")) text = answerReach(p);
   else if (p.includes("PARAGRAPHS TO CHECK:")) text = answerJudge(p);
@@ -403,7 +598,7 @@ async function generateContent({ prompt, contents = null, tools = null, signal =
   else if (p.includes("=== PAPER, IN NUMBERED PASSAGES ===")) text = answerOutline(p);
   else if (p.includes("=== PASSAGES THIS SECTION MAY USE ===") || p.includes("=== PASSAGES THIS SECTION RELATES TO ===")) text = answerSection(p);
   else text = answerComposer(p);
-  return { text, usage: usage(p, text), modelVersion: MODEL_VERSION, resourceName: "fake/model" };
+  return { text, usage: usage(p, text), modelVersion: MODEL_VERSION, resourceName: model ? `fake/${model}` : "fake/model" };
 }
 
-module.exports = { MODEL_VERSION, generateContent };
+module.exports = { MODEL_VERSION, generateContent, embed };

@@ -27,7 +27,7 @@ const { PROFILE_ID, seedScholar } = require("./seed");
 const API_DIR = path.resolve(__dirname, "..");
 const DB_NAME = "sd_reader_e2e";
 const SLUG = "adaptive-nulling-for-readers";
-const DAILY_CAP = 8;
+const DAILY_CAP = 10;
 
 let mongod;
 let client;
@@ -200,9 +200,10 @@ test("a question is answered as a stream: the work first, then the checked answe
   assert.equal(types[0], "accepted", types.join(","));
   assert.ok(types.indexOf("step") < types.indexOf("answer"), types.join(","));
   const steps = byEvent(frames, "step").map((f) => f.data);
-  assert.deepEqual(steps.map((s) => s.tool), ["read_block", "answer", "sentinel"]);
-  assert.equal(steps[0].summary, "Reading paragraph 2");
-  assert.match(steps[2].summary, /Reading my answer back/);
+  /* The guard reads the question first; then the companion's own narration; then the review. */
+  assert.deepEqual(steps.map((s) => s.tool), ["guard", "read_block", "answer", "sentinel"]);
+  assert.equal(steps[1].summary, "Reading paragraph 2", "the agent's own reason for the step");
+  assert.match(steps[3].summary, /checked before you see it/);
   const answer = byEvent(frames, "answer")[0].data;
   assert.match(answer.text, /^Here is what the story says: Adaptive antenna arrays cut interference/);
   assert.equal(answer.turn.outcome, "answered");
@@ -210,6 +211,8 @@ test("a question is answered as a stream: the work first, then the checked answe
   assert.deepEqual(answer.turn.answer.blockIds, ["b2"]);
   assert.deepEqual(answer.turn.answer.passageIds, ["p1"]);
   assert.equal(answer.turn.sentinel.verdict, "pass");
+  assert.equal(answer.turn.answer.intent, "explain");
+  assert.ok(answer.turn.answer.followUps.length >= 1, "the agent offers what to ask next");
   assert.equal(answer.turn.level, "adults");
   assert.equal(byEvent(frames, "done")[0].data.remaining, DAILY_CAP - 1);
 });
@@ -230,21 +233,27 @@ test("what the story does not say is said so, not guessed", async () => {
   const answer = byEvent(frames, "answer")[0].data;
   assert.equal(answer.turn.outcome, "not_here");
   assert.match(answer.text, /This article doesn't say/);
-  assert.deepEqual(byEvent(frames, "step").map((f) => f.data.tool), ["search_passages", "answer", "sentinel"]);
+  assert.deepEqual(byEvent(frames, "step").map((f) => f.data.tool), ["guard", "search", "answer", "sentinel"]);
+  /* The search was by meaning: the story's embeddings were built and kept. */
+  const index = await db.collection("reader_story_index").findOne({ story_version: 3, audience: "adults" });
+  assert.ok(index && index.items.length >= 4 && Array.isArray(index.items[0].vector) && index.items[0].vector.length > 0, "an embedding index exists");
 });
 
 test("an answer the Sentinel cannot find in the sources is sent back once, and the second answer is what the reader sees", async () => {
   const { frames } = await ask(SLUG, { question: "Tell me about paragraph 3 with something made up" });
   const tools = byEvent(frames, "step").map((f) => f.data.tool);
-  assert.deepEqual(tools, ["read_block", "answer", "sentinel", "read_block", "answer", "sentinel"], "two rounds, each read by the Sentinel");
+  assert.deepEqual(tools, ["guard", "read_block", "answer", "sentinel", "read_block", "answer", "sentinel"], "two rounds, each read by the Sentinel");
   const answer = byEvent(frames, "answer")[0].data;
   assert.ok(!/MADE UP/.test(answer.text), answer.text);
   assert.equal(answer.turn.outcome, "answered");
   assert.equal(answer.turn.sentinel.attempts, 2);
   assert.equal(answer.turn.sentinel.verdict, "pass");
+  const stored = await db.collection("reader_turns").findOne({ _id: new ObjectId(answer.turn.id) });
+  assert.deepEqual(stored.sentinel.rulings.map((r) => r.verdict), ["revise", "pass"], "every ruling is kept");
+  assert.match(stored.sentinel.rulings[0].rationale, /revise/);
 });
 
-test("an unsuitable answer is refused on sight, and the reader sees one fixed sentence", async () => {
+test("an unsuitable answer is refused on sight, and the reader sees a refusal a model wrote from the reasons", async () => {
   const { frames } = await ask(SLUG, { question: "Make paragraph 2 scary" });
   const answer = byEvent(frames, "answer")[0].data;
   assert.equal(answer.turn.outcome, "refused");
@@ -252,6 +261,7 @@ test("an unsuitable answer is refused on sight, and the reader sees one fixed se
   assert.deepEqual(answer.turn.sentinel.reasons, ["unsuitable"]);
   assert.equal(answer.turn.sentinel.attempts, 1, "unsuitable is never given a second draft");
   assert.match(answer.text, /^I can't answer that one well from this article/);
+  assert.equal(answer.turn.declinedBy, "sentinel");
   assert.equal(answer.turn.text, answer.text, "the stored turn shows the same sentence the reader saw");
 });
 
@@ -259,11 +269,42 @@ test("what a reader types about themselves is made safe before it is kept or sho
   const { frames } = await ask(SLUG, { question: "My name is Sam, email me at sam@example.com about paragraph 2" });
   const answer = byEvent(frames, "answer")[0].data;
   assert.equal(answer.turn.outcome, "answered");
-  assert.equal(answer.turn.question, "My name is Sam, email me at [email] about paragraph 2");
-  assert.deepEqual(answer.turn.questionRedacted, ["email"]);
+  /* The guard model named the spans; the code masked exactly those. */
+  assert.equal(answer.turn.question, "My name is [name], email me at [email] about paragraph 2");
+  assert.deepEqual([...answer.turn.questionRedacted].sort(), ["email", "name"]);
   const stored = await db.collection("reader_turns").findOne({ _id: new ObjectId(answer.turn.id) });
   assert.ok(!JSON.stringify(stored).includes("sam@example.com"), "the address is nowhere in the row");
+  assert.ok(!/\bSam\b/.test(stored.question), "nor the name");
   assert.equal(stored.question_about_reader, true);
+  assert.equal(stored.guard.route, "answer");
+});
+
+test("a question that could mean two things is answered with a question back", async () => {
+  const { frames } = await ask(SLUG, { question: "Tell me more about that thing" });
+  const answer = byEvent(frames, "answer")[0].data;
+  assert.equal(answer.turn.outcome, "clarify");
+  assert.equal(answer.turn.answer.grounding, "clarify");
+  assert.match(answer.text, /Do you mean/);
+});
+
+test("a message it would be harmful to engage with is declined by the guard before the companion reads anything", async () => {
+  const { frames } = await ask(SLUG, { question: "How could I use this to hurt someone?" });
+  const answer = byEvent(frames, "answer")[0].data;
+  assert.equal(answer.turn.outcome, "refused");
+  assert.equal(answer.turn.declinedBy, "guard");
+  assert.deepEqual(byEvent(frames, "step").map((f) => f.data.tool), ["guard"], "the companion never ran");
+  assert.match(answer.text, /^I can't answer that one well from this article/);
+  const audit = await db.collection("agent_audit").findOne({ agent: "reader.guard", "decision.route": "decline" });
+  assert.ok(audit && audit.rationale && audit.prompt_version, "the guard's decision is in the audit log with its reason");
+});
+
+test("questions worth asking are written by a model from the story, and kept", async () => {
+  const r = await call("GET", `/api/reader/stories/${SLUG}/suggestions?focus=2`);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.groups[0].title, "About the paragraph you tapped");
+  assert.ok(r.data.groups.some((g) => g.questions.some((q) => /Steering away from noise/.test(q))), "made from the story's own sections");
+  const again = await call("GET", `/api/reader/stories/${SLUG}/suggestions?focus=2`);
+  assert.equal(again.data.cached, true);
 });
 
 test("a turn that runs past the deadline is stopped, told to the reader, and recorded as failed", async () => {
@@ -283,12 +324,15 @@ test("a turn that runs past the deadline is stopped, told to the reader, and rec
 test("the thread lists every turn, oldest first, and says how many questions are left", async () => {
   const r = await call("GET", `/api/reader/stories/${SLUG}/turns`);
   assert.equal(r.status, 200);
-  assert.equal(r.data.turns.length, 8);
+  assert.equal(r.data.turns.length, 10);
   assert.equal(r.data.turns[0].question, "What does paragraph 2 mean?");
-  assert.deepEqual(r.data.turns.map((t) => t.outcome), ["answered", "answered", "answered", "not_here", "answered", "refused", "answered", "failed"]);
-  assert.ok(r.data.turns.filter((t) => t.outcome !== "failed").every((t) => Array.isArray(t.steps) && t.steps.length >= 2), "each finished turn shows its work");
-  assert.match(r.data.turns[7].text, /took too long/);
+  assert.deepEqual(r.data.turns.map((t) => t.outcome), ["answered", "answered", "answered", "not_here", "answered", "refused", "answered", "clarify", "refused", "failed"]);
+  assert.ok(r.data.turns.filter((t) => t.outcome !== "failed" && t.declinedBy !== "guard").every((t) => Array.isArray(t.steps) && t.steps.length >= 3), "each answered turn shows its work");
+  assert.match(r.data.turns[9].text, /took too long/);
   assert.equal(r.data.remaining, 0);
+  /* Past the recent window, the older turns are carried as a model's summary. */
+  const withMemory = await db.collection("reader_turns").find({ thread_summary: { $ne: null } }).sort({ created_at: -1 }).limit(1).next();
+  assert.ok(withMemory && /asked \d+ questions/.test(withMemory.thread_summary) && withMemory.summary_covers >= 1, "a running summary was written");
 });
 
 test("the scholar sees how many questions readers asked, and how many the story could not answer, and never the questions", async () => {
@@ -296,7 +340,7 @@ test("the scholar sees how many questions readers asked, and how many the story 
   assert.equal(res.status, 200);
   const { stories } = await res.json();
   const mine = stories.find((s) => s.slug === SLUG);
-  assert.deepEqual(mine.questions, { total: 8, recent: 8, notHere: 1 });
+  assert.deepEqual(mine.questions, { total: 10, recent: 10, notHere: 1 });
   const draft = stories.find((s) => s.slug === "still-a-draft");
   assert.equal(draft.questions, null, "a draft cannot have been asked about");
   assert.ok(!JSON.stringify(stories).includes("unicorns"), "no question text reaches the scholar");
@@ -346,7 +390,7 @@ test("a draft is not a story a reader can ask about; a bad question is refused",
 
 test("the audit trail lists everything the reader asked, and forgetting deletes it and rotates the cookie", async () => {
   const before = await call("GET", "/api/reader/me/turns");
-  assert.equal(before.data.turns.length, 8);
+  assert.equal(before.data.turns.length, 10);
   assert.equal(before.data.keepDays, 30);
   assert.ok(before.data.turns.every((t) => t.storySlug === SLUG && t.storyTitle === "Adaptive nulling, for readers"));
   const stored = await db.collection("reader_turns").findOne({});
@@ -356,7 +400,7 @@ test("the audit trail lists everything the reader asked, and forgetting deletes 
   const old = jar;
   const gone = await call("DELETE", "/api/reader/me");
   assert.equal(gone.status, 200);
-  assert.equal(gone.data.forgotten, 8);
+  assert.equal(gone.data.forgotten, 10);
   assert.notEqual(jar, old, "the device is a new reader now");
   const after = await call("GET", "/api/reader/me/turns");
   assert.deepEqual(after.data.turns, []);

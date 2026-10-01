@@ -5,6 +5,7 @@
  * device cookie, not an account.
  *
  *   POST   /api/reader/stories/:slug/ask     ask; answered as a stream of events
+ *   GET    /api/reader/stories/:slug/suggestions  questions worth asking, written by a model
  *   GET    /api/reader/stories/:slug/turns   this reader's thread on this story
  *   GET    /api/reader/me/turns              everything this reader asked
  *   DELETE /api/reader/me                    forget this reader
@@ -26,13 +27,18 @@ const { ApiError } = require("../lib/api-error");
 const { readerIdentity } = require("../middleware/reader.middleware");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
 const reader = require("../services/reader.service");
+const { getPolicy } = require("../services/policy.service");
 const { env } = require("../config/env");
 
 const router = express.Router();
 
 /* A burst ceiling per address, on top of the per-reader daily count in
-   Mongo. Generous, because a classroom sits behind one address. */
-const askLimiter = rateLimit({ name: "reader-ask", limit: 120, windowMs: 10 * 60 * 1000 });
+   Mongo, read from the reader policy on every request. */
+const askLimiter = rateLimit({
+  name: "reader-ask",
+  limit: async () => (await getPolicy("reader")).rateLimit.burst,
+  windowMs: async () => (await getPolicy("reader")).rateLimit.windowSeconds * 1000,
+});
 
 router.use(readerIdentity);
 
@@ -73,7 +79,8 @@ router.post(
        been written. The response closes when the reader goes. */
     const control = new AbortController();
     res.on("close", () => { closed = true; if (!control.signal.aborted) control.abort(new Error("the reader left")); });
-    const deadline = setTimeout(() => { if (!control.signal.aborted) control.abort(new Error("the deadline passed")); }, env.reader.turnDeadlineMs);
+    const deadlineMs = env.reader.turnDeadlineMs || (await getPolicy("reader")).turnDeadlineSeconds * 1000;
+    const deadline = setTimeout(() => { if (!control.signal.aborted) control.abort(new Error("the deadline passed")); }, deadlineMs);
     const heartbeat = setInterval(() => { if (!closed) res.write(": keep-alive\n\n"); }, 10_000);
 
     send("accepted", { question });
@@ -101,6 +108,15 @@ router.post(
       closed = true;
       res.end();
     }
+  }),
+);
+
+/** Questions worth asking about this story, written by a model that has read it. */
+router.get(
+  "/stories/:slug/suggestions",
+  askLimiter,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await reader.suggestionsFor({ slug: req.params.slug, level: parseLevel(req.query.level), focusIndex: parseFocus(req.query.focus) }));
   }),
 );
 

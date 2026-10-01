@@ -4476,3 +4476,9 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .ds-coming { list-style: none; margin: 18px 0 0; padding: 14px 0 0; border-top: 1px dashed var(--sd-line); display: flex; flex-direction: column; gap: 8px; }
 .ds-coming-item { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--sd-muted); font-family: var(--sd-sans); }
 .ds-coming-note { color: var(--sd-faint); }
+
+/* What the companion thinks the reader might ask next, under its latest answer. */
+.rc-followups { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.rc-followup { font: inherit; font-size: 12.5px; font-weight: 600; color: var(--navy); background: var(--sd-surface); border: 1px solid var(--sd-line); border-radius: 999px; padding: 5px 11px; cursor: pointer; text-align: left; }
+.rc-followup:hover:not(:disabled) { border-color: var(--navy); background: var(--ark-navy-soft); }
+.rc-followup:disabled { opacity: 0.55; cursor: default; }

@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FaPaperPlane, FaXmark } from "react-icons/fa6";
 
 import { getPublicStoryPassages, publicEvidenceUrl } from "@/lib/drafting";
 import { FACES, TONES, usePersona } from "@/lib/persona";
-import { askCompanion, forgetMe, getCompanionThread, getMyCompanionTurns } from "@/lib/reader";
+import { askCompanion, forgetMe, getCompanionThread, getMyCompanionTurns, getSuggestions } from "@/lib/reader";
 import AgentFace from "./AgentFace";
 
 /**
@@ -19,8 +19,8 @@ import AgentFace from "./AgentFace";
  *              once; the work arrives step by step under it; the answer comes
  *              once the Sentinel has read it back, labelled with where it
  *              came from and with citations that point back at the page.
- *   Ask        things worth asking about THIS story, built from its headings
- *              and paragraphs. No model call: the suggestions are the story's.
+ *   Ask        things worth asking about THIS story, written by a model that
+ *              has read it at the reader's level, and the paragraph in focus.
  *   Progress   a reading checklist: paragraphs read, paragraphs asked about,
  *              a quiz taken, a source opened, another reading age tried.
  *              Kept in this browser only.
@@ -52,9 +52,10 @@ const GROUNDING_LABEL = {
   story: { text: "From the story", cls: "is-story" },
   background: { text: "Background, not from the paper", cls: "is-background" },
   not_here: { text: "The story doesn't say", cls: "is-not-here" },
+  clarify: { text: "A question back to you", cls: "is-not-here" },
 };
 
-const TOOL_ICON = { read_block: "¶", read_passage: "§", search_passages: "⌕", answer: "✎", sentinel: "✓" };
+const TOOL_ICON = { guard: "•", read_block: "¶", read_passage: "§", search: "⌕", answer: "✎", sentinel: "✓" };
 
 const PERSONA_KEY = "sd:companion";
 
@@ -67,18 +68,15 @@ function citeLabel(id) {
   return id;
 }
 
-/** What a finished turn's steps come to, in one line. */
+/** A finished turn's work, folded to one line: how many steps it took, and how it ended. */
 function stepsSummary(steps) {
-  const read = [...new Set((steps || []).filter((s) => s.tool === "read_block").map((s) => (s.summary.match(/(\d+)/) || [])[1]).filter(Boolean))];
-  const searched = (steps || []).filter((s) => s.tool === "search_passages").length;
-  const checked = (steps || []).some((s) => s.tool === "sentinel");
+  const work = (steps || []).filter((s) => s.tool !== "guard" && s.tool !== "sentinel" && s.tool !== "answer");
+  const reviews = (steps || []).filter((s) => s.tool === "sentinel").length;
+  if (!work.length && !reviews) return "";
   const parts = [];
-  if (read.length) parts.push(`Read ${read.map((n) => `¶ ${n}`).join(", ")}`);
-  if (searched) parts.push(searched === 1 ? "searched the paper" : `searched the paper ${searched} times`);
-  if (checked) parts.push("checked the answer before showing it");
-  if (!parts.length) return "";
-  const line = parts.join(" · ");
-  return line.charAt(0).toUpperCase() + line.slice(1);
+  if (work.length) parts.push(`${work.length} step${work.length === 1 ? "" : "s"}`);
+  if (reviews) parts.push(reviews === 1 ? "checked before you saw it" : `checked ${reviews} times before you saw it`);
+  return parts.join(" · ");
 }
 
 /* ── pieces of the chat ──────────────────────────────────────────────────── */
@@ -112,7 +110,7 @@ function Steps({ steps }) {
   );
 }
 
-function Answer({ turn, onCite }) {
+function Answer({ turn, onCite, onAsk, disabled }) {
   const g = turn?.outcome === "refused" ? { text: "Couldn't answer safely", cls: "is-refused" }
     : turn?.outcome === "failed" ? { text: "Ran out of time", cls: "is-refused" }
     : GROUNDING_LABEL[turn?.answer?.grounding] || GROUNDING_LABEL.story;
@@ -134,6 +132,12 @@ function Answer({ turn, onCite }) {
           </span>
         ) : null}
       </div>
+      {/* What the companion thinks this reader might want next. */}
+      {turn?.answer?.followUps?.length && onAsk ? (
+        <div className="rc-followups">
+          {turn.answer.followUps.map((f) => <button key={f} type="button" className="rc-followup" disabled={disabled} onClick={() => onAsk(f)}>{f}</button>)}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -147,7 +151,7 @@ function Elapsed() {
   return <span className="ag-elapsed">{seconds}s</span>;
 }
 
-function Turn({ turn, persona, onCite }) {
+function Turn({ turn, persona, onCite, onAsk, disabled, latest = false }) {
   return (
     <div className={`ag-turn rc-turn${turn.pending ? " is-pending" : ""}`}>
       <div className="ag-ask">{turn.question}</div>
@@ -162,7 +166,7 @@ function Turn({ turn, persona, onCite }) {
           ) : (
             <>
               <Steps steps={turn.steps} />
-              <Answer turn={turn} onCite={onCite} />
+              <Answer turn={turn} onCite={onCite} onAsk={latest ? onAsk : null} disabled={disabled} />
             </>
           )}
         </div>
@@ -172,6 +176,7 @@ function Turn({ turn, persona, onCite }) {
 }
 
 function Intro({ persona, suggestions, onExample, disabled }) {
+  const first = (suggestions || []).flatMap((g) => g.questions).slice(0, 3);
   return (
     <div className="ag-reply rc-intro">
       <Face persona={persona} />
@@ -180,7 +185,7 @@ function Intro({ persona, suggestions, onExample, disabled }) {
           Hello, I&apos;m {persona.name}. I&apos;m here to help you read this story. Ask me about any part of it and I&apos;ll look it up in the article and the paper behind it, show you what I read, and tell you plainly if the story doesn&apos;t say. I never ask about you.
         </p>
         <p className="rc-intro-hint">Tap a paragraph to ask about that one, or start with:</p>
-        <div className="ag-examples rc-examples">{suggestions.slice(0, 3).map((e) => <button key={e} type="button" className="ag-example" disabled={disabled} onClick={() => onExample(e)}>{e}</button>)}</div>
+        {first.length ? <div className="ag-examples rc-examples">{first.map((e) => <button key={e} type="button" className="ag-example" disabled={disabled} onClick={() => onExample(e)}>{e}</button>)}</div> : null}
       </div>
     </div>
   );
@@ -188,38 +193,18 @@ function Intro({ persona, suggestions, onExample, disabled }) {
 
 /* ── Ask: things worth asking about this story ───────────────────────────── */
 
-/**
- * Suggestions from the story itself: its headings, its paragraphs, its
- * numbers. Deterministic and free, so the tab is never empty and never
- * waits on a model.
- */
-function buildSuggestions(blocks, focus) {
-  const out = [];
-  const headings = (blocks || []).filter((b) => b.type === "subheading" || b.type === "heading");
-  const paragraphs = (blocks || []).filter((b) => b.type === "paragraph");
-  if (focus?.index) out.push({ group: "About the paragraph you tapped", text: `What does paragraph ${focus.index} mean?` }, { group: "About the paragraph you tapped", text: `How did they find that out in paragraph ${focus.index}?` });
-  out.push({ group: "About the whole story", text: "What's the main point of this story?" }, { group: "About the whole story", text: "What did they actually do in this study?" }, { group: "About the whole story", text: "What does this story leave out or not know yet?" });
-  for (const h of headings.slice(0, 4)) out.push({ group: "By section", text: `What is “${h.text.replace(/[.?!]+$/, "")}” about?` });
-  const withNumbers = paragraphs.filter((p) => /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|forty|hundred|thousand)\b/i.test(p.text)).slice(0, 3);
-  for (const p of withNumbers) out.push({ group: "The numbers", text: `How did they measure what paragraph ${p.index} says?` });
-  const longWord = paragraphs.flatMap((p) => p.text.split(/\W+/)).filter((w) => w.length >= 11 && /^[a-z]+$/i.test(w));
-  const rare = [...new Set(longWord.map((w) => w.toLowerCase()))].slice(0, 3);
-  for (const w of rare) out.push({ group: "Words", text: `What does the word ${w} mean?` });
-  out.push({ group: "Test yourself", text: "Quiz me on what I've read" }, { group: "Test yourself", text: "Give me one question about each section" });
-  return out;
-}
-
-function AskTab({ suggestions, onAsk, disabled }) {
-  const groups = [...new Set(suggestions.map((s) => s.group))];
+function AskTab({ suggestions, loading, onAsk, disabled }) {
   return (
     <div className="rc-tab rc-ask">
       <p className="rc-tab-title">Things worth asking</p>
-      <p className="st-muted rc-tab-note">Made from this story&apos;s own headings, paragraphs and numbers. Tap one and I&apos;ll look it up.</p>
-      {groups.map((g) => (
-        <div key={g} className="rc-ask-group">
-          <p className="rc-ask-group-title">{g}</p>
+      <p className="st-muted rc-tab-note">Written for you from this story, and the paragraph you tapped. Tap one and I&apos;ll look it up.</p>
+      {loading ? <p className="st-muted">Reading the story for questions…</p> : null}
+      {!loading && !(suggestions || []).length ? <p className="st-muted">Nothing to suggest just now. Ask me anything about the story.</p> : null}
+      {(suggestions || []).map((g) => (
+        <div key={g.title} className="rc-ask-group">
+          <p className="rc-ask-group-title">{g.title}</p>
           <div className="ag-examples rc-examples">
-            {suggestions.filter((s) => s.group === g).map((s) => <button key={s.text} type="button" className="ag-example" disabled={disabled} onClick={() => onAsk(s.text)}>{s.text}</button>)}
+            {g.questions.map((q) => <button key={q} type="button" className="ag-example" disabled={disabled} onClick={() => onAsk(q)}>{q}</button>)}
           </div>
         </div>
       ))}
@@ -234,7 +219,8 @@ function ProgressTab({ blocks, readSet, turns, marks, levelsAvailable }) {
   const readCount = paragraphs.filter((p) => readSet.has(p.index)).length;
   const asked = new Set((turns || []).flatMap((t) => t.answer?.blockIds || []).map((id) => Number(id.slice(1))));
   const askedCount = asked.size;
-  const quizzed = (turns || []).some((t) => /quiz|question/i.test(t.question));
+  /* The companion says what kind of answer each was; a quiz is one it called a quiz. */
+  const quizzed = (turns || []).some((t) => t.answer?.intent === "quiz" || t.intent === "quiz");
   const items = [
     { key: "read", label: "Read every paragraph", detail: `${readCount} of ${paragraphs.length}`, done: paragraphs.length > 0 && readCount >= paragraphs.length },
     { key: "ask", label: "Ask about a paragraph", detail: askedCount ? `${askedCount} asked about` : "none yet", done: askedCount > 0 },
@@ -445,7 +431,15 @@ export default function ReaderCompanion({ slug, level = null, levelsAvailable = 
     el.style.height = `${Math.min(140, el.scrollHeight)}px`;
   }, []);
 
-  const suggestions = useMemo(() => buildSuggestions(blocks, focus), [blocks, focus]);
+  /* Questions worth asking, written by a model, per level and paragraph in focus. */
+  const [suggestions, setSuggestions] = useState({ key: "", groups: null });
+  const suggestKey = `${level || ""}:${focus?.index || 0}`;
+  useEffect(() => {
+    if (!open || suggestions.key === suggestKey) return undefined;
+    let alive = true;
+    getSuggestions(slug, { level, focus: focus?.index || null }).then((r) => { if (alive) setSuggestions({ key: suggestKey, groups: r.ok ? r.data.groups || [] : [] }); });
+    return () => { alive = false; };
+  }, [open, slug, level, focus?.index, suggestKey, suggestions.key]);
   const focusUsable = Boolean(focus && focus.index);
   const mentionsParagraph = (t) => /paragraph\s+\d+/i.test(t);
 
@@ -514,8 +508,8 @@ export default function ReaderCompanion({ slug, level = null, levelsAvailable = 
               <>
                 <div className="ag-thread rc-thread" ref={threadRef}>
                   {turns === null ? <p className="st-muted">Loading…</p> : null}
-                  {turns !== null && turns.length === 0 ? <Intro persona={persona} suggestions={suggestions.filter((s) => s.group === "About the whole story" || s.group === "Test yourself").map((s) => s.text)} onExample={send} disabled={busy || capped} /> : null}
-                  {(turns || []).map((t) => <Turn key={t.id} turn={t} persona={persona} onCite={onCite} />)}
+                  {turns !== null && turns.length === 0 ? <Intro persona={persona} suggestions={suggestions.groups} onExample={send} disabled={busy || capped} /> : null}
+                  {(turns || []).map((t, i) => <Turn key={t.id} turn={t} persona={persona} onCite={onCite} onAsk={send} disabled={busy || capped} latest={i === turns.length - 1 && !pending} />)}
                   {pending ? <Turn turn={pending} persona={persona} /> : null}
                   {error ? <p className="sc-write-msg is-error">{error}</p> : null}
                 </div>
@@ -540,7 +534,7 @@ export default function ReaderCompanion({ slug, level = null, levelsAvailable = 
                 </form>
               </>
             ) : null}
-            {tab === "ask" ? <AskTab suggestions={suggestions} onAsk={send} disabled={busy || capped} /> : null}
+            {tab === "ask" ? <AskTab suggestions={suggestions.key === suggestKey ? suggestions.groups : null} loading={suggestions.key !== suggestKey} onAsk={send} disabled={busy || capped} /> : null}
             {tab === "progress" ? <ProgressTab blocks={blocks} readSet={readSet} turns={turns || []} marks={marks} levelsAvailable={levelsAvailable} /> : null}
             {tab === "sources" ? <SourcesTab slug={slug} blocks={blocks} turns={turns || []} onCite={onCite} /> : null}
 

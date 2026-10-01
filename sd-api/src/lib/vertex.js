@@ -72,18 +72,36 @@ function describeMissingConfig() {
   return null;
 }
 
-/** A bare model id becomes a publisher resource; a full resource path passes through. */
-function resolveResourceName() {
-  if (isFake()) return "fake/model";
-  const model = String(env.llm.model).trim().replace(/^\/+/, "");
-  if (model.startsWith("projects/")) return model;
-  return `projects/${env.llm.project}/locations/${env.llm.location}/publishers/google/models/${model}`;
+/**
+ * A bare model id becomes a publisher resource; a full resource path passes
+ * through. With no model named, the deployment's own (`STORY_LLM_MODEL`):
+ * callers that route by purpose name the model they were routed to.
+ */
+function resolveResourceName(model = null) {
+  if (isFake()) return model ? `fake/${model}` : "fake/model";
+  const id = String(model || env.llm.model).trim().replace(/^\/+/, "");
+  if (id.startsWith("projects/")) return id;
+  return `projects/${env.llm.project}/locations/${env.llm.location}/publishers/google/models/${id}`;
 }
 
-function buildUrl(resourceName) {
+function buildUrl(resourceName, method = "generateContent") {
   const location = (resourceName.match(/\/locations\/([^/]+)/) || [])[1] || env.llm.location;
-  return `https://${location}-aiplatform.googleapis.com/v1/${resourceName}:generateContent`;
+  return `https://${location}-aiplatform.googleapis.com/v1/${resourceName}:${method}`;
 }
+
+/**
+ * An error the router must not answer by trying another model: the model
+ * declined on safety grounds, which is a decision about the content, not a
+ * fault in the service. Named so the router can tell it apart.
+ */
+function blockedError(reason) {
+  const e = new Error(`The model declined to answer (${reason}).`);
+  e.name = "ModelBlockedError";
+  e.code = "BLOCKED";
+  e.reason = reason;
+  return e;
+}
+const BLOCK_REASONS = new Set(["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"]);
 
 async function getAccessToken() {
   if (process.env.VERTEX_ACCESS_TOKEN) return process.env.VERTEX_ACCESS_TOKEN;
@@ -136,12 +154,17 @@ async function generateContent({
   /* The caller's way out: a reader who closed the page, a turn past its
      deadline. Aborting ends the request in flight and stops the retries. */
   signal = null,
+  /* Which model, when the caller was routed to one; the deployment's own otherwise. */
+  model = null,
+  /* Reasoning before answering. Off unless asked for, and billed to
+     maxOutputTokens, so a caller that asks sizes the budget to match. */
+  thinkingBudget = 0,
 }) {
   const missing = describeMissingConfig();
   if (missing) throw new Error(`Drafting is not configured: ${missing}`);
-  if (isFake()) return require("./fakeModel").generateContent({ prompt, contents, systemInstruction, responseSchema, tools, signal });
+  if (isFake()) return require("./fakeModel").generateContent({ prompt, contents, systemInstruction, responseSchema, tools, signal, model });
 
-  const resourceName = resolveResourceName();
+  const resourceName = resolveResourceName(model);
   const url = buildUrl(resourceName);
   const token = await getAccessToken();
 
@@ -151,7 +174,7 @@ async function generateContent({
       temperature,
       topP: 0.95,
       maxOutputTokens,
-      thinkingConfig: { thinkingBudget: 0 },
+      thinkingConfig: { thinkingBudget: Math.max(0, Number(thinkingBudget) || 0) },
       ...(responseSchema ? { responseMimeType: "application/json", responseSchema } : {}),
     },
     ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
@@ -203,10 +226,12 @@ async function generateContent({
 
     const payload = await response.json();
     const parts = payload?.candidates?.[0]?.content?.parts || [];
-    const text = parts.map((p) => p.text || "").join("");
+    /* Thought summaries, when a caller asked for reasoning, are not the answer. */
+    const text = parts.filter((p) => !p.thought).map((p) => p.text || "").join("");
     const functionCalls = parts.filter((p) => p.functionCall && p.functionCall.name).map((p) => ({ name: p.functionCall.name, args: p.functionCall.args || {} }));
     if (!text.trim() && functionCalls.length === 0) {
       const reason = payload?.candidates?.[0]?.finishReason || payload?.promptFeedback?.blockReason || "empty";
+      if (BLOCK_REASONS.has(reason)) throw blockedError(reason);
       throw new Error(`Vertex returned no text (${reason}).`);
     }
     const u = payload?.usageMetadata || {};
@@ -226,4 +251,72 @@ async function generateContent({
   throw lastError || new Error("Vertex request failed.");
 }
 
-module.exports = { generateContent, getAccessToken, isConfigured, describeMissingConfig, resolveResourceName };
+/**
+ * Embeddings: text to vectors, for finding what a question is about by
+ * meaning rather than by shared words.
+ *
+ * @param {object} req
+ * @param {string[]} req.texts
+ * @param {"RETRIEVAL_DOCUMENT"|"RETRIEVAL_QUERY"|"SEMANTIC_SIMILARITY"|"CLASSIFICATION"} [req.taskType]
+ * @param {string} req.model                a Vertex embedding model, e.g. text-embedding-005
+ * @param {number} [req.batchSize]          instances per request
+ * @param {AbortSignal} [req.signal]
+ * @param {number} [req.timeoutMs]
+ * @returns {Promise<{vectors: number[][], model: string, usage: {input: number|null}}>}
+ */
+async function embed({ texts, taskType = "RETRIEVAL_DOCUMENT", model, batchSize = 32, signal = null, timeoutMs = 30_000 }) {
+  const missing = describeMissingConfig();
+  if (missing) throw new Error(`Embeddings are not configured: ${missing}`);
+  if (!model) throw new Error("An embedding model must be named.");
+  const list = (texts || []).map((t) => String(t || "").slice(0, 8000));
+  if (isFake()) return require("./fakeModel").embed({ texts: list, taskType, model });
+
+  const resourceName = resolveResourceName(model);
+  const url = buildUrl(resourceName, "predict");
+  const token = await getAccessToken();
+  const vectors = [];
+  let tokens = 0;
+  for (let i = 0; i < list.length; i += batchSize) {
+    if (signal?.aborted) throw abortError(signal);
+    const chunk = list.slice(i, i + batchSize);
+    let done = false;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS && !done; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const onAbort = () => controller.abort();
+      signal?.addEventListener("abort", onAbort, { once: true });
+      let response;
+      try {
+        response = await fetch(url, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ instances: chunk.map((content) => ({ content, task_type: taskType })) }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        if (signal?.aborted) throw abortError(signal);
+        if (attempt < MAX_ATTEMPTS) { await sleep(500 * 2 ** (attempt - 1)); continue; }
+        throw new Error(`Vertex embedding request failed: ${error.message}`);
+      }
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      if (!response.ok) {
+        const snippet = (await response.text().catch(() => "")).slice(0, 300);
+        if (RETRYABLE.has(response.status) && attempt < MAX_ATTEMPTS) { await sleep(500 * 2 ** (attempt - 1)); continue; }
+        throw new Error(`Vertex embedding error ${response.status}: ${snippet}`);
+      }
+      const payload = await response.json();
+      for (const p of payload.predictions || []) {
+        vectors.push(p.embeddings?.values || []);
+        tokens += Number(p.embeddings?.statistics?.token_count) || 0;
+      }
+      done = true;
+    }
+  }
+  if (vectors.length !== list.length) throw new Error(`Vertex returned ${vectors.length} embeddings for ${list.length} texts.`);
+  return { vectors, model, usage: { input: tokens || null } };
+}
+
+module.exports = { generateContent, embed, getAccessToken, isConfigured, describeMissingConfig, resolveResourceName };

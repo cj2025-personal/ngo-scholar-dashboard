@@ -11,13 +11,21 @@ const { STATUS, TERMINAL } = require("../lib/draftJob");
 const { isAudience } = require("../lib/audiences");
 const { VOICE } = require("../lib/draftComposer");
 const { getAiTerms } = require("../services/aiTerms.service");
+const { getPolicy } = require("../services/policy.service");
+const { converseWith, ideasFor } = require("../services/studioAgent.service");
 
 const router = express.Router();
 
 /* Each draft is a paid model call over up to 9,000 words. The limiter is
    per caller address, in memory, and documented as such in its own file; it
-   is cost control, not abuse defence — the session cookie is that. */
-const draftLimiter = rateLimit({ name: "drafting", limit: 8, windowMs: 10 * 60 * 1000 });
+   is cost control, not abuse defence — the session cookie is that. Both
+   limits are read from the studio policy on every request. */
+const studioLimit = (which) => ({
+  limit: async () => (await getPolicy("studio")).rateLimit[which].burst,
+  windowMs: async () => (await getPolicy("studio")).rateLimit[which].windowSeconds * 1000,
+});
+const draftLimiter = rateLimit({ name: "drafting", ...studioLimit("drafting") });
+const converseLimiter = rateLimit({ name: "studio-converse", ...studioLimit("converse") });
 
 /**
  * What of my work can be drafted from, cited, or neither — and whether the
@@ -42,6 +50,43 @@ router.get(
     }
 
     res.status(200).json(await listDraftSources({ profileId }));
+  }),
+);
+
+/**
+ * What the scholar means by what they just said to the studio agent: an
+ * action, the paper, the reader, the voice, the brief it understood, and the
+ * words to say back. The page carries the decision out.
+ */
+router.post(
+  "/converse",
+  requireAuth,
+  converseLimiter,
+  asyncHandler(async (req, res) => {
+    const profileId = canonicalScholarId(req.auth.user);
+    if (!profileId) throw new ApiError(403, "This session is not linked to a scholar profile.");
+    const name = req.auth.related?.scholars?.[0]?.name;
+    const scholarName = (name && (name.display || name.full)) || null;
+    res.status(200).json(await converseWith({ profileId, scholarName, messages: req.body?.messages, state: req.body?.state || {} }));
+  }),
+);
+
+/** Ideas for the page the scholar is on, written by a model that has read it. */
+router.post(
+  "/ideas",
+  requireAuth,
+  converseLimiter,
+  asyncHandler(async (req, res) => {
+    const profileId = canonicalScholarId(req.auth.user);
+    if (!profileId) throw new ApiError(403, "This session is not linked to a scholar profile.");
+    const focus = Number(req.body?.focusIndex);
+    res.status(200).json(await ideasFor({
+      profileId,
+      scholarId: req.auth.user.scholar_id,
+      storyId: typeof req.body?.storyId === "string" ? req.body.storyId : null,
+      paperKey: typeof req.body?.paperKey === "string" ? req.body.paperKey : null,
+      focusIndex: Number.isInteger(focus) ? focus : null,
+    }));
   }),
 );
 

@@ -95,11 +95,14 @@ test("a reader asks about a paragraph, watches the work, and reads a checked ans
   await expect(turn.locator(".rc-answer-text")).toContainText("Here is what the story says: In field trials the array improved", { timeout: 60_000 });
   await expect(turn.locator(".rc-grounding")).toHaveText("From the story");
   /* Once done, the work folds to one line the reader can open. */
-  await expect(turn.locator(".rc-work-line")).toHaveText("Read ¶ 3 · checked the answer before showing it");
+  await expect(turn.locator(".rc-work-line")).toHaveText("1 step · checked before you saw it");
   await turn.locator(".rc-work-line").click();
-  await expect(turn.locator(".ag-step")).toHaveCount(3);
-  await expect(turn.locator(".ag-step").first()).toContainText("Reading paragraph 3");
-  await expect(turn.locator(".ag-step").last()).toContainText("Reading my answer back");
+  /* The guard, the companion's own narration, its answer, the review. */
+  await expect(turn.locator(".ag-step")).toHaveCount(4);
+  await expect(turn.locator(".ag-step").nth(1)).toContainText("Reading paragraph 3");
+  await expect(turn.locator(".ag-step").last()).toContainText("checked before you see it");
+  /* The companion's own suggestions for what to ask next. */
+  await expect(turn.locator(".rc-followup").first()).toBeVisible();
   await expect(turn.locator(".rc-cite", { hasText: "¶ 3" })).toBeVisible();
   await expect(turn.locator(".rc-cite", { hasText: "p2" })).toBeVisible();
 

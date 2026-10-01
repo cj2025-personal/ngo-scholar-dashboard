@@ -1,0 +1,78 @@
+{
+  "$comment": "The baseline every agent policy starts from. Any value can be overridden at runtime, with a version and an author, through the agent_policies collection (scripts/policy.js); nothing here is read as a constant by the code. Models are the ones this Vertex project serves, probed on 2026-10-01.",
+
+  "policy": {
+    "cacheSeconds": 60
+  },
+
+  "models": {
+    "routes": {
+      "default":         { "primary": null, "fallback": ["gemini-2.5-pro"], "thinkingBudget": 0, "temperature": 0.4, "maxOutputTokens": 4096, "timeoutMs": 90000 },
+      "reader.guard":    { "primary": "gemini-2.5-flash-lite", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 1024, "timeoutMs": 15000 },
+      "reader.agent":    { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 1024, "temperature": 0.3, "maxOutputTokens": 4096, "timeoutMs": 40000 },
+      "reader.sentinel": { "primary": "gemini-2.5-pro", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 1024, "temperature": 0, "maxOutputTokens": 6144, "timeoutMs": 45000 },
+      "reader.refusal":  { "primary": "gemini-2.5-flash-lite", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 0, "temperature": 0.5, "maxOutputTokens": 512, "timeoutMs": 10000 },
+      "reader.memory":   { "primary": "gemini-2.5-flash-lite", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 0, "temperature": 0.2, "maxOutputTokens": 768, "timeoutMs": 15000 },
+      "reader.suggest":  { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-flash-lite"], "thinkingBudget": 0, "temperature": 0.6, "maxOutputTokens": 2048, "timeoutMs": 30000 },
+      "studio.converse": { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0.3, "maxOutputTokens": 2048, "timeoutMs": 30000 },
+      "studio.edit":     { "primary": null, "fallback": ["gemini-2.5-pro"], "thinkingBudget": 0, "temperature": 0.2, "maxOutputTokens": 2048, "timeoutMs": 90000 },
+      "studio.ideas":    { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-flash-lite"], "thinkingBudget": 0, "temperature": 0.6, "maxOutputTokens": 2048, "timeoutMs": 30000 },
+      "drafting.voice":  { "primary": "gemini-2.5-flash-lite", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 30000 },
+      "drafting.band":   { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 45000 }
+    },
+    "modelLimits": {
+      "gemini-2.5-pro": { "minThinkingBudget": 128 },
+      "gemini-2.5-flash-lite": { "minThinkingBudgetWhenOn": 512 }
+    },
+    "embeddings": { "primary": "text-embedding-005", "fallback": ["text-multilingual-embedding-002"], "batchSize": 32, "timeoutMs": 30000 },
+    "breaker": { "failureThreshold": 3, "cooldownSeconds": 60 }
+  },
+
+  "reader": {
+    "question": { "maxChars": 500 },
+    "turnDeadlineSeconds": 120,
+    "agent": { "maxSteps": 8, "maxToolCalls": 12, "maxFollowUps": 3 },
+    "retrieval": { "topK": 6 },
+    "sentinel": { "maxRevisions": 2, "maxClaims": 12, "claimChars": 300 },
+    "history": { "recentTurns": 6, "summaryWords": 120 },
+    "safety": {
+      "young": [
+        { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_LOW_AND_ABOVE" },
+        { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_LOW_AND_ABOVE" },
+        { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_LOW_AND_ABOVE" },
+        { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_LOW_AND_ABOVE" }
+      ],
+      "older": []
+    },
+    "rateLimit": { "burst": 120, "windowSeconds": 600 },
+    "suggestions": { "count": 10, "cacheHours": 24 },
+    "index": { "cacheDays": 30 },
+    "messages": {
+      "refusalFallback": "I can't answer that one well from this article. Try asking about something in one of its paragraphs, and I'll look it up with you.",
+      "failed": "That one took too long, so I stopped. Ask again and I'll have another go.",
+      "historyAboutReader": "(a question that mentioned the reader themselves)"
+    }
+  },
+
+  "studio": {
+    "converse": { "historyMessages": 12 },
+    "ideas": { "count": 8, "cacheHours": 12 },
+    "edit": { "maxSteps": 12, "maxToolCalls": 24, "historyTurns": 6, "searchTopK": 4 },
+    "rateLimit": {
+      "drafting": { "burst": 8, "windowSeconds": 600 },
+      "converse": { "burst": 60, "windowSeconds": 600 }
+    }
+  },
+
+  "drafting": {
+    "sectionVoiceRetries": 1,
+    "fidelityRetries": 2,
+    "bandRetries": 1
+  },
+
+  "audit": { "retainDays": 30 },
+
+  "evals": {
+    "reader": { "grounding": 0.8, "sentinel": 0.9, "cited": 0.8, "bandFit": 0.8, "firstTry": 0.6 }
+  }
+}

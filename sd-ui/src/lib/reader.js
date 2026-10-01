@@ -27,6 +27,14 @@ export async function getCompanionThread(slug) {
   return request(`/api/reader/stories/${encodeURIComponent(slug)}/turns`, { method: "GET" });
 }
 
+/** Questions worth asking about this story, written by a model that has read it. */
+export async function getSuggestions(slug, { level = null, focus = null } = {}) {
+  const q = new URLSearchParams();
+  if (level) q.set("level", level);
+  if (focus) q.set("focus", String(focus));
+  return request(`/api/reader/stories/${encodeURIComponent(slug)}/suggestions${q.toString() ? `?${q}` : ""}`, { method: "GET" });
+}
+
 /** Everything this reader has asked, newest first. */
 export async function getMyCompanionTurns() {
   return request("/api/reader/me/turns", { method: "GET" });

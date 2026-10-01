@@ -31,7 +31,7 @@ import ReadingLevels from "@/components/editorial/ReadingLevels";
 import RecordBanner from "@/components/editorial/RecordBanner";
 import { HiOutlineChatBubbleLeftRight, HiOutlineLightBulb } from "react-icons/hi2";
 import StudioAgentShell, { AgentAbout, AgentIdentity, AgentTabs, STUDIO_PERMISSIONS } from "@/components/editorial/StudioAgentShell";
-import AgentIdeas, { newStoryIdeas, reviewIdeas } from "@/components/editorial/AgentIdeas";
+import AgentIdeas from "@/components/editorial/AgentIdeas";
 import DraftStream from "@/components/editorial/DraftStream";
 import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
@@ -885,7 +885,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                 <AgentAbout onClose={() => setNewAbout(false)} permissions={STUDIO_PERMISSIONS} termsVersion={terms?.version || null} onTerms={() => { setConsentError(""); setConsentOpen(true); }} activity={<p className="st-muted">Nothing yet: this story is not saved. Once a draft lands, every version and who made it is listed here.</p>} />
               ) : newTab === "ideas" ? (
                 <div className="ws-agent-body">
-                  <AgentIdeas ideas={newStoryIdeas({ paper: newPaper })} disabled={agentStatus.busy} note="Ways this could start. Tap a brief to put it in the chat and change it before you send, or ask what the paper could become." onPick={(idea) => { setNewTab("chat"); if (idea.propose) setProposeNow((n) => n + 1); else setNewPrefill(idea.text); }} />
+                  <AgentIdeas paperKey={newPaper ? `${newPaper.origin}:${newPaper.id}` : null} disabled={agentStatus.busy} note="Ways this could start. Tap a brief to put it in the chat and change it before you send, or ask what the paper could become." onPick={(idea) => { setNewTab("chat"); if (idea.propose) setProposeNow((n) => n + 1); else setNewPrefill(idea.text); }} />
                 </div>
               ) : null}
               {outlineStage ? null : (
@@ -982,9 +982,11 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} warnings={initialStory?.draftWarnings} onVerify={verifySpecific} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => showRail("evidence")} /> : null}
               {railTab === "ideas" ? (
                 <AgentIdeas
-                  ideas={reviewIdeas({ blocks: form.bodyBlocks, context: agentContext, record: form.record, audience })}
+                  storyId={form.id}
+                  version={form.version}
+                  focusIndex={agentContext?.index || null}
                   disabled={!consented || proposalPending || dirty}
-                  note={!consented ? "Read the agent's terms once and these become one tap away." : proposalPending ? "Decide on the change waiting in Chat first." : dirty ? "Your edits are saving; a moment, then these are one tap away." : "Things the agent could do next, made from this draft. Tap one to put it in the chat; change it before you send."}
+                  note={!consented ? "Read the agent's terms once and these become one tap away." : proposalPending ? "Decide on the change waiting in Chat first." : dirty ? "Your edits are saving; a moment, then these are one tap away." : "Things the agent could do next, after reading this draft. Tap one to put it in the chat; change it before you send."}
                   onPick={(idea) => { if (!consented) { openAgent(); return; } setRailTab("chat"); setAgentPrefill(idea.text); }}
                 />
               ) : null}

@@ -148,7 +148,9 @@ const env = {
     turnsTtlDays: getNumberEnv("READER_TURNS_TTL_DAYS", 30),
     /* How long one question may take, model calls included, before the
        reader is told to ask again and the work is stopped. */
-    turnDeadlineMs: getNumberEnv("READER_TURN_DEADLINE_MS", 45_000),
+    /* An operator's override of the reader policy's turnDeadlineSeconds;
+       unset, the policy decides. */
+    turnDeadlineMs: getNumberEnv("READER_TURN_DEADLINE_MS", 0),
   },
 };
 

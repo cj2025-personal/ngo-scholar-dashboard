@@ -114,6 +114,29 @@ export async function proposeFromPaper({ origin, sourceId, audience }) {
   });
 }
 
+/**
+ * What the scholar means by what they just said, decided by the studio agent's
+ * model from the conversation and what is set: reply, ask which paper or who
+ * it is for, plan, propose, replan, approve or discard. The page carries the
+ * decision out.
+ */
+export async function converseWithAgent({ messages, state }) {
+  return request("/api/drafting/converse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, state }),
+  });
+}
+
+/** Ideas for the page the scholar is on, written by a model that has read it. */
+export async function getAgentIdeas({ storyId = null, paperKey = null, focusIndex = null } = {}) {
+  return request("/api/drafting/ideas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ storyId, paperKey, focusIndex }),
+  });
+}
+
 /** Approve the outline, edited or not. Drafting resumes from it. */
 export async function approveDraftOutline(jobId, outline) {
   return request(`/api/drafting/jobs/${encodeURIComponent(jobId)}/outline`, {

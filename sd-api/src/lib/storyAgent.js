@@ -34,8 +34,8 @@
 const { AUDIENCES, normaliseAudience } = require("./audiences");
 const composer = require("./draftComposer");
 const AGENT_VERSION = "story-agent-2026.3";
-const MAX_STEPS = 12;
-const MAX_TOOL_CALLS = 24;
+/* Step and tool budgets come from the studio policy (edit); the baseline is read when none is passed. */
+const { defaultsFor } = require("./policyDefaults");
 
 /* ── tools ───────────────────────────────────────────────────────────────── */
 
@@ -299,16 +299,10 @@ function applyTool(state, call, ctx) {
       });
       return { state: { ...state, blocks }, result: `ok: an illustration will be generated as block ${after + 1} and labelled as an illustration` };
     }
-    case "search_passages": {
-      const q = String(args.query || "").toLowerCase().split(/\W+/).filter((w) => w.length > 3);
-      if (!q.length) return { state, result: "no query" };
-      const hits = (ctx.passages || [])
-        .map((p) => ({ p, score: q.filter((w) => p.text.toLowerCase().includes(w)).length }))
-        .filter((h) => h.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 4);
-      return { state, result: hits.length ? hits.map((h) => `[${h.p.id}] ${h.p.text.slice(0, 400)}`).join("\n\n") : "no passages match; the paper may not say this" };
-    }
+    case "search_passages":
+      /* Searching is by meaning, through embeddings, and runs in the loop
+         (runStoryAgent) because it is a model call; the reducer stays pure. */
+      return { state, result: "search is not available here; read the passages shown" };
     case "finish":
       return { state, result: "done", finished: true, summary: String(args.summary || "").trim() };
     default:
@@ -347,7 +341,7 @@ function diffStates(before, after) {
  * @param {boolean} [p.imagesAllowed]
  * @param {(text:string, passageId:string)=>boolean} [p.isVerbatim]
  */
-async function runStoryAgent({ state, passages, instruction, history = [], audience = "general", voice = composer.VOICE.ABOUT, scholarName = null, generate, imagesAllowed = false, isVerbatim = () => true, onProgress = async () => {} }) {
+async function runStoryAgent({ state, passages, instruction, history = [], audience = "general", voice = composer.VOICE.ABOUT, scholarName = null, generate, imagesAllowed = false, isVerbatim = () => true, search = null, limits = defaultsFor("studio").edit, onProgress = async () => {} }) {
   let working = { ...state, blocks: state.blocks.map((b) => ({ ...b })) };
   let counter = 0;
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
@@ -371,7 +365,7 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
   const contents = [{ role: "user", parts: [{ text: opening }] }];
   let summary = null;
 
-  for (let step = 0; step < MAX_STEPS; step += 1) {
+  for (let step = 0; step < limits.maxSteps; step += 1) {
     const r = await generate({ contents, systemInstruction: buildSystem({ voice, scholarName }), tools: [{ functionDeclarations: TOOL_DECLARATIONS }], toolConfig: { functionCallingConfig: { mode: "ANY" } }, temperature: 0.2, maxOutputTokens: 2048 });
     if (r.usage) usage.push(r.usage);
     const fcs = r.functionCalls || [];
@@ -384,8 +378,16 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
     const responses = [];
     let finished = false;
     for (const fc of fcs) {
-      if (calls.length >= MAX_TOOL_CALLS) { responses.push({ functionResponse: { name: fc.name, response: { result: "refused: too many changes in one instruction; call finish" } } }); continue; }
-      const out = applyTool(working, fc, ctx);
+      if (calls.length >= limits.maxToolCalls) { responses.push({ functionResponse: { name: fc.name, response: { result: "refused: too many changes in one instruction; call finish" } } }); continue; }
+      let out;
+      if (fc.name === "search_passages" && search) {
+        /* By meaning: the passages closest to what the agent described, with their similarity. */
+        const q = String(fc.args?.query || "").trim();
+        const hits = q ? await search(q) : [];
+        out = { state: working, result: hits.length ? hits.map((h) => `[${h.id}] (similarity ${h.score.toFixed(2)}) ${h.text.slice(0, 400)}`).join("\n\n") : "no passages are close to that; the paper may not say it" };
+      } else {
+        out = applyTool(working, fc, ctx);
+      }
       working = out.state;
       calls.push({ name: fc.name, args: fc.args, result: out.result });
       await onProgress({ tool: fc.name, result: out.result });
@@ -402,4 +404,4 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
   return { state: working, changes, summary, calls, usage, agentVersion: AGENT_VERSION };
 }
 
-module.exports = { AGENT_VERSION, MAX_STEPS, TOOL_DECLARATIONS, SYSTEM, buildSystem, stateFromStory, renderState, applyTool, diffStates, runStoryAgent, plain };
+module.exports = { AGENT_VERSION, TOOL_DECLARATIONS, SYSTEM, buildSystem, stateFromStory, renderState, applyTool, diffStates, runStoryAgent, plain };

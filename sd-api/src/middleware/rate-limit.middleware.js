@@ -61,8 +61,21 @@ function callerKey(req) {
  * @param {number} options.limit     requests allowed per window
  * @param {number} options.windowMs
  */
-function rateLimit({ name, limit, windowMs }) {
+function rateLimit({ name, limit: limitOption, windowMs: windowOption }) {
+  /* A limit may be a number, or a function that reads it from policy each
+     time, so a change to the policy applies without a restart. */
+  const fromPolicy = typeof limitOption === "function" || typeof windowOption === "function";
+  const read = async (v) => (typeof v === "function" ? Number(await v()) : v);
   return function rateLimitMiddleware(req, res, next) {
+    /* Fixed numbers count at once, as they always have; only a limit read
+       from policy waits for the read. */
+    if (!fromPolicy) return apply(req, res, next, limitOption, windowOption);
+    return Promise.all([read(limitOption), read(windowOption)])
+      .then(([limit, windowMs]) => apply(req, res, next, limit, windowMs))
+      .catch(next);
+  };
+
+  function apply(req, res, next, limit, windowMs) {
     const now = Date.now();
 
     if (++writesSinceSweep >= SWEEP_EVERY) {

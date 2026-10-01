@@ -33,10 +33,11 @@ const { assessDraftReadability, VERDICT } = require("../lib/draftReadability");
 const agent = require("../lib/storyAgent");
 const imageGen = require("../lib/imageGen");
 const vertex = require("../lib/vertex");
-const { traced } = require("../lib/tracing");
 const editorial = require("./editorial.service");
+const { getPolicy } = require("./policy.service");
+const { routerFor } = require("./models.service");
+const { searcherFor } = require("./readerIndex.service");
 
-const MAX_HISTORY_TURNS = 6;
 const TURN_STATUS = { PROPOSED: "proposed", ACCEPTED: "accepted", REJECTED: "rejected" };
 
 const { passagesFor } = require("./passages.service");
@@ -83,12 +84,18 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const passages = await passagesFor(db, storyDoc);
   const turns = db.collection(COLLECTIONS.storyTurns);
 
-  const prior = await turns.find({ story_id: storyDoc._id }).sort({ created_at: -1 }).limit(MAX_HISTORY_TURNS).toArray();
+  const studio = await getPolicy("studio", { db });
+  const prior = await turns.find({ story_id: storyDoc._id }).sort({ created_at: -1 }).limit(studio.edit.historyTurns).toArray();
   const history = prior.reverse().flatMap((t) => [{ role: "user", text: t.instruction }, { role: "model", text: t.summary || "" }]);
 
   const byId = new Map(passages.map((p) => [p.id, p]));
   const isVerbatim = (text, id) => byId.has(id) && composer.isVerbatim(text, byId.get(id).text);
-  const generate = traced("agent.generateContent", (req) => vertex.generateContent(req), { metadata: { storyId: String(storyDoc._id), profileId } });
+  const modelCalls = [];
+  const router = await routerFor({ db, collect: modelCalls });
+  const generate = router.bound("studio.edit");
+  const reader = await getPolicy("reader", { db });
+  /* The paper, searchable by meaning, built once per story version. */
+  const search = searcherFor({ db, router, key: { story_id: storyDoc._id, story_version: mapped.version, audience: "workspace" }, blocks: [], passages, topK: studio.edit.searchTopK, cacheDays: reader.index.cacheDays });
   const audience = storyDoc.provenance?.audience || "general";
   const startedAt = new Date();
 
@@ -99,7 +106,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
   const author = await editorial.resolveStoryAuthor(db, storyDoc.profile_id);
   const result = await agent.runStoryAgent({
     state: stateBefore, passages, instruction, history, audience, voice, scholarName: author?.name || null, generate,
-    imagesAllowed: imageGen.isConfigured(), isVerbatim,
+    imagesAllowed: imageGen.isConfigured(), isVerbatim, search, limits: studio.edit,
   });
 
   /* Check what the agent wrote, and only that: paragraphs drawn from the
@@ -239,6 +246,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction 
     agent_version: result.agentVersion,
     judge_version: fidelity.FIDELITY_VERSION,
     model_requested: vertex.resolveResourceName(),
+    models_used: [...new Set(modelCalls.filter((c) => c.ok).map((c) => c.model))],
     usage: [...result.usage, ...(judgeCall?.usage ? [judgeCall.usage] : []), ...(reachCall?.usage ? [reachCall.usage] : [])].reduce(
       (acc, u) => ({ input: acc.input + (u.input || 0), output: acc.output + (u.output || 0) }),
       { input: 0, output: 0 },

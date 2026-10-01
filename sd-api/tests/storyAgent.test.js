@@ -70,9 +70,8 @@ test("insert, delete, move, heading fields and search behave and renumber", () =
   assert.equal(hf.state.title, "New title");
   assert.equal(hf.state.subtitle, "A deck");
   assert.match(applyTool(s, { name: "set_heading_fields", args: { title: "My story" } }, c).result, /first-person/);
-  const sr = applyTool(s, { name: "search_passages", args: { query: "infrastructure failed" } }, c);
-  assert.match(sr.result, /\[p3\]/);
-  assert.match(applyTool(s, { name: "search_passages", args: { query: "quantum gravity" } }, c).result, /no passages match/);
+  /* Search is by meaning and runs in the loop, not the reducer. */
+  assert.match(applyTool(s, { name: "search_passages", args: { query: "infrastructure failed" } }, c).result, /search is not available here/);
   assert.match(applyTool(s, { name: "nonsense", args: {} }, c).result, /unknown tool/);
 });
 
@@ -114,12 +113,15 @@ test("the loop applies calls, feeds results back, stops on finish, and reports",
       return { text: "", functionCalls: fcs, parts: fcs.map((fc) => ({ functionCall: fc })), usage: { input: 1, output: 1 } };
     }
     const results = contents[contents.length - 1].parts.map((p) => p.functionResponse.response.result);
-    assert.match(results[0], /\[p2\]/);
+    assert.match(results[0], /^\[p2\] \(similarity 0\.77\)/);
     assert.match(results[1], /^ok/);
     const fc = { name: "finish", args: { summary: "Shortened block 2." } };
     return { text: "", functionCalls: [fc], parts: [{ functionCall: fc }], usage: { input: 1, output: 1 } };
   };
-  const r = await runStoryAgent({ state: s, passages, instruction: "shorten block 2", generate, isVerbatim: () => true });
+  const searched = [];
+  const search = async (q) => { searched.push(q); return [{ id: "p2", text: passages[0].text, score: 0.77 }]; };
+  const r = await runStoryAgent({ state: s, passages, instruction: "shorten block 2", generate, isVerbatim: () => true, search });
+  assert.deepEqual(searched, ["suspended allocations"], "the loop searched by meaning");
   assert.deepEqual(seen, [1, 3]);
   assert.equal(r.summary, "Shortened block 2.");
   assert.equal(r.calls.length, 3);

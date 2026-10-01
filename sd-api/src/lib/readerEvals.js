@@ -13,26 +13,22 @@
  *               A prompt that the Sentinel has to keep sending back fails here.
  *   cited       share of rows whose answer cites every block or passage the
  *               row expected. 1 when the row expects none.
- *   bandFit     readability against the reader's age: pass 1, warn 0.5, fail 0.
- *   firstTry    share of rows answered without a rewrite. Reported and
- *               thresholded low: a rewrite is a cost, not a fault.
+ *   bandFit     the Sentinel's own ruling on reading level and length for this
+ *               reader: both fit 1, one fits 0.5, neither 0.
+ *   firstTry    share of rows answered without a revision. Reported and
+ *               thresholded low: a revision is a cost, not a fault.
  *
- * Thresholds are per set, not per row.
+ * Thresholds come from the evals policy, per set, not per row.
  */
 
 const { isAudience } = require("./audiences");
-const { assessDraftReadability, VERDICT: READ } = require("./draftReadability");
+const { defaultsFor } = require("./policyDefaults");
 const agent = require("./readingAgent");
 
-const EVAL_VERSION = "reader-evals-2026.1";
+const EVAL_VERSION = "reader-evals-2026.2";
 
-const THRESHOLDS = {
-  grounding: 0.8,
-  sentinel: 0.9,
-  cited: 0.8,
-  bandFit: 0.8,
-  firstTry: 0.6,
-};
+/** The floors, as the evals policy states them. */
+const THRESHOLDS = defaultsFor("evals").reader;
 
 /** Score one row's result (the shape `companion.answerQuestion` returns). */
 function scoreTurn(result, row) {
@@ -40,16 +36,19 @@ function scoreTurn(result, row) {
   const expectGrounding = row.expect?.grounding || null;
   const expectCites = Array.isArray(row.expect?.cites) ? row.expect.cites : [];
   const cited = new Set([...(answer?.blockIds || []), ...(answer?.passageIds || [])]);
-  const readability = answer ? assessDraftReadability({ text: answer.text, audience: row.audience || "adults" }) : null;
+  const overall = result?.check?.overall || null;
+  const fits = overall ? [overall.readingLevel === "fits", overall.length === "fits"].filter(Boolean).length : 0;
   return {
     grounding: answer && expectGrounding ? (answer.grounding === expectGrounding ? 1 : 0) : answer ? 1 : 0,
     sentinel: answer ? 1 : 0,
     cited: expectCites.length ? (expectCites.every((id) => cited.has(id)) ? 1 : 0) : 1,
-    bandFit: !readability ? 0 : readability.verdict === READ.PASS ? 1 : readability.verdict === READ.WARN ? 0.5 : 0,
+    bandFit: answer ? fits / 2 : 0,
     firstTry: answer && result.attempts === 1 ? 1 : 0,
     attempts: result?.attempts || 0,
     words: answer ? answer.words || agent.wordCount(answer.text) : 0,
-    fkGrade: readability?.fkGrade ?? null,
+    readingLevel: overall?.readingLevel || null,
+    length: overall?.length || null,
+    declinedBy: result?.declinedBy || null,
     calls: (result?.calls || []).length,
     verdict: result?.check?.verdict || null,
     reasons: result?.check?.reasons || [],
