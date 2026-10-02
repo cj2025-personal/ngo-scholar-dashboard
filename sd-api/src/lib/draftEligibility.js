@@ -99,6 +99,10 @@ function classifySource(src) {
     year: finite(src.source_year ?? src.year),
     origin,
     words,
+    /* Where it came from, for the scholar to see; nothing below reads these. */
+    host: clean(src.host),
+    url: clean(src.source_url),
+    uploadedAt: src.uploadedAt || null,
   };
 
   /* An abstract is never draft material, whatever its licence says. */

@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function PapersPage() {
   const [inventory, storiesResult, profileData] = await Promise.all([
     getDraftSourcesServer(),
-    getEditorialStories("all"),
+    getEditorialStories("all", { limit: 500 }),
     getScholarProfile(),
   ]);
   const profile = profileData?.profile || {};

@@ -3074,23 +3074,6 @@ select {
 .st-row { display: flex; align-items: center; gap: 10px; }
 .sc-divider { height: 1px; background: var(--sd-line-soft); margin: 14px 0; }
 
-.pp-wrap { max-width: 1160px; margin: 0 auto; padding: 32px 24px; }
-.pp-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.pp-add { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
-.pp-tabs { display: flex; gap: 2px; margin-top: 22px; border-bottom: 1px solid var(--sd-line); }
-.pp-tab { padding: 8px 12px; font-size: var(--fs-base); font-weight: var(--weight-medium); line-height: 1.4; color: var(--sd-faint); border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-family: inherit; }
-.pp-tab.on { font-weight: var(--weight-semibold); color: var(--navy); border-bottom-color: var(--navy); }
-.pp-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; margin-top: 16px; align-items: start; }
-.pp-table-card { padding: 8px 4px 0; overflow-x: auto; }
-.pp-table { width: 100%; border-collapse: collapse; }
-.pp-table th { text-align: left; font-size: var(--fs-xs); font-weight: var(--weight-semibold); line-height: 1.4; letter-spacing: var(--tracking-table-head); color: var(--sd-faint); padding: 0 12px 10px; border-bottom: 1px solid var(--sd-line); }
-.pp-table td { padding: 14px 12px; border-bottom: 1px solid var(--sd-line-soft); vertical-align: middle; font-size: var(--fs-sm); font-weight: var(--weight-regular); line-height: 1.5; }
-.pp-table tr { cursor: pointer; } .pp-table tr.sel td { background: var(--ark-navy-soft); }
-.pp-title { font-weight: var(--weight-semibold); color: var(--sd-heading); }
-.pp-drawer { background: var(--sd-surface); border: 1px solid var(--sd-line); border-radius: var(--ark-radius-card); padding: 20px; box-shadow: var(--sd-sh-md); position: sticky; top: 88px; }
-.pp-drawer-title { font-size: var(--fs-md); font-weight: var(--weight-semibold); line-height: 1.4; letter-spacing: 0; color: var(--sd-heading); margin: 6px 0 0; }
-.pp-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-
 .nsf-wrap { max-width: 920px; margin: 0 auto; padding: 32px 24px; }
 .nsf-steps { display: flex; gap: 14px; align-items: center; list-style: none; margin: 0 0 26px; padding: 0; flex-wrap: wrap; }
 .nsf-steps li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); font-weight: var(--weight-medium); line-height: 1.4; color: var(--sd-faint); }
@@ -3233,7 +3216,6 @@ select {
   .ws-left { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--sd-line); }
   .ws-right { position: static; max-height: none; border-left: 0; border-top: 1px solid var(--sd-line); }
   .ws-center { padding: 0 16px; }
-  .pp-grid { grid-template-columns: 1fr; } .pp-drawer { position: static; }
   .st-wrap { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
@@ -5458,4 +5440,86 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 }
 @media (prefers-reduced-motion: reduce) {
   .stories-act, .stories-search { transition: none; }
+}
+
+/* ══ Papers ══════════════════════════════════════════════════════════════════
+   The inventory in the Studio's parts: the tabs and the split of uses, then a
+   real table (it is tabular data, and a table is what a screen reader should
+   meet), beside what the labels mean. On a phone every row becomes a card,
+   so nothing is cut off at the screen's edge. */
+.papers-add { align-self: flex-end; height: 38px; padding: 0 16px; border-radius: 10px; font-size: var(--fs-base); }
+.papers-card { gap: 14px; }
+.papers-split { max-width: none; height: 8px; }
+.dash-split .is-pending { background: #f3c26b; }
+.papers-split .is-draftable { background: var(--ark-navy); }
+.papers-split .is-citable { background: #8a9fcb; }
+.papers-split .is-unusable { background: #cbd5e1; }
+.papers-none { padding: 6px 0; }
+
+.pp-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); line-height: 1.4; }
+.pp-table th {
+  padding: 4px 10px 8px; border-bottom: 1px solid var(--dash-line); text-align: left; white-space: nowrap;
+  font-size: var(--fs-xs); font-weight: var(--weight-semibold); letter-spacing: 0.02em; color: var(--ark-text-faint);
+}
+.pp-table td { padding: 12px 10px; border-bottom: 1px solid var(--dash-line-soft); vertical-align: middle; color: var(--ark-text-muted); }
+.pp-table tbody tr { transition: background-color var(--dash-ease); }
+.pp-table tbody tr:not(.pp-sub):hover { background: var(--ark-card-wash); }
+.pp-table tbody tr.is-open td { border-bottom-color: transparent; }
+.pp-table .is-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pp-cell-paper { width: 40%; }
+.pp-title { display: block; font-size: var(--fs-base); font-weight: var(--weight-semibold); line-height: 1.4; color: var(--ark-navy-ink); }
+.pp-from { display: block; margin-top: 2px; font-size: var(--fs-xs); color: var(--ark-text-faint); }
+.pp-from a { display: inline-flex; align-items: center; gap: 4px; color: var(--ark-navy); text-decoration: none; }
+.pp-from a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pp-cell-use { width: 28%; }
+.pp-cell-use .dash-pill { margin-bottom: 4px; }
+.pp-reason { display: block; max-width: 34ch; font-size: var(--fs-xs); line-height: 1.45; color: var(--ark-text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-cell-stories { white-space: nowrap; }
+.pp-stories-btn {
+  display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px; margin-left: -8px;
+  border: 0; border-radius: 8px; background: none; cursor: pointer;
+  font: inherit; font-feature-settings: inherit; font-size: var(--fs-sm); font-weight: var(--weight-medium); color: var(--ark-navy);
+}
+.pp-stories-btn:hover { background: var(--ark-surface-2); }
+.pp-stories-btn:focus-visible { outline: 2px solid var(--ark-blue); outline-offset: 1px; }
+.pp-cell-act { text-align: right; white-space: nowrap; }
+.pp-locked { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--ark-text-faint); }
+.pp-sub td { padding: 0 10px 12px; background: var(--ark-card-wash); }
+.pp-sub .prof-list { padding: 10px 14px; border: 1px solid var(--dash-line-soft); border-radius: 10px; background: var(--ark-surface); }
+
+.papers-gate { border-color: var(--dash-amber-line); background: var(--dash-amber-wash); }
+.papers-gate .dash-h3 { display: flex; align-items: center; gap: 8px; color: var(--dash-amber-ink); }
+.papers-mean { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.papers-mean dt { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.papers-mean dd { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--ark-text-muted); }
+.papers-mean__note { margin: 4px 0 0; padding-top: 10px; border-top: 1px solid var(--dash-line-soft); font-size: var(--fs-xs); line-height: 1.5; }
+
+@media (max-width: 1180px) {
+  .pp-reason { max-width: 24ch; }
+}
+/* A phone: each paper is a card. The cells stack in their order, labelled by what they hold. */
+@media (max-width: 760px) {
+  .papers-add { align-self: flex-start; }
+  .pp-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); }
+  .pp-table, .pp-table tbody { display: block; }
+  .pp-table tbody tr:not(.pp-sub) {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "paper paper" "use use" "stories words" "act act";
+    gap: 8px 12px; padding: 14px 0; border-bottom: 1px solid var(--dash-line-soft);
+  }
+  .pp-table tbody tr.pp-sub { display: block; }
+  .pp-table td { display: block; padding: 0; border: 0; width: auto; }
+  .pp-cell-paper { grid-area: paper; }
+  .pp-cell-use { grid-area: use; }
+  .pp-cell-use .dash-pill { margin: 0 8px 0 0; }
+  .pp-reason { display: inline; max-width: none; white-space: normal; }
+  .pp-cell-stories { grid-area: stories; }
+  .pp-cell-words { grid-area: words; align-self: center; }
+  .pp-cell-words::after { content: " words"; color: var(--ark-text-faint); }
+  .pp-cell-act { grid-area: act; text-align: left; }
+  .pp-cell-act:empty { display: none; }
+  .pp-cell-act .dash-btn { width: 100%; height: 40px; }
+  .pp-sub td { display: block; padding: 0 0 12px; background: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pp-table tbody tr { transition: none; }
 }
