@@ -96,9 +96,8 @@ test("capture the current screens", async ({ page, context, browser }) => {
   await page.waitForLoadState("networkidle").catch(() => {});
   await shot("16-editorial-list-populated");
 
-  /* A row's actions are revealed on hover, so a still of the resting state
-     cannot show whether they are there at all. */
-  await page.locator(".el-row").first().hover();
+  /* The row under the pointer: its actions are always there; this shows the hover. */
+  await page.locator(".dash-stories .dash-tr:not(.dash-th)").first().hover();
   await page.waitForTimeout(400);
   await shot("17-editorial-row-hover");
 });

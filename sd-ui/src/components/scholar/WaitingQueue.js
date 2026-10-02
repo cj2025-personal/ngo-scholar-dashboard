@@ -56,7 +56,7 @@ const FOLDS = {
   record: { lead: (n) => `${n} papers behind your stories have changed on the record`, cta: "See them", href: "/editorial" },
   outline: { lead: (n) => `${n} outlines are waiting for your approval`, cta: "See them", href: "/editorial" },
   "job-draft": { lead: (n) => `${n} drafts are waiting for you`, cta: "See them", href: "/editorial" },
-  review: { lead: (n) => `${n} drafts are waiting for your review`, cta: "Review", href: "/editorial?tab=drafts" },
+  review: { lead: (n) => `${n} drafts are waiting for your review`, cta: "Review", href: "/editorial?tab=review" },
   levels: { lead: (n) => `${n} stories have reading levels waiting for your approval`, cta: "All stories", href: "/editorial" },
   running: { lead: (n) => `${n} drafts are being written`, cta: "Watch them", href: "/editorial" },
   episode: { lead: (n) => `${n} conversations in your name have not been released`, cta: "All conversations", href: "/podcasts" },

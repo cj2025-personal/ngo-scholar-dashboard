@@ -323,19 +323,17 @@ test("from a paper to a published story, with the agent editing by instruction",
      every draft from a given paper the same headline, so any other spec that
      drafts leaves a row this filter would also match — and "the title is gone
      from the list" then fails for a story this spec never created. */
-  const row = page.locator(".el-row").filter({ has: page.locator(`a[href="${publicPath}"]`) });
+  const row = page.locator(".dash-stories .dash-tr").filter({ has: page.locator(`a[href="${publicPath}"]`) });
   await expect(row).toBeVisible();
-  /* A row keeps Edit, View live and Delete to itself until it is pointed at,
-     so a list of twelve stories is not a list of thirty-six links. */
-  await row.hover();
-  await expect(row.getByRole("button", { name: "Delete" })).toBeVisible();
-  await row.getByRole("button", { name: "Delete" }).click();
+  /* Edit, View live and Delete are in plain sight on the row, named for it. */
+  await expect(row.getByRole("link", { name: /as readers see it/ })).toHaveAttribute("href", publicPath);
+  await row.getByRole("button", { name: "Delete story" }).click();
   /* The confirmation is a modal dialog in the top layer, so it is the page's,
      not the row's. */
   const confirm = page.getByRole("alertdialog");
   await expect(confirm).toContainText("gone for good");
   await confirm.getByRole("button", { name: "Delete" }).click();
-  await expect(page.locator(".el-row").filter({ has: page.locator(`a[href="${publicPath}"]`) })).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.locator(".dash-stories .dash-tr").filter({ has: page.locator(`a[href="${publicPath}"]`) })).toHaveCount(0, { timeout: 20_000 });
   const dead = await reader.goto(publicPath);
   expect(dead.status()).toBe(404);
   await anonymous.close();

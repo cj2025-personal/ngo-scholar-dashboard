@@ -2239,10 +2239,10 @@ select {
 /* Real-content additions: status pills, open link, static tags, quick actions */
 .sc-status { margin-left: auto; font-size: var(--fs-xs); font-weight: var(--weight-medium); line-height: 1; padding: 3px 9px; border-radius: 999px; white-space: nowrap; color: var(--sd-faint); background: var(--sd-surface-2); border: 1px solid var(--sd-line); }
 /* One status mapping everywhere: published=navy, draft=warning, scheduled=info, failed=danger */
-.sc-status.is-published, .sc-elist-pill.is-published { color: var(--ark-navy); background: var(--ark-navy-soft); }
-.sc-status.is-draft, .sc-elist-pill.is-draft { color: var(--ark-warning); background: var(--ark-warning-soft); }
-.sc-status.is-scheduled, .sc-elist-pill.is-scheduled { color: var(--ark-info-strong); background: var(--ark-info-soft); }
-.sc-status.is-failed, .sc-status.is-error, .sc-elist-pill.is-failed, .sc-elist-pill.is-error { color: var(--ark-red); background: var(--ark-danger-soft); }
+.sc-status.is-published { color: var(--ark-navy); background: var(--ark-navy-soft); }
+.sc-status.is-draft { color: var(--ark-warning); background: var(--ark-warning-soft); }
+.sc-status.is-scheduled { color: var(--ark-info-strong); background: var(--ark-info-soft); }
+.sc-status.is-failed, .sc-status.is-error { color: var(--ark-red); background: var(--ark-danger-soft); }
 .sc-status.is-published, .sc-status.is-scheduled { border-color: rgba(30, 58, 138, 0.16); }
 .sc-status.is-draft { border-color: rgba(180, 83, 9, 0.2); }
 .sc-status.is-failed, .sc-status.is-error { border-color: rgba(178, 34, 52, 0.2); }
@@ -2402,10 +2402,6 @@ select {
 /* Preview column */
 .sc-editorial .preview-shell { background: var(--sd-surface); border: 1px solid var(--sd-line); border-radius: 20px; box-shadow: var(--sd-sh-md); overflow: hidden; position: sticky; top: 92px; }
 .sc-editorial .preview-story-copy h1 { color: var(--ink); }
-
-/* Published stories overview (/editorial list) */
-.sc-editorial .published-story-card { border: 1px solid var(--sd-line); border-radius: var(--ark-radius-card); background: var(--sd-surface); box-shadow: var(--sd-sh-sm); }
-.sc-editorial .published-story-card:hover { border-color: rgba(30, 58, 138, 0.22); box-shadow: var(--sd-sh-md); }
 
 /* ============================================================
    Writing canvas — Medium/Substack style (composer only)
@@ -2613,120 +2609,6 @@ select {
 /* ============================================================
    Editorial index — Medium/Substack "your stories" list
    ============================================================ */
-/* ══ Stories ══════════════════════════════════════════════════════════════
-   One panel of rows rather than text loose on the page, on the same gutter
-   and the same card recipe as Studio. The row keeps its actions to itself
-   until it is pointed at.
-   ═══════════════════════════════════════════════════════════════════════ */
-.el-page { display: flex; flex-direction: column; gap: 16px; }
-
-.el-head h1 { font: var(--type-page-title); letter-spacing: var(--tracking-page-title); font-feature-settings: inherit; color: var(--ark-navy); }
-.el-head p { margin-top: 6px; font-size: var(--fs-base); font-weight: var(--weight-regular); line-height: 1.55; color: var(--ark-text-muted); }
-
-/* A segmented control, not underlines: the rest of the app says "here" with a
-   filled pill, and a tab row is the same statement. */
-.el-tabs { display: inline-flex; align-self: flex-start; gap: 2px; padding: 4px; border-radius: 12px; background: var(--ark-surface-2); border: 1px solid var(--ark-border-soft); max-width: 100%; overflow-x: auto; }
-.el-tab {
-  display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 0; border-radius: 9px;
-  background: transparent; font: inherit; font-size: var(--fs-base); font-weight: var(--weight-medium); line-height: 1.4; color: var(--ark-text-muted);
-  cursor: pointer; white-space: nowrap; transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
-}
-.el-tab:hover { color: var(--ark-navy); }
-.el-tab b { font-size: var(--fs-xs); font-weight: var(--weight-medium); line-height: 1; color: var(--ark-text-faint); background: rgba(255, 255, 255, 0.85); border-radius: 999px; padding: 1px 7px; transition: color 160ms ease, background 160ms ease; }
-.el-tab.on { font-weight: var(--weight-semibold); background: var(--ark-surface); color: var(--ark-navy); box-shadow: 0 1px 2px rgba(20, 33, 61, 0.06), 0 4px 10px -6px rgba(20, 33, 61, 0.2); }
-.el-tab.on b { color: var(--ark-navy); background: var(--ark-navy-soft); }
-
-.el-panel {
-  position: relative; overflow: hidden; display: flex; flex-direction: column;
-  background: var(--ark-surface); border: 1px solid var(--ark-border-soft);
-  border-radius: 18px; box-shadow: 0 7px 22px rgba(20, 33, 61, 0.05);
-}
-.el-panel::before {
-  /* Above the rows: each row is positioned, so a row's hover background
-     painted straight over this and the mark blinked out. */
-  content: ""; position: absolute; z-index: 1; top: 0; left: 0; width: 48px; height: 4px;
-  background: linear-gradient(90deg, var(--ark-navy) 0 50%, var(--ark-red) 50% 100%);
-}
-
-.el-row {
-  position: relative; display: flex; gap: 22px; align-items: flex-start; padding: 20px 24px;
-  border-bottom: 1px solid var(--ark-border-soft); transition: background 160ms ease;
-}
-.el-row:first-child { padding-top: 24px; }
-.el-row:last-child { border-bottom: 0; }
-.el-row:hover { background: var(--ark-surface-2); }
-.el-row__main { flex: 1; min-width: 0; }
-.el-row__meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font-size: var(--fs-xs); font-weight: var(--weight-regular); line-height: 1.5; color: var(--ark-text-faint); }
-/* The status chip. Its colours live with .sc-status further up — this is the
-   shape, which went missing when the old list block was replaced and left the
-   status rendering as loose small text. */
-.sc-elist-pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: var(--fs-xs); font-weight: var(--weight-medium); line-height: 1; }
-.el-row__title {
-  display: block; margin-top: 7px; font-size: var(--fs-md); font-weight: var(--weight-semibold); line-height: 1.4;
-  color: var(--ark-text); transition: color 160ms ease;
-}
-.el-row:hover .el-row__title { color: var(--ark-navy); }
-.el-row__excerpt {
-  margin-top: 6px; font-size: var(--fs-base); font-weight: var(--weight-regular); line-height: 1.55; color: var(--ark-text-muted); max-width: 78ch;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-
-/* What decides whether this story needs the scholar. */
-.el-row__signals { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 10px; }
-.el-sig {
-  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
-  font-size: var(--fs-xs); font-weight: var(--weight-medium); line-height: 1; background: var(--ark-surface-2); color: var(--ark-text-muted);
-  border: 1px solid var(--ark-border-soft);
-}
-.el-row:hover .el-sig:not(.is-quiet) { background: var(--ark-surface); }
-.el-sig.is-grave { background: var(--ark-danger-soft); color: var(--ark-red); border-color: transparent; }
-.el-sig.is-warn { background: var(--ark-warning-soft); color: var(--ark-warning); border-color: transparent; }
-.el-sig.is-quiet { background: transparent; border-color: transparent; color: var(--ark-text-faint); font-weight: var(--weight-medium); padding-inline: 0; }
-
-.el-row__thumb { flex: 0 0 116px; width: 116px; height: 84px; border-radius: 12px; overflow: hidden; background: var(--ark-surface-2); border: 1px solid var(--ark-border-soft); }
-.el-row__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-/* Quiet until the row is pointed at. Opacity rather than display, so the
-   links keep their place in the tab order and `focus-within` brings them
-   back for a keyboard. */
-.el-row__actions {
-  position: absolute; top: 16px; right: 24px; display: flex; align-items: center; gap: 4px;
-  padding: 4px; border-radius: 10px; background: var(--ark-surface);
-  border: 1px solid var(--ark-border-soft); box-shadow: 0 6px 18px -10px rgba(20, 33, 61, 0.35);
-  opacity: 0; transform: translateY(-2px); transition: opacity 160ms ease, transform 160ms ease;
-  pointer-events: none;
-}
-.el-row:hover .el-row__actions, .el-row:focus-within .el-row__actions { opacity: 1; transform: none; pointer-events: auto; }
-@media (hover: none) { .el-row__actions { position: static; opacity: 1; transform: none; pointer-events: auto; box-shadow: none; border: 0; padding: 0; margin-top: 12px; } }
-.el-act {
-  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px;
-  font-size: var(--fs-sm); font-weight: var(--weight-medium); line-height: 1; color: var(--ark-text-muted); transition: background 140ms ease, color 140ms ease;
-}
-.el-act:hover { background: var(--ark-surface-2); color: var(--ark-navy); }
-
-.el-empty { padding: 56px 24px 60px; text-align: center; }
-.el-empty h3 { font-size: var(--fs-md); font-weight: var(--weight-semibold); line-height: 1.4; color: var(--ark-text); }
-.el-empty p { margin: 8px auto 0; max-width: 46ch; font-size: var(--fs-base); font-weight: var(--weight-regular); line-height: 1.55; color: var(--ark-text-muted); }
-.el-empty__cta {
-  display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; height: 40px; padding: 0 18px;
-  border: 1px solid var(--ark-border); border-radius: 11px; background: var(--ark-surface);
-  font-size: var(--fs-base); font-weight: var(--weight-medium); line-height: 1; color: var(--ark-navy);
-  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
-}
-.el-empty__cta:hover { border-color: var(--ark-navy); background: var(--ark-navy-soft); transform: translateY(-1px); }
-
-@media (max-width: 700px) {
-  .el-row { flex-direction: column; gap: 12px; padding: 18px 16px; }
-  .el-row__thumb { width: 100%; height: 150px; flex: 0 0 auto; }
-}
-
-.sc-elist-empty { text-align: center; padding: 64px 20px; }
-.sc-elist-empty h3 { font-size: var(--fs-md); font-weight: var(--weight-semibold); line-height: 1.4; color: var(--ink); }
-.sc-elist-empty p { margin: 8px auto 0; max-width: 42ch; font-size: var(--fs-base); font-weight: var(--weight-regular); line-height: 1.55; color: var(--sd-muted); }
-.sc-elist-empty .sc-elist-new { margin-top: 18px; }
-
-@media (max-width: 560px) { .sc-elist-thumb { display: none; } }
-
 /* ── Claim (invitation redemption) ──────────────────────────────────────────
  *
  * `.auth-card` is a two-column grid built for the login page's copy/form
@@ -3812,7 +3694,6 @@ select {
     to { opacity: 1; transform: none; }
   }
 }
-.sc-elist-actions .del-btn { margin-left: 4px; }
 .st-story-actions { display: flex; align-items: center; gap: 10px; }
 
 /* The page is a fixed-height column: the thread scrolls, the dock does not.
@@ -5113,7 +4994,7 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .dash-stories { gap: 8px; }
 .dash-table { display: flex; flex-direction: column; font-size: var(--fs-sm); line-height: 1.4; }
 .dash-tr {
-  display: grid; grid-template-columns: minmax(0, 1fr) 92px 118px 70px 88px 64px 28px; gap: 12px; align-items: center;
+  display: grid; grid-template-columns: minmax(0, 1fr) 120px 108px 70px 80px 70px 28px; gap: 12px; align-items: center;
   padding: 9px 8px; border-bottom: 1px solid var(--dash-line-soft); border-radius: 8px;
   transition: background-color var(--dash-ease);
 }
@@ -5188,7 +5069,7 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 /* ── Narrower ─────────────────────────────────────────────────────────────── */
 @media (max-width: 1180px) {
   .dash-tonebar { width: 72px; }
-  .dash-tr { grid-template-columns: minmax(0, 1fr) 92px 110px 64px 64px 28px; }
+  .dash-tr { grid-template-columns: minmax(0, 1fr) 120px 104px 64px 70px 28px; }
   .dash-tr > :nth-child(5) { display: none; }
 }
 @media (max-width: 1040px) {
@@ -5500,4 +5381,81 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 @media (prefers-reduced-motion: reduce) {
   .pod-ep__art, .pod-player__btn { transition: none; }
   .pod-ep__art:hover { transform: none; }
+}
+
+/* ══ Stories ═════════════════════════════════════════════════════════════════
+   The Studio's stories table at full length: every story, searchable and
+   sortable, with a cover and its actions in view. The table itself is the
+   Studio's (.dash-table); these are what the full page adds to it. */
+.stories-sum { display: flex; gap: 28px; margin: 0; align-self: flex-end; }
+.stories-sum div { display: flex; flex-direction: column; gap: 2px; }
+.stories-sum dt {
+  font-size: var(--fs-xs); font-weight: var(--weight-semibold); line-height: 1.3; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ark-text-faint);
+}
+.stories-sum dd { margin: 0; display: flex; align-items: baseline; gap: 8px; font: var(--type-metric-sm); font-feature-settings: inherit; font-variant-numeric: tabular-nums; color: var(--ark-navy-ink); }
+.stories-sum small { font-size: var(--fs-xs); font-weight: var(--weight-medium); color: var(--dash-amber-ink); }
+
+.dash-td-story__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.dash-td-status { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.dash-pill.is-grave { background: #fde8eb; color: var(--ark-red); }
+
+.dash-stories.is-full { gap: 12px; }
+.dash-stories.is-full .dash-card__head { align-items: center; }
+.dash-stories.is-full .dash-tr { grid-template-columns: minmax(0, 1fr) 126px 150px 124px 132px 100px 108px; padding: 10px 8px; }
+.dash-stories.is-full .dash-th { padding-top: 4px; padding-bottom: 8px; }
+.dash-stories.is-full .dash-td-story { flex-direction: row; align-items: center; gap: 12px; }
+.dash-stories.is-full .dash-story-title { font-size: var(--fs-base); }
+.stories-thumb {
+  display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; overflow: hidden; box-sizing: border-box;
+  border: 1px solid var(--dash-line); border-radius: 10px; background: var(--ark-surface-2); color: var(--ark-text-faint);
+}
+.stories-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.dash-stories.is-full .dash-reads { flex-wrap: wrap; }
+.dash-stories.is-full .dash-reads .dash-faint { flex-basis: 100%; font-size: var(--fs-xs); }
+.dash-stories.is-full .dash-td-act { display: flex; align-items: center; gap: 2px; justify-self: end; }
+.stories-act {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; color: var(--ark-text-faint);
+  transition: background-color var(--dash-ease), color var(--dash-ease);
+}
+.stories-act:hover { background: var(--ark-surface-2); color: var(--ark-navy); }
+.stories-act:focus-visible { outline: 2px solid var(--ark-blue); outline-offset: 1px; }
+.stories-act.is-none { visibility: hidden; }
+.dash-stories.is-full .dash-td-act .del-btn { width: 32px; height: 32px; }
+
+.stories-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stories-search {
+  display: flex; align-items: center; gap: 8px; height: 36px; min-width: 260px; padding: 0 12px; box-sizing: border-box;
+  border: 1px solid var(--ark-border); border-radius: 10px; background: var(--ark-surface); color: var(--ark-text-faint);
+  transition: border-color var(--dash-ease), box-shadow var(--dash-ease);
+}
+.stories-search:focus-within { border-color: rgba(30, 58, 138, 0.4); box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.1); }
+.stories-search input {
+  flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent;
+  font: inherit; font-feature-settings: inherit; font-size: var(--fs-sm); color: var(--ark-text);
+}
+.stories-sort { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--ark-text-faint); }
+.stories-sort select {
+  height: 36px; padding: 0 10px; border: 1px solid var(--ark-border); border-radius: 10px; background: var(--ark-surface);
+  font: inherit; font-feature-settings: inherit; font-size: var(--fs-sm); color: var(--ark-text); cursor: pointer;
+}
+.stories-sort select:focus-visible { outline: 2px solid var(--ark-blue); outline-offset: 1px; }
+.stories-none { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 16px; border: 1px dashed #c9d4e7; border-radius: 12px; background: var(--ark-card-wash); }
+.stories-foot { margin-top: 2px; }
+.stories-empty { gap: 8px; padding: 24px; }
+.stories-empty .dash-muted { max-width: 64ch; font-size: var(--fs-base); line-height: 1.6; color: var(--ark-text-muted); }
+
+@media (max-width: 1180px) {
+  .dash-stories.is-full .dash-tr { grid-template-columns: minmax(0, 1fr) 120px 140px 110px 96px 108px; }
+}
+@media (max-width: 760px) {
+  .stories-sum { gap: 20px; align-self: flex-start; }
+  .stories-tools, .stories-search { width: 100%; min-width: 0; }
+  .stories-search { flex: 1 1 auto; }
+  .dash-stories.is-full .dash-tr { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+  .dash-stories .dash-tr > :nth-child(6) { white-space: nowrap; }
+  .dash-stories.is-full .dash-td-story .stories-thumb { flex-basis: 40px; width: 40px; height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stories-act, .stories-search { transition: none; }
 }

@@ -6,7 +6,7 @@ import WriteWithKivyn from "@/components/kivyn/WriteWithKivyn";
 import StoriesTable from "@/components/scholar/StoriesTable";
 import Tile from "@/components/scholar/Tile";
 import WaitingQueue, { QueueClear } from "@/components/scholar/WaitingQueue";
-import { DRAFT_AUDIENCES } from "@/lib/drafting";
+import { buildStoryRows } from "@/lib/storyRows";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
@@ -83,7 +83,6 @@ function shortTitle(title, max = 70) {
 }
 
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
-const audienceLabel = (value) => DRAFT_AUDIENCES.find((a) => a.value === value)?.label || null;
 
 /* ── What needs the scholar ────────────────────────────────────────────────
    Built in any order; ranked by tone. Each row is one thing with its way out. */
@@ -401,27 +400,12 @@ export default function StudioHome({ me, sources, jobs, stories, episodes, reads
     { key: "papers", label: "Papers ready", count: counts.draftable || 0, href: "/papers", hint: "to draft from" },
     { key: "outline", label: "Outlines to approve", count: outlines.length, href: outlines.length === 1 ? `/editorial/new?job=${outlines[0].id}` : "/editorial", hint: outlines.length ? "waiting on you" : "none waiting", action: true },
     { key: "writing", label: "Being written", count: writing.length, href: writing.length === 1 ? `/editorial/new?job=${writing[0].id}` : "/editorial", hint: writing.length ? `${AGENT_NAME} is drafting` : "nothing drafting" },
-    { key: "review", label: "In review", count: inReview.length + draftsWaiting.length, href: "/editorial?tab=drafts", hint: inReview.length + draftsWaiting.length ? "waiting on you" : "none waiting", action: true },
-    { key: "published", label: "Published", count: published.length + scheduled.length, href: "/editorial", hint: scheduled.length ? `${scheduled.length} scheduled` : "live for readers" },
+    { key: "review", label: "In review", count: inReview.length + draftsWaiting.length, href: "/editorial?tab=review", hint: inReview.length + draftsWaiting.length ? "waiting on you" : "none waiting", action: true },
+    /* Published means published, here as on the tile: what is scheduled is said beside it, not counted in it. */
+    { key: "published", label: "Published", count: published.length, href: "/editorial?tab=published", hint: scheduled.length ? `+ ${scheduled.length} scheduled` : "live for readers" },
   ];
 
-  const rows = all.map((s) => {
-    const group = s.status === "published" || s.status === "scheduled" ? "published" : s.provenance ? "review" : "draft";
-    return {
-      id: s.id,
-      href: `/editorial/${s.id}`,
-      title: s.title || "Untitled story",
-      from: s.provenance?.title ? shortTitle(s.provenance.title, 60) : null,
-      group,
-      statusLabel: s.status === "published" ? "Published" : s.status === "scheduled" ? "Scheduled" : s.provenance ? "In review" : "Draft",
-      audience: audienceLabel(s.provenance?.audience),
-      levelsWritten: s.levels?.written || 0,
-      levelsWaiting: s.levels?.waiting || 0,
-      reads: s.reads || null,
-      questions: s.questions?.total ? s.questions : null,
-      updated: s.status === "published" ? formatDate(s.publishedAt || s.updatedAt) : s.status === "scheduled" ? `For ${formatDate(s.scheduledFor)}` : timeAgo(s.updatedAt),
-    };
-  });
+  const rows = buildStoryRows(all);
 
   return (
     <div className="dash">
