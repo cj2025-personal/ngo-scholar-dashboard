@@ -385,7 +385,11 @@ export default function StudioHome({ me, sources, jobs, stories, episodes, reads
   const draftsWaiting = (jobs || []).filter((j) => j.status === "awaiting_review" && !j.storyId);
   const readsTotal = all.reduce((sum, s) => sum + (s.reads?.total || 0), 0);
   const readsRecent = all.reduce((sum, s) => sum + (s.reads?.recent || 0), 0);
-  const firstVisit = all.length === 0 && (jobs || []).length === 0;
+  /* First visit: nothing written and nothing waiting. A scholar with no stories
+     can still have something that needs them, a conversation in their name not
+     yet released above all, and the first-visit layout has no queue to show it
+     in; so any obligation (grave or warn) means the full Studio. */
+  const firstVisit = all.length === 0 && (jobs || []).length === 0 && !todos.some((t) => t.tone === "grave" || t.tone === "warn");
 
   /* What needs you, by tone, for the tile's bar; and in words, by kind. */
   const byTone = ["grave", "warn", "info", "faint"].map((tone) => ({ tone, n: todos.filter((t) => t.tone === tone).length })).filter((x) => x.n);
