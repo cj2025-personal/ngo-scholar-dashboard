@@ -234,11 +234,33 @@ function buildPlainTextContentFromBlocks(blocks) {
     .trim();
 }
 
+const EXCERPT_LENGTH = 180;
+
+/** At most `max` characters, ended at a word with an ellipsis when anything was cut. */
+function clipAtWord(text, max = EXCERPT_LENGTH) {
+  if (text.length <= max) return text;
+  const head = text.slice(0, max + 1);
+  const space = head.lastIndexOf(" ");
+  const cut = space > max * 0.6 ? head.slice(0, space) : text.slice(0, max);
+  return `${cut.replace(/[\s,;:.\-–—]+$/, "")}…`;
+}
+
+/**
+ * A story's excerpt: the author's own, or the opening of the body.
+ *
+ * The opening used to be its first 180 characters, cut wherever they fell, so
+ * list after list ended mid-word ("a great dea"). It now ends at a word with
+ * an ellipsis. Excerpts stored by the old rule are exactly 180 characters
+ * and end without punctuation; they are recognised and ended properly on
+ * read, so every story is fixed without a migration. An author's own excerpt
+ * is otherwise kept as written.
+ */
 function buildExcerpt(excerpt, content) {
   const cleanedExcerpt = normalizeString(excerpt);
 
   if (cleanedExcerpt) {
-    return cleanedExcerpt;
+    const cutByOldRule = cleanedExcerpt.length === EXCERPT_LENGTH && !/[.!?…"”'’)\]]$/.test(cleanedExcerpt);
+    return cutByOldRule ? clipAtWord(cleanedExcerpt, EXCERPT_LENGTH - 1) : cleanedExcerpt;
   }
 
   const body = normalizeString(content).replace(/\s+/g, " ");
@@ -247,7 +269,7 @@ function buildExcerpt(excerpt, content) {
     return "";
   }
 
-  return body.slice(0, 180);
+  return clipAtWord(body);
 }
 
 function slugify(value) {
@@ -1528,7 +1550,12 @@ async function storyReadsTimeline({ scholarId, profileId, days = 30 }) {
   };
 }
 
-async function listEditorialStories({ scholarId, profileId, status = "all" }) {
+/* How many stories a list may ask for: the Studio wants a handful, the Stories page all of them. */
+const LIST_LIMIT_DEFAULT = 50;
+const LIST_LIMIT_MAX = 500;
+
+async function listEditorialStories({ scholarId, profileId, status = "all", limit = LIST_LIMIT_DEFAULT }) {
+  const take = Math.max(1, Math.min(LIST_LIMIT_MAX, Math.floor(Number(limit) || LIST_LIMIT_DEFAULT)));
   const db = await getDb();
   /* `$and`, not a spread.
      Ownership is expressed as `$or`, and so is the `published` status filter -
@@ -1542,7 +1569,7 @@ async function listEditorialStories({ scholarId, profileId, status = "all" }) {
   const stories = await getStoryCollection(db)
     .find(buildStoryListQuery({ scholarId, profileId, status }))
     .sort({ updatedAt: -1, createdAt: -1 })
-    .limit(50)
+    .limit(take)
     .toArray();
 
   /* What came of the work, carried on the same read as the work itself. Only
@@ -2211,6 +2238,7 @@ async function createStoryFromDraft({ job, draft }) {
 }
 
 module.exports = {
+  buildExcerpt,
   /* Exported for the ownership-scope tests: the composition below is what
      leaked one scholar's stories to another. */
   buildScholarStoryFilters,

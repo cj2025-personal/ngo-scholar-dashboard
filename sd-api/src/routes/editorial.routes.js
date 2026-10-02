@@ -78,6 +78,7 @@ router.get(
       scholarId: req.auth.user.scholar_id,
       profileId: req.auth.user.profile_id,
       status: req.query.status || "all",
+      limit: req.query.limit,
     });
 
     res.status(200).json(result);

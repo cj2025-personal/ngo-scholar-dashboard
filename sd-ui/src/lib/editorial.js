@@ -40,11 +40,12 @@ async function fetchEditorial(path) {
   }
 }
 
-export async function getEditorialStories(status = "all") {
-  const suffix =
-    status && status !== "all"
-      ? `/api/editorial-stories?status=${encodeURIComponent(status)}`
-      : "/api/editorial-stories";
+/** The scholar's stories, newest first. `limit` is how many (the API's default is 50, its ceiling 500). */
+export async function getEditorialStories(status = "all", { limit } = {}) {
+  const query = new URLSearchParams();
+  if (status && status !== "all") query.set("status", status);
+  if (limit) query.set("limit", String(limit));
+  const suffix = `/api/editorial-stories${query.size ? `?${query}` : ""}`;
 
   return (await fetchEditorial(suffix)) || { stories: [] };
 }
