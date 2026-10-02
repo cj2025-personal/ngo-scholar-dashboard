@@ -56,15 +56,20 @@ import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
 
-/* Five areas, in the order a scholar meets them: what needs me, what we hold
-   of my work, what I have written, what has been recorded, who I am. "What
-   this platform already says about me" (/content) is reached from Studio and
-   Profile rather than the bar, so the bar stays about the work. */
+/* Four areas, in the order a scholar meets them: what needs me, what we hold
+   of my work, what I have written, what has been recorded. Who I am is the
+   account menu's: the avatar is already the scholar, and a pill saying so
+   beside it was the same thing twice. "What this platform already says about
+   me" (/content) is reached from the Profile, so the bar stays about the work. */
 const NAV = [
   { label: "Studio", href: "/", icon: HiOutlineHome, hint: "What needs you today" },
   { label: "Papers", href: "/papers", icon: HiOutlineDocumentText, hint: "The work we hold of yours" },
   { label: "Stories", href: "/editorial", icon: HiOutlineBookOpen, hint: "What you have written" },
   { label: "Podcasts", href: "/podcasts", icon: HiOutlineMicrophone, hint: "What has been recorded" },
+];
+
+/* Places search can take you that the bar's pills do not show. */
+const ELSEWHERE = [
   { label: "Profile", href: "/profile", icon: HiOutlineUser, hint: "Who you are here" },
 ];
 
@@ -106,7 +111,7 @@ function SearchOpen({ onClose }) {
   const [cursor, setCursor] = useState(0);
 
   const results = useMemo(() => {
-    const all = [...NAV, ...ACTIONS];
+    const all = [...NAV, ...ELSEWHERE, ...ACTIONS];
     const q = query.trim().toLowerCase();
     if (!q) return all;
     return all.filter((r) => `${r.label} ${r.hint}`.toLowerCase().includes(q));
@@ -181,7 +186,8 @@ function SearchOpen({ onClose }) {
   );
 }
 
-function AccountMenu({ me }) {
+/* The scholar: their profile and the way out. On the Profile itself the avatar is the place you are, so it says so. */
+function AccountMenu({ me, active = false }) {
   const router = useRouter();
   const ref = useRef(null);
   const [open, setOpen] = useState(false);
@@ -204,7 +210,7 @@ function AccountMenu({ me }) {
     <div className="nb-acct" ref={ref}>
       <button
         type="button"
-        className="nb-avatar"
+        className={active ? "nb-avatar is-active" : "nb-avatar"}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account menu"
@@ -219,7 +225,7 @@ function AccountMenu({ me }) {
             {me.institution ? <span>{me.institution}</span> : null}
           </div>
           <div className="nb-menu__rule" />
-          <Link href="/profile" className="nb-menu__item" role="menuitem" onClick={close}>Profile</Link>
+          <Link href="/profile" className="nb-menu__item" role="menuitem" aria-current={active ? "page" : undefined} onClick={close}>Profile</Link>
           <div className="nb-menu__rule" />
           <button
             type="button"
@@ -312,7 +318,7 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
           </button>
           {/* Only where a page asks for it: see `write` above. */}
           {write ? <WriteWithKivyn /> : null}
-          <AccountMenu me={me} />
+          <AccountMenu me={me} active={activeHref === "/profile"} />
         </div>
       </div>
     </header>

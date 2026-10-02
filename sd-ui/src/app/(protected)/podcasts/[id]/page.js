@@ -2,9 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { HiOutlineArrowLeft } from "react-icons/hi2";
 
+import EpisodeArt from "@/components/podcasts/EpisodeArt";
+import { EPISODE_STATE, VoiceMeter } from "@/components/podcasts/EpisodeCard";
+import EpisodePlayer from "@/components/podcasts/EpisodePlayer";
 import Topbar from "@/components/scholar/Topbar";
 import { getDashboardData } from "@/lib/dashboard";
-import { getScholarEpisode, runtime } from "@/lib/podcasts";
+import { getScholarEpisode } from "@/lib/podcasts";
 
 export const dynamic = "force-dynamic";
 
@@ -45,19 +48,30 @@ export default async function EpisodePage({ params }) {
           <HiOutlineArrowLeft size={12} aria-hidden /> All conversations
         </Link>
 
+        {/* The same cover, player and voice meter as the list, so the page you
+            open is plainly the episode you clicked. */}
         <header className="pod-read__head">
-          <span className="sc-kicker">
-            {episode.with?.name ? `With ${episode.with.name}` : "Conversation"}
-            {episode.with?.field ? ` · ${episode.with.field}` : ""}
-          </span>
-          <h1>{episode.title}</h1>
-          {episode.summary ? <p className="pod-read__summary">{episode.summary}</p> : null}
+          <EpisodeArt id={episode.id} withName={episode.with?.name} meName={episode.me?.name} size={104} />
+          <div className="pod-read__id">
+            <div className="pod-ep__top">
+              <span className="pod-ep__with">
+                {episode.with?.name ? `With ${episode.with.name}` : "Conversation"}
+                {episode.with?.field ? ` · ${episode.with.field}` : ""}
+              </span>
+              <span className={(EPISODE_STATE[episode.state] || EPISODE_STATE.making).pill}>{(EPISODE_STATE[episode.state] || EPISODE_STATE.making).label}</span>
+            </div>
+            <h1>{episode.title}</h1>
+            {episode.summary ? <p className="pod-read__summary">{episode.summary}</p> : null}
+          </div>
+        </header>
 
-          <p className="pod-read__counts">
-            <b>{episode.voice.myTurns}</b> of {episode.voice.turns} turns are spoken as you
-            {episode.voice.myQuotes ? `, drawn from ${episode.voice.myQuotes} of your passages` : ""}.
-            {episode.state === "live" ? " This episode is published." : " It has not been released."}
-          </p>
+        <div className="pod-read__meta">
+          <VoiceMeter voice={episode.voice} />
+          {episode.audio ? (
+            <EpisodePlayer src={episode.audio.url} title={episode.title} durationSeconds={episode.audio.durationSeconds} isDraft={episode.audio.isDraft} size="lg" />
+          ) : (
+            <span className="pod-ep__noaudio">No audio yet. The transcript below is the episode as written.</span>
+          )}
 
           {bare > 0 ? (
             <p className="pod-read__flag">
@@ -65,19 +79,7 @@ export default async function EpisodePage({ params }) {
               {bare === 1 ? " it" : " them"}. {bare === 1 ? "It is" : "They are"} marked below.
             </p>
           ) : null}
-
-          {episode.audio ? (
-            <div className="pod-read__audio">
-              {episode.audio.isDraft ? (
-                <span className="pod-card__draft">Machine reading, not yet approved</span>
-              ) : null}
-              <audio controls preload="none" src={episode.audio.url}>
-                <a href={episode.audio.url}>Download the audio</a>
-              </audio>
-              {episode.audio.durationSeconds ? <span className="pod-card__len">{runtime(episode.audio.durationSeconds)}</span> : null}
-            </div>
-          ) : null}
-        </header>
+        </div>
 
         {episode.openingNote ? <p className="pod-read__note">{episode.openingNote}</p> : null}
 

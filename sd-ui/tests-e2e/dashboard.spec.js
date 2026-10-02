@@ -185,6 +185,21 @@ test("the bar's logo is the vector lockup, and it draws", async ({ page }) => {
   expect(nav.x - (box.x + box.width)).toBeGreaterThanOrEqual(32);
 });
 
+test("the bar's places are the work; who you are is the account menu", async ({ page }) => {
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Sections" });
+  await expect(nav.getByRole("link")).toHaveText(["Studio", "Papers", "Stories", "Podcasts"]);
+  await expect(nav.getByRole("link", { name: "Profile" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: "Profile" }).click();
+  await expect(page).toHaveURL(/\/profile$/);
+  /* On the Profile, the avatar is the place you are. */
+  await expect(page.getByRole("button", { name: "Account menu" })).toHaveClass(/is-active/);
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await expect(page.getByRole("menuitem", { name: "Profile" })).toHaveAttribute("aria-current", "page");
+});
+
 test("the search opens below the bar, never over its places", async ({ page }) => {
   for (const [width, height] of [[1366, 607], [390, 844]]) {
     await page.setViewportSize({ width, height });

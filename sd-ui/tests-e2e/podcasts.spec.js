@@ -197,13 +197,20 @@ test("the podcast page separates released from not, and the transcript marks the
   await page.goto("/podcasts");
   await page.waitForLoadState("networkidle");
   await expect(page.getByRole("heading", { name: "Not yet released" })).toBeVisible();
-  await expect(page.locator(".pod-card")).toHaveCount(2);
-  await expect(page.locator(".pod-card.is-pending")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "Released", exact: true })).toBeVisible();
+  await expect(page.locator(".pod-ep")).toHaveCount(2);
+  await expect(page.locator(".pod-ep.is-pending")).toHaveCount(1);
+  /* The tiles count what the list shows. */
+  const tile = (label) => page.locator(".pods-kpis .dash-tile").filter({ has: page.locator(".dash-tile__label").getByText(label, { exact: true }) }).locator(".dash-tile__value");
+  await expect(tile("Not yet released")).toHaveText("1");
+  await expect(tile("Released")).toHaveText("1");
   /* A turn in their name with nothing behind it is the reason the page exists,
      so it is stated on the card and not only in the transcript. */
-  await expect(page.locator(".pod-card__grounding.is-warn").first()).toContainText("cite nothing");
+  await expect(page.locator(".pod-ep.is-pending .pod-voice.is-warn")).toContainText("cite nothing");
+  /* Unreleased, reading comes first. */
+  await expect(page.locator(".pod-ep.is-pending").getByRole("link", { name: "Read the transcript" })).toHaveClass(/is-primary/);
 
-  await page.locator(".pod-card.is-pending .pod-card__title a").click();
+  await page.locator(".pod-ep.is-pending .pod-ep__title a").click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Institutions and the public record");
   await expect(page.locator(".pod-turn.is-mine")).toHaveCount(2);
   await expect(page.locator(".pod-turn.is-unsourced")).toHaveCount(1);
@@ -212,6 +219,31 @@ test("the podcast page separates released from not, and the transcript marks the
   /* Their own words are readable behind a turn that cited them. */
   await page.locator(".pod-turn.is-mine .pod-turn__ev summary").first().click();
   await expect(page.locator(".pod-turn__ev q").first()).toContainText("eleven institutions");
+});
+
+test("an episode with audio plays where it is listed, one at a time, and says when the reading is unapproved", async ({ page }) => {
+  /* A one-second silent WAV, as a data URL, so the test needs no network. */
+  const rate = 8000;
+  const wavBytes = Buffer.alloc(44 + rate);
+  wavBytes.write("RIFF", 0); wavBytes.writeUInt32LE(36 + rate, 4); wavBytes.write("WAVE", 8); wavBytes.write("fmt ", 12);
+  wavBytes.writeUInt32LE(16, 16); wavBytes.writeUInt16LE(1, 20); wavBytes.writeUInt16LE(1, 22); wavBytes.writeUInt32LE(rate, 24);
+  wavBytes.writeUInt32LE(rate, 28); wavBytes.writeUInt16LE(1, 32); wavBytes.writeUInt16LE(8, 34); wavBytes.write("data", 36); wavBytes.writeUInt32LE(rate, 40);
+  wavBytes.fill(128, 44);
+  const wav = "data:audio/wav;base64," + wavBytes.toString("base64");
+  const voiced = (over) => ({ ...job(over), voice_draft: { status: "draft", asset: { url: wav, duration_seconds: 1 } } });
+  await seed([voiced({ status: "review", title: "First voiced" }), voiced({ status: "published", title: "Second voiced" })]);
+
+  await page.goto("/podcasts");
+  const first = page.locator(".pod-ep", { hasText: "First voiced" });
+  const second = page.locator(".pod-ep", { hasText: "Second voiced" });
+  await expect(first.locator(".pod-player__draft")).toHaveText("Machine reading, not yet approved");
+  await expect(first.locator(".pod-player__time")).toContainText("0:01");
+
+  await first.getByRole("button", { name: "Play First voiced" }).click();
+  await expect(first.getByRole("button", { name: "Pause First voiced" })).toBeVisible();
+  /* Starting the second pauses the first: one voice at a time. */
+  await second.getByRole("button", { name: "Play Second voiced" }).click();
+  await expect(first.getByRole("button", { name: "Play First voiced" })).toBeVisible();
 });
 
 test("an unreleased conversation is a grave row in the Studio queue", async ({ page }) => {
