@@ -2130,7 +2130,8 @@ select {
   .nb-nav { grid-area: nav; justify-self: stretch; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .nb-nav::-webkit-scrollbar { display: none; }
   .nb-nav__link span { display: inline; }
-  .nb-nav__link { padding: 0 12px; }
+  .nb-nav__link svg { display: none; }
+  .nb-nav__link { flex: 1 1 0; justify-content: center; padding: 0 6px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .nb-search__pop, .nb-menu { animation: none; }
@@ -4872,6 +4873,12 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .dash .st-fold__items .st-todo.dash-row.is-child .st-todo-lead { font-size: var(--fs-sm); }
 
 .dash .st-more.dash-more { margin-top: auto; padding: 10px 0 0; border-top: 1px solid var(--dash-line-soft); }
+/* The end of a queue that fits in the card, at the card's foot. */
+.dash-queue__end {
+  display: flex; align-items: center; gap: 6px; margin: auto 0 0; padding-top: 10px; border-top: 1px solid var(--dash-line-soft);
+  font-size: var(--fs-xs); line-height: 1.4; color: var(--ark-text-faint);
+}
+.dash-queue__end svg { flex: 0 0 auto; color: var(--ark-success); }
 
 /* Nothing waiting. Quiet: the state of the desk, not an achievement. */
 .dash-clear {
@@ -5079,9 +5086,19 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
   .dash-card__head .dash-chips::-webkit-scrollbar { display: none; }
   .dash .st-todo.dash-row { flex-wrap: wrap; align-items: flex-start; row-gap: 8px; }
   .dash-row .st-todo-lead { white-space: normal; }
-  .dash-row__actions { flex: 1 0 100%; margin-left: 46px; justify-content: flex-start; flex-wrap: wrap; }
-  .dash-stages { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(148px, 1fr); overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; scrollbar-width: thin; }
-  .dash-stage { scroll-snap-align: start; }
+  .dash-row__actions { flex: 1 0 100%; margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
+  .dash-row__actions > .dash-btn { flex: 1 1 auto; height: 38px; }
+  /* A card's title keeps its line; its chips take the next one, scrolling if they must. */
+  .dash-card__title { flex-wrap: wrap; row-gap: 8px; }
+  .dash-card__title .dash-h2 { white-space: nowrap; }
+  .dash-card__title > .dash-chips { flex: 1 1 100%; min-width: 0; }
+  .dash-stages { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .dash-stage + .dash-stage::before { display: none; }
+  .dash-stage__link { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label count" "bar bar"; gap: 6px 10px; padding: 10px 12px; }
+  .dash-stage__label { grid-area: label; align-self: center; }
+  .dash-stage__count { grid-area: count; font-size: var(--fs-md); line-height: 1.2; }
+  .dash-stage__bar { grid-area: bar; }
+  .dash-stage__hint { display: none; }
   .dash-th { display: none; }
   .dash-tr { grid-template-columns: auto auto minmax(0, 1fr) 28px; gap: 6px 10px; padding: 10px 4px; }
   .dash-tr > :nth-child(1) { grid-column: 1 / -1; }

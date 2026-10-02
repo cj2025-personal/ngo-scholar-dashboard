@@ -77,6 +77,8 @@ test("every number on the Studio is the API's", async ({ page }) => {
   /* Needs you: the tile, the heading and the queue are one count. */
   const needs = await tile(page, "Needs you").locator(".dash-tile__value").innerText();
   await expect(page.locator("#st-queue .dash-count")).toHaveText(needs);
+  /* The tile says what is waiting, by kind, never "N other". */
+  await expect(tile(page, "Needs you").locator(".dash-tile__sub")).not.toContainText("other");
 
   /* The pipeline counts the same work the queue lists, stage by stage. */
   const stage = (label) => page.locator(".dash-stage").filter({ hasText: label }).locator(".dash-stage__count");
@@ -85,7 +87,9 @@ test("every number on the Studio is the API's", async ({ page }) => {
   await expect(stage("Outlines to approve")).toHaveText(n(jobs.filter((j) => j.status === "awaiting_outline").length));
   await expect(stage("Being written")).toHaveText(n(jobs.filter((j) => j.status === "running" || j.status === "queued").length));
   await expect(stage("In review")).toHaveText(n(inReview));
-  await expect(stage("Published")).toHaveText(n(published + scheduled));
+  /* Published means published, on the stage as on the tile; what is scheduled is said beside it. */
+  await expect(stage("Published")).toHaveText(n(published));
+  await expect(tile(page, "Published").locator(".dash-tile__value")).toHaveText(n(published));
 
   /* Your stories: six at most, and a status chip narrows them to that status. */
   const table = page.locator(".dash-stories");

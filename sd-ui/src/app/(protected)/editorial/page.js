@@ -63,7 +63,13 @@ export default async function EditorialPage({ searchParams }) {
           ) : null}
         </header>
 
-        {rows.length ? (
+        {result?.failed ? (
+          /* Not the empty state: a list that failed to load is not a scholar who has written nothing. */
+          <section className="st-card dash-card stories-empty" role="alert">
+            <h2 className="dash-h2">Your stories couldn&rsquo;t be loaded just now</h2>
+            <p className="dash-muted">Nothing has been lost. Refresh the page in a moment to try again.</p>
+          </section>
+        ) : rows.length ? (
           <StoriesTable rows={rows} total={rows.length} variant="full" initialTab={initialTab} />
         ) : (
           <section className="st-card dash-card stories-empty" aria-labelledby="stories-empty-title">

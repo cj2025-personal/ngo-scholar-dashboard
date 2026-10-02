@@ -159,6 +159,11 @@ export default function WaitingQueue({ todos }) {
         )}
       </div>
 
+      {/* The end of a queue that fits: said, so the space under a short list reads as "that is all", not as missing rows. */}
+      {hidden === 0 ? (
+        <p className="dash-queue__end"><HiOutlineCheckCircle size={15} aria-hidden /> That&rsquo;s everything waiting on you.</p>
+      ) : null}
+
       {hidden > 0 ? (
         <button type="button" className="st-more dash-more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
           {open ? <>Show fewer <HiChevronUp size={14} aria-hidden /></> : <>Show {hidden} more <HiChevronDown size={14} aria-hidden /></>}

@@ -40,14 +40,19 @@ async function fetchEditorial(path) {
   }
 }
 
-/** The scholar's stories, newest first. `limit` is how many (the API's default is 50, its ceiling 500). */
+/**
+ * The scholar's stories, newest first. `limit` is how many (the API's default
+ * is 50, its ceiling 500). When they cannot be had the list is empty and
+ * `failed` is set, so a page can say "could not be loaded" rather than
+ * telling the scholar they have written nothing.
+ */
 export async function getEditorialStories(status = "all", { limit } = {}) {
   const query = new URLSearchParams();
   if (status && status !== "all") query.set("status", status);
   if (limit) query.set("limit", String(limit));
   const suffix = `/api/editorial-stories${query.size ? `?${query}` : ""}`;
 
-  return (await fetchEditorial(suffix)) || { stories: [] };
+  return (await fetchEditorial(suffix)) || { stories: [], failed: true };
 }
 
 export async function getEditorialStory(storyId) {

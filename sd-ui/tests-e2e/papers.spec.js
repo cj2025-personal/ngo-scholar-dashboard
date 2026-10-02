@@ -50,7 +50,8 @@ test("each paper says what it may be used for, offers only what applies, and ope
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     const first = stories.find((s) => s.provenance?.sourceId === drawn.id);
-    await expect(page.locator(".pp-sub").getByRole("link", { name: first.title })).toHaveAttribute("href", `/editorial/${first.id}`);
+    /* By its own address: drafts from one paper can share a headline. */
+    await expect(page.locator(`.pp-sub a[href="/editorial/${first.id}"]`)).toBeVisible();
   }
 });
 

@@ -56,6 +56,7 @@ function timeAgo(value) {
   const ms = Date.now() - new Date(value).getTime();
   if (!Number.isFinite(ms) || ms < 0) return "";
   const m = Math.round(ms / 60000);
+  if (m < 1) return "just now";
   if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
   if (h < 36) return `${h} h ago`;
@@ -147,6 +148,34 @@ function buildTodos({ jobs, all, draftable, episodes, standing, inventory }) {
     todos.push({ tone: "faint", kind: "Upload", lead: "Your upload is being checked", detail: `“${shortTitle(p.title)}” · ${p.reason}`, href: "/papers", cta: "Track" });
   }
   return todos.sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]);
+}
+
+/* The nouns for what is waiting. Reading levels are counted as levels, so the number is literally true. */
+const KIND_NOUN = {
+  "The record": ["record alert", "record alerts"],
+  Podcast: ["conversation", "conversations"],
+  Outline: ["outline", "outlines"],
+  Draft: ["draft", "drafts"],
+  "In progress": ["draft being written", "drafts being written"],
+  "Reading ages": ["reading level", "reading levels"],
+  "A paper": ["paper to draft", "papers to draft"],
+  Legacy: ["Legacy mark", "Legacy marks"],
+  Upload: ["upload", "uploads"],
+};
+
+function describeTodos(todos) {
+  const kinds = [];
+  for (const t of todos) {
+    const n = t.kind === "Reading ages" ? t.remove?.count || 1 : 1;
+    const found = kinds.find((k) => k.kind === t.kind);
+    if (found) found.n += n;
+    else kinds.push({ kind: t.kind, n });
+  }
+  const said = kinds.slice(0, 2).map(({ kind, n }) => {
+    const [one, many] = KIND_NOUN[kind] || ["thing", "things"];
+    return `${n.toLocaleString()} ${n === 1 ? one : many}`;
+  });
+  return kinds.length > 2 ? `${said.join(" · ")} · ${kinds.length - 2} more` : said.join(" · ");
 }
 
 /* ── Pictures of the numbers ─────────────────────────────────────────────── */
@@ -281,7 +310,15 @@ function LegacyCard({ standing }) {
         <Ring part={standing.met} whole={standing.total} size={44} />
         <div>
           <p className="dash-legacy-count">{standing.met} of {standing.total} marks met</p>
-          <p className="dash-muted">{held ? (standing.grandfathered ? "You hold Legacy. The marks show what the benchmark now asks." : "You have met the benchmark. Drafting from your research is open.") : standing.nextStep ? `Left: ${standing.nextStep.title}.` : "Legacy opens drafting from your own research."}</p>
+          <p className="dash-muted">
+            {held
+              ? standing.grandfathered
+                ? "You were named to Legacy before these marks existed, and you keep it either way. They are what Legacy asks of a scholar now."
+                : "You have met every mark. Drafting from your research is open."
+              : standing.nextStep
+                ? `One mark left: ${standing.nextStep.title}.`
+                : "Legacy opens drafting from your own research."}
+          </p>
         </div>
       </div>
       {standing.gates?.length ? (
@@ -392,9 +429,8 @@ export default function StudioHome({ me, sources, jobs, stories, episodes, reads
 
   /* What needs you, by tone, for the tile's bar; and in words, by kind. */
   const byTone = ["grave", "warn", "info", "faint"].map((tone) => ({ tone, n: todos.filter((t) => t.tone === tone).length })).filter((x) => x.n);
-  const draftCount = todos.filter((t) => ["Draft", "Outline", "In progress"].includes(t.kind)).length;
-  const otherCount = todos.length - draftCount;
-  const needsSub = todos.length === 0 ? "You're all caught up" : [draftCount ? plural(draftCount, "draft") : null, otherCount ? `${otherCount.toLocaleString()} other` : null].filter(Boolean).join(" · ");
+  /* What is waiting, by kind and in the queue's own order: "1 conversation · 2 drafts", never "2 other". */
+  const needsSub = todos.length === 0 ? "You're all caught up" : describeTodos(todos);
 
   const stages = [
     { key: "papers", label: "Papers ready", count: counts.draftable || 0, href: "/papers", hint: "to draft from" },
