@@ -185,6 +185,26 @@ test("the bar's logo is the vector lockup, and it draws", async ({ page }) => {
   expect(nav.x - (box.x + box.width)).toBeGreaterThanOrEqual(32);
 });
 
+test("the search opens below the bar, never over its places", async ({ page }) => {
+  for (const [width, height] of [[1366, 607], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    for (const route of ["/editorial/new", "/editorial"]) {
+      await page.goto(route);
+      await page.locator(".nb-search__trigger").click();
+      await expect(page.locator(".nb-search__pop input")).toBeFocused();
+      const [pop, bar, nav] = await Promise.all([".nb-search__pop", ".nb-bar", ".nb-nav"].map((s) => page.locator(s).boundingBox()));
+      const where = `${route} at ${width}px`;
+      expect(pop.y, where).toBeGreaterThanOrEqual(bar.y + bar.height);
+      const overNav = pop.x < nav.x + nav.width && pop.x + pop.width > nav.x && pop.y < nav.y + nav.height && pop.y + pop.height > nav.y;
+      expect(overNav, where).toBe(false);
+      expect(pop.x, where).toBeGreaterThanOrEqual(0);
+      expect(pop.x + pop.width, where).toBeLessThanOrEqual(width);
+      await page.keyboard.press("Escape");
+      await expect(page.locator(".nb-search__pop")).toHaveCount(0);
+    }
+  }
+});
+
 test("the Studio at the sizes it is judged at", async ({ page }) => {
   test.skip(!process.env.SCREENS, "screenshots are captured on demand: SCREENS=1");
   fs.mkdirSync(OUT, { recursive: true });

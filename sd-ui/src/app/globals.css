@@ -1979,9 +1979,14 @@ select {
 .nb-end { display: flex; align-items: center; justify-self: end; gap: 8px; }
 
 /* ── Search ─────────────────────────────────────────────────────────────────
-   A compact trigger. Opened, the field and its results drop from it over the
-   page, so nothing in the bar moves under the pointer. */
-.nb-search { position: relative; }
+   A compact trigger. Opened, the field and its results drop below the bar,
+   right-aligned under the trigger: they cover the page, never the bar's own
+   places, and nothing in the bar moves under the pointer. The trigger keeps
+   its focus look while open, so it is plain what the panel came from. */
+.nb-search { position: relative; display: flex; }
+.nb-search.is-open .nb-search__trigger {
+  color: var(--ark-text); border-color: rgba(30, 58, 138, 0.34); box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.08);
+}
 .nb-search__trigger {
   display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 7px 0 12px;
   border: 1px solid var(--ark-border); border-radius: 10px; background: var(--ark-surface);
@@ -1997,7 +2002,8 @@ select {
   font-family: inherit; font-size: var(--fs-xs); font-weight: var(--weight-medium); line-height: 1; color: var(--ark-text-faint);
 }
 .nb-search__pop {
-  position: absolute; right: 0; top: -2px; z-index: 60; width: min(420px, calc(100vw - 32px)); padding: 6px;
+  /* The trigger's foot is 14px above the bar's; this lands 8px below the bar. */
+  position: absolute; right: 0; top: calc(100% + 22px); z-index: 60; width: min(420px, calc(100vw - 32px)); padding: 6px;
   border: 1px solid var(--ark-border); border-radius: 16px; background: var(--ark-surface);
   box-shadow: 0 24px 60px -28px rgba(15, 23, 42, 0.5);
   animation: nb-pop 170ms var(--ark-ease, ease) both;
@@ -2114,6 +2120,10 @@ select {
   .nb-end { grid-area: end; }
   .nb-lockup { height: 32px; }
   .nb-iconbtn { display: none; }
+  /* The trigger is a glass near the right edge, so the panel takes the screen's
+     width below the bar: positioned against the bar itself, whatever its height. */
+  .nb-search { position: static; }
+  .nb-search__pop { left: 12px; right: 12px; top: calc(100% + 8px); width: auto; }
   .nb-nav { grid-area: nav; justify-self: stretch; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .nb-nav::-webkit-scrollbar { display: none; }
   .nb-nav__link span { display: inline; }

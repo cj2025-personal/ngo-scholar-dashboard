@@ -15,6 +15,7 @@ import {
 } from "react-icons/hi2";
 
 import WriteWithKivyn from "@/components/kivyn/WriteWithKivyn";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 
 /**
  * The bar: one row, 64px, the brand on the left and the work on the right.
@@ -68,7 +69,8 @@ const NAV = [
 ];
 
 const ACTIONS = [
-  { label: "New story", href: "/editorial/new", icon: HiOutlinePencilSquare, hint: "Draft an article from one of your papers" },
+  /* The same door as the Studio's nudge and the bar's button, by the same name. */
+  { label: `Write a story with ${AGENT_NAME}`, href: "/editorial/new", icon: HiOutlinePencilSquare, hint: "This is where your articles are written" },
 ];
 
 /** Close on outside pointer and on Escape. Both bars need it; neither owns it. */
