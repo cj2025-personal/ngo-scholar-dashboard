@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test:e2e": "playwright test",
     "brand:logo": "python scripts/brand/archivyn_logo.py",
+    "brand:alyno": "python -B scripts/brand/alyno_logo.py",
     "brand:kivyn": "node scripts/kivyn-assets.mjs"
   },
   "dependencies": {
