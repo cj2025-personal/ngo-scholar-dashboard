@@ -4,6 +4,7 @@ import { HiOutlineArrowRight, HiOutlineArrowUpTray, HiOutlineCheck } from "react
 import Kivyn from "@/components/kivyn/Kivyn";
 import WriteWithKivyn from "@/components/kivyn/WriteWithKivyn";
 import StoriesTable from "@/components/scholar/StoriesTable";
+import Tile from "@/components/scholar/Tile";
 import WaitingQueue, { QueueClear } from "@/components/scholar/WaitingQueue";
 import { DRAFT_AUDIENCES } from "@/lib/drafting";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
@@ -150,19 +151,6 @@ function buildTodos({ jobs, all, draftable, episodes, standing, inventory }) {
 }
 
 /* ── Pictures of the numbers ─────────────────────────────────────────────── */
-
-function Tile({ label, value, unit = null, sub, href, children, className = "" }) {
-  return (
-    <Link href={href} className={`dash-tile${className ? ` ${className}` : ""}`}>
-      <span className="dash-tile__label">{label}</span>
-      <span className="dash-tile__row">
-        <span className="dash-tile__value">{value}{unit ? <small>{unit}</small> : null}</span>
-        {children}
-      </span>
-      <span className="dash-tile__sub">{sub}</span>
-    </Link>
-  );
-}
 
 /** A ring: how far round a part of a whole is. */
 function Ring({ part, whole, size = 40 }) {

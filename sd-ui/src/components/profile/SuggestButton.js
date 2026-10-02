@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FaCheck, FaPen, FaXmark } from "react-icons/fa6";
+import { HiCheck, HiOutlinePencilSquare, HiXMark } from "react-icons/hi2";
 
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
@@ -33,7 +33,21 @@ function unlockScroll() {
   }
 }
 
-export default function SuggestButton({ sectionKey, label, currentText = "" }) {
+/**
+ * "Suggest an edit": a scholar telling us something about them is wrong.
+ *
+ * The trigger says what it does in words. It used to be a pencil alone, and
+ * a pencil on someone's own profile reads as "edit this yourself", which is
+ * not what happens: the request goes to a person, and its answer appears
+ * under Corrections.
+ *
+ * @param {object} p
+ * @param {string} p.sectionKey   which part of the record this is about
+ * @param {string} p.label        that part, for the dialog and the screen reader
+ * @param {string} [p.currentText] what the record says now, quoted back in the request
+ * @param {string} [p.text]       the visible words on the trigger
+ */
+export default function SuggestButton({ sectionKey, label, currentText = "", text = "Suggest an edit" }) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState("correction");
   const [message, setMessage] = useState("");
@@ -152,12 +166,12 @@ export default function SuggestButton({ sectionKey, label, currentText = "" }) {
       <button
         ref={triggerRef}
         type="button"
-        className="sc-sg-pencil"
-        aria-label={`Suggest an edit to ${label}`}
-        title="Suggest an edit"
+        className="dash-btn is-ghost prof-suggest"
+        aria-label={`${text}: ${label}`}
         onClick={() => setOpen(true)}
       >
-        <FaPen size={13} aria-hidden />
+        <HiOutlinePencilSquare size={15} aria-hidden />
+        <span>{text}</span>
       </button>
 
       {open
@@ -188,14 +202,14 @@ export default function SuggestButton({ sectionKey, label, currentText = "" }) {
                     onClick={close}
                     disabled={submitting}
                   >
-                    <FaXmark size={18} aria-hidden />
+                    <HiXMark size={18} aria-hidden />
                   </button>
                 </header>
 
                 {state === "success" ? (
                   <div className="sc-sg-success">
                     <span className="sc-sg-success-ic" aria-hidden>
-                      <FaCheck size={26} />
+                      <HiCheck size={26} />
                     </span>
                     <h4>Suggestion submitted</h4>
                     <p>

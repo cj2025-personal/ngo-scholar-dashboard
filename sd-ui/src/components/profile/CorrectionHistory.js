@@ -1,4 +1,3 @@
-import { FaScaleBalanced } from "react-icons/fa6";
 
 /**
  * What happened to the corrections this scholar asked for.
@@ -16,14 +15,14 @@ import { FaScaleBalanced } from "react-icons/fa6";
  * for them.
  */
 
-/* One status vocabulary, mapped onto the app's existing pill shapes so these
-   read as the same family as everything else rather than a new component. */
+/* One status vocabulary, on the same pills as everything else: amber is
+   waiting on someone, green is done, grey is closed. */
 const PILL = {
-  open: "sc-status is-scheduled",
-  accepted: "sc-status is-published",
-  applied: "sc-status is-published",
-  rejected: "sc-status is-draft",
-  withdrawn: "sc-status",
+  open: "dash-pill is-warn",
+  accepted: "dash-pill is-ok",
+  applied: "dash-pill is-ok",
+  rejected: "dash-pill",
+  withdrawn: "dash-pill",
 };
 
 function CorrectionRow({ item }) {
@@ -32,7 +31,7 @@ function CorrectionRow({ item }) {
   return (
     <li className="sc-corr-row">
       <div className="sc-corr-row__head">
-        <span className={PILL[item.status] || "sc-status"}>{item.statusLabel}</span>
+        <span className={PILL[item.status] || "dash-pill"}>{item.statusLabel}</span>
         {isOpen && item.daysWaiting !== null ? (
           <span className="sc-corr-wait">
             {item.daysWaiting === 0
@@ -41,7 +40,7 @@ function CorrectionRow({ item }) {
           </span>
         ) : null}
         {item.section_key ? (
-          <span className="sc-tag-static">{item.section_key.replace(/_/g, " ")}</span>
+          <span className="sc-corr-section">{item.section_key.replace(/_/g, " ")}</span>
         ) : null}
       </div>
 
@@ -69,20 +68,15 @@ function CorrectionRow({ item }) {
 export default function CorrectionHistory({ data }) {
   if (!data) {
     return (
-      <article className="sc-prof-card">
-        <header className="sc-prof-card-head">
-          <div className="sc-prof-card-heading">
-            <span className="sc-prof-kicker">
-              <FaScaleBalanced size={13} aria-hidden="true" /> Corrections
-            </span>
-            <h2>We can&rsquo;t load these right now</h2>
-          </div>
-        </header>
-        <p className="sc-prof-lead">
-          Please try again shortly. This isn&rsquo;t a statement about your
-          requests &mdash; we simply couldn&rsquo;t reach them.
+      <section className="st-card dash-card" id="corrections" aria-labelledby="corrections-title">
+        <div className="dash-card__head">
+          <h2 id="corrections-title" className="dash-h2">Corrections</h2>
+        </div>
+        <p className="dash-muted">
+          We can&rsquo;t load these right now. Please try again shortly &mdash; this isn&rsquo;t
+          a statement about your requests; we simply couldn&rsquo;t reach them.
         </p>
-      </article>
+      </section>
     );
   }
 
@@ -90,22 +84,20 @@ export default function CorrectionHistory({ data }) {
   const open = items.filter((item) => item.status === "open").length;
 
   return (
-    <article className="sc-prof-card">
-      <header className="sc-prof-card-head">
-        <div className="sc-prof-card-heading">
-          <span className="sc-prof-kicker">
-            <FaScaleBalanced size={13} aria-hidden="true" /> Corrections
-          </span>
-          <h2>What you&rsquo;ve asked us to change</h2>
+    <section className="st-card dash-card" id="corrections" aria-labelledby="corrections-title">
+      <div className="dash-card__head">
+        <div className="dash-card__title">
+          <h2 id="corrections-title" className="dash-h2">Corrections</h2>
+          {open > 0 ? <span className="dash-count">{open} awaiting reply</span> : null}
         </div>
-        {open > 0 ? <span className="sc-count">{open} awaiting reply</span> : null}
-      </header>
+        <span className="dash-muted">What you&rsquo;ve asked us to change, and our answers</span>
+      </div>
 
       {items.length === 0 ? (
-        <p className="sc-prof-lead">
-          You haven&rsquo;t asked us to change anything yet. Everything on this
-          page is curated from public sources &mdash; if any of it is wrong, use
-          the pencil beside a section and we&rsquo;ll look into it.
+        <p className="dash-muted">
+          You haven&rsquo;t asked us to change anything yet. Everything on this page is
+          curated from public sources; if any of it is wrong, use &ldquo;Suggest an edit&rdquo;
+          on that section and the answer will appear here.
         </p>
       ) : (
         <ul className="sc-corr-list">
@@ -114,6 +106,6 @@ export default function CorrectionHistory({ data }) {
           ))}
         </ul>
       )}
-    </article>
+    </section>
   );
 }

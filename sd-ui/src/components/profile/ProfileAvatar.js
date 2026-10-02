@@ -1,19 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { avatarClass } from "@/lib/format";
 
 /**
- * Scholar headshot with a graceful fallback. Renders the S3-proxied photo when
- * one exists and loads; on a missing/broken image it falls back to an initials
- * tile (deterministic gradient) — never a blank box.
+ * The scholar's headshot, or their initials when there is none or it fails to
+ * load: never a blank box. The initials are the bar's own, on the same navy,
+ * so the person in the corner and the person on the page are plainly one.
  */
 export default function ProfileAvatar({ src, initials, name, className = "" }) {
   const [broken, setBroken] = useState(false);
   const showImage = src && !broken;
 
   return (
-    <div className={`sc-prof-avatar ${className}`}>
+    <div className={`prof-avatar${className ? ` ${className}` : ""}`}>
       {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -23,9 +22,7 @@ export default function ProfileAvatar({ src, initials, name, className = "" }) {
           loading="eager"
         />
       ) : (
-        <span className={`sc-prof-initials ${avatarClass(name || initials || "")}`}>
-          {initials || "SC"}
-        </span>
+        <span className="prof-avatar__initials" aria-hidden>{initials || "SC"}</span>
       )}
     </div>
   );

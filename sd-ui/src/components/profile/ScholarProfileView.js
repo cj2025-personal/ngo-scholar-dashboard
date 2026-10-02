@@ -1,121 +1,172 @@
 import Link from "next/link";
 import {
-  FaBookOpen,
-  FaBriefcase,
-  FaBuildingColumns,
-  FaCircleCheck,
-  FaFlag,
-  FaGraduationCap,
-  FaLink,
-  FaLocationDot,
-  FaMicrophone,
-  FaPen,
-  FaRegCirclePlay,
-  FaRegIdCard,
-  FaTag,
-  FaWandMagicSparkles,
-} from "react-icons/fa6";
+  HiCheckBadge,
+  HiOutlineArrowRight,
+  HiOutlineArrowTopRightOnSquare,
+  HiOutlineBriefcase,
+  HiOutlineBuildingLibrary,
+  HiOutlineIdentification,
+  HiOutlineMapPin,
+  HiOutlinePlayCircle,
+  HiOutlineTag,
+} from "react-icons/hi2";
+
+import CorrectionHistory from "@/components/profile/CorrectionHistory";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
 import SuggestButton from "@/components/profile/SuggestButton";
+import Tile from "@/components/scholar/Tile";
 
-const IMG_BASE =
-  process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
+/**
+ * Profile: who you are here, as Archivyn holds it.
+ *
+ * ── What it is for ─────────────────────────────────────────────────────────
+ * The record behind everything the platform says about a scholar, curated
+ * from public sources, and the one place to say when it is wrong. So it reads
+ * as the record, section by section, each with "Suggest an edit" in words,
+ * and the answers to those suggestions under Corrections at the foot, where
+ * the scholar raised them.
+ *
+ * ── What it is not ─────────────────────────────────────────────────────────
+ * A second Studio. It used to carry its own "Write an editorial" button, a
+ * third name for the door the Studio and Stories already have, and it called
+ * stories "editorials". It now has neither: the work on Archivyn is listed,
+ * by the names the rest of the app uses, and writing starts where it starts
+ * everywhere else.
+ *
+ * ── The numbers ─────────────────────────────────────────────────────────────
+ * Every count is the API's, from the same sources the other pages read: the
+ * stories as the Stories list counts them (a deleted story is gone, here as
+ * everywhere), the conversations as the Podcasts page lists them, and the
+ * corrections as they are answered.
+ */
+
+const IMG_BASE = process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
 
 function formatDate(value) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-/** Coerce a possibly-array/object field into clean display text (or ""). */
+/** Coerce a possibly-array field into clean display text (or ""). */
 function text(value) {
   let v = value;
-  if (Array.isArray(v)) {
-    v = v.filter((item) => typeof item === "string" && item.trim()).join("; ");
-  }
+  if (Array.isArray(v)) v = v.filter((item) => typeof item === "string" && item.trim()).join("; ");
   return typeof v === "string" ? v.trim() : "";
 }
 
-function statusLabel(status) {
-  const s = String(status || "").toLowerCase();
-  if (s === "published") return "Published";
-  if (s === "draft") return "Draft";
-  if (s === "in_review" || s === "review") return "In review";
-  return status ? String(status) : "Draft";
+/* A year as the record has it, or nothing: some records store a missing year as the word "null". */
+function yearText(value) {
+  const t = String(value ?? "").trim();
+  return !t || /^(null|undefined|n\/a|none|-)$/i.test(t) ? "" : t;
 }
 
-function SectionCard({ icon, kicker, title, suggest, children }) {
+/** Newest first by the first four-digit year in each; undated entries keep their order, last. */
+function byYearDesc(items, yearOf) {
+  const year = (item) => Number((yearText(yearOf(item)).match(/\d{4}/) || [])[0]) || null;
+  return items
+    .map((item, index) => ({ item, index, y: year(item) }))
+    .sort((a, b) => (a.y === null) - (b.y === null) || (b.y || 0) - (a.y || 0) || a.index - b.index)
+    .map((x) => x.item);
+}
+
+const plural = (n, one, many = `${one}s`) => `${Number(n || 0).toLocaleString()} ${n === 1 ? one : many}`;
+
+/* The same four words, and the same pills, as the Studio and Stories. */
+function storyStatus(story) {
+  if (story.status === "published") return { label: "Published", tone: "published" };
+  if (story.status === "scheduled") return { label: "Scheduled", tone: "scheduled" };
+  if (story.inReview) return { label: "In review", tone: "review" };
+  return { label: "Draft", tone: "draft" };
+}
+
+const CONVERSATION = {
+  pending: { label: "Not yet released", pill: "dash-pill is-warn" },
+  live: { label: "Released", pill: "dash-pill is-ok" },
+  making: { label: "Being made", pill: "dash-pill is-info" },
+  stopped: { label: "Stopped", pill: "dash-pill" },
+};
+
+/** A card in the record: its name, its "Suggest an edit", then what it holds. */
+function RecordCard({ id, title, suggest, children, className = "" }) {
+  const headingId = `prof-${id}-title`;
   return (
-    <article className="sc-prof-card">
-      <header className="sc-prof-card-head">
-        <div className="sc-prof-card-heading">
-          <span className="sc-prof-kicker">
-            {icon}
-            {kicker}
-          </span>
-          {title ? <h2>{title}</h2> : null}
-        </div>
+    <section className={`st-card dash-card${className ? ` ${className}` : ""}`} id={id} aria-labelledby={headingId}>
+      <div className="dash-card__head">
+        <h2 id={headingId} className="dash-h2">{title}</h2>
         {suggest ? <SuggestButton {...suggest} /> : null}
-      </header>
+      </div>
       {children}
-    </article>
+    </section>
   );
 }
 
-export default function ScholarProfileView({ data }) {
+/** A timeline; past `limit` entries the rest wait behind "Show N more", so a long career does not bury the page. */
+function Timeline({ items, yearOf, titleOf, subOf, bodyOf, limit = Infinity }) {
+  const row = (item, index) => (
+    <li key={`${titleOf(item)}-${index}`}>
+      <span className="prof-timeline__year">{yearText(yearOf(item)) || "—"}</span>
+      <div className="prof-timeline__body">
+        <strong>{titleOf(item)}</strong>
+        {subOf(item) ? <span>{subOf(item)}</span> : null}
+        {bodyOf(item) ? <p>{bodyOf(item)}</p> : null}
+      </div>
+    </li>
+  );
+  const shown = items.slice(0, limit);
+  const rest = items.slice(limit);
+  return (
+    <>
+      <ol className="prof-timeline">{shown.map(row)}</ol>
+      {rest.length ? (
+        <details className="prof-more">
+          <summary>Show {rest.length} more</summary>
+          <ol className="prof-timeline">{rest.map((item, i) => row(item, i + shown.length))}</ol>
+        </details>
+      ) : null}
+    </>
+  );
+}
+
+export default function ScholarProfileView({ data, corrections }) {
   const profile = data?.profile;
 
   if (!profile) {
     return (
-      <div className="sc-prof">
-        <div className="sc-empty">
-          <div className="ic" aria-hidden>
-            <FaRegIdCard size={24} />
-          </div>
-          <h3>Profile unavailable</h3>
-          <p>
-            We couldn&rsquo;t load your scholar profile right now. Please refresh,
-            or sign in again if the problem persists.
-          </p>
-        </div>
+      <div className="dash prof">
+        <section className="st-card dash-card prof-unavailable">
+          <span className="prof-unavailable__icon" aria-hidden><HiOutlineIdentification size={26} /></span>
+          <h1 className="dash-h2">Your profile could not be loaded</h1>
+          <p className="dash-muted">Please refresh in a moment. If it keeps happening, sign out and back in.</p>
+        </section>
       </div>
     );
   }
 
   const about = data.about || {};
-  const researchFocus = Array.isArray(data.researchFocus) ? data.researchFocus : [];
+  const researchFocus = Array.isArray(data.researchFocus) ? data.researchFocus.map(text).filter(Boolean) : [];
   const education = Array.isArray(data.education) ? data.education : [];
-  const milestones = Array.isArray(data.milestones) ? data.milestones : [];
-  const publications = Array.isArray(data.featuredPublications)
-    ? data.featuredPublications
-    : [];
-  const editorials = Array.isArray(data.editorials) ? data.editorials : [];
-  const podcasts = Array.isArray(data.podcasts) ? data.podcasts : [];
+  const milestones = byYearDesc(Array.isArray(data.milestones) ? data.milestones : [], (i) => i.year);
+  const publications = Array.isArray(data.featuredPublications) ? data.featuredPublications : [];
+  const stories = Array.isArray(data.stories) ? data.stories : [];
+  const conversations = Array.isArray(data.conversations) ? data.conversations : [];
+  const recordings = Array.isArray(data.podcasts) ? data.podcasts : [];
   const links = data.linksAndMedia || {};
-  const socialProfiles = Array.isArray(links.socialProfiles)
-    ? links.socialProfiles.filter((item) => item && item.url)
-    : [];
-  const references = Array.isArray(links.references)
-    ? links.references.filter((item) => item && item.url)
-    : [];
+  const socialProfiles = Array.isArray(links.socialProfiles) ? links.socialProfiles.filter((item) => item && item.url) : [];
+  const references = Array.isArray(links.references) ? links.references.filter((item) => item && item.url) : [];
   const featuredVideo = links.featuredVideo && links.featuredVideo.url ? links.featuredVideo : null;
 
-  const photo = profile.photo;
-  const photoSrc = photo
-    ? photo.external
-      ? photo.url
-      : `${IMG_BASE}${photo.url}`
-    : null;
+  const counts = profile.counts || {};
+  const storyCounts = counts.stories || { total: 0, published: 0, scheduled: 0, drafts: 0, inReview: 0 };
+  const talkCounts = counts.conversations || { total: 0, live: 0, pending: 0 };
+  const correctionItems = corrections?.suggestions || [];
+  const openCorrections = correctionItems.filter((item) => item.status === "open").length;
 
-  const bioLead =
-    [about.detailedBio, about.longSummary, about.shortBio, about.summary]
-      .map(text)
-      .find(Boolean) || null;
+  const photo = profile.photo;
+  const photoSrc = photo ? (photo.external ? photo.url : `${IMG_BASE}${photo.url}`) : null;
+
+  const bioLead = [about.detailedBio, about.longSummary, about.shortBio, about.summary].map(text).find(Boolean) || null;
   const aboutBlocks = [
     ["Background", about.backgroundSummary],
     ["Current work", about.currentWork],
@@ -125,374 +176,271 @@ export default function ScholarProfileView({ data }) {
     .map(([label, value]) => [label, text(value)])
     .filter(([, value]) => value && value !== bioLead);
   const hasAbout = Boolean(bioLead) || aboutBlocks.length > 0;
+  const hasLinks = Boolean(featuredVideo) || socialProfiles.length > 0 || references.length > 0;
+  const recordIsEmpty = !hasAbout && researchFocus.length === 0 && education.length === 0 && milestones.length === 0 && publications.length === 0 && !hasLinks;
 
+  const heading = [profile.title, profile.name].filter(Boolean).join(" ");
+  /* The headline once: the record's tagline when it has one, otherwise the facts are the headline. */
   const facts = [
-    [<FaBriefcase size={13} aria-hidden key="pos" />, profile.currentPosition],
-    [<FaBuildingColumns size={13} aria-hidden key="inst" />, profile.institution],
-    [<FaTag size={13} aria-hidden key="field" />, profile.fieldOfStudy],
-    [<FaLocationDot size={13} aria-hidden key="loc" />, profile.location],
+    [HiOutlineBriefcase, profile.currentPosition],
+    [HiOutlineBuildingLibrary, profile.institution],
+    [HiOutlineTag, profile.fieldOfStudy],
+    [HiOutlineMapPin, profile.location],
   ].filter(([, value]) => value);
+  const tagline = profile.tagline && profile.tagline !== [profile.currentPosition, profile.institution].filter(Boolean).join(" | ") ? profile.tagline : null;
+  /* Under a headline, only the facts it does not already say. */
+  const newFacts = tagline ? facts.filter(([, value]) => !tagline.toLowerCase().includes(String(value).toLowerCase())) : facts;
 
   const detailItems = [
     ["Institution", profile.institution],
     ["Department", profile.department],
     ["Field of study", profile.fieldOfStudy],
     ["Location", profile.location],
-    ["Login email", profile.loginEmail],
+    ["Signs in as", profile.loginEmail],
   ].filter(([, value]) => value);
 
-  const hasLinks = Boolean(featuredVideo) || socialProfiles.length > 0 || references.length > 0;
-  const mainIsEmpty =
-    !hasAbout &&
-    researchFocus.length === 0 &&
-    education.length === 0 &&
-    milestones.length === 0 &&
-    publications.length === 0 &&
-    !hasLinks;
-
-  const heading = [profile.title, profile.name].filter(Boolean).join(" ");
-
-  // Concise text snapshots handed to the "suggest an edit" modal for context.
-  const identitySnapshot = [
-    heading,
-    profile.tagline,
-    [profile.currentPosition, profile.institution, profile.department, profile.location]
-      .filter(Boolean)
-      .join(" · "),
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const aboutSnapshot = [bioLead, ...aboutBlocks.map(([l, v]) => `${l}: ${v}`)]
-    .filter(Boolean)
-    .join("\n\n");
-  const researchSnapshot = researchFocus.map(text).filter(Boolean).join(", ");
-  const educationSnapshot = education
-    .map((item) => [item.degree, item.institution, item.year].filter(Boolean).join(" · "))
-    .join("\n");
-  const milestonesSnapshot = milestones
-    .map((item) => [item.year, item.title].filter(Boolean).join(" — "))
-    .join("\n");
-  const publicationsSnapshot = publications
-    .map((item) => [item.title, item.year].filter(Boolean).join(" · "))
-    .join("\n");
-  const detailsSnapshot = detailItems.map(([l, v]) => `${l}: ${v}`).join("\n");
+  /* What each "Suggest an edit" quotes back, so the request says what it is about. */
+  const snapshot = {
+    identity: [heading, profile.tagline, [profile.currentPosition, profile.institution, profile.department, profile.location].filter(Boolean).join(" · ")].filter(Boolean).join("\n"),
+    about: [bioLead, ...aboutBlocks.map(([l, v]) => `${l}: ${v}`)].filter(Boolean).join("\n\n"),
+    research: researchFocus.join(", "),
+    education: education.map((item) => [item.degree, item.institution, yearText(item.year)].filter(Boolean).join(" · ")).join("\n"),
+    milestones: milestones.map((item) => [yearText(item.year), item.title].filter(Boolean).join(" — ")).join("\n"),
+    publications: publications.map((item) => [item.title, item.year].filter(Boolean).join(" · ")).join("\n"),
+    details: detailItems.map(([l, v]) => `${l}: ${v}`).join("\n"),
+  };
 
   return (
-    <div className="sc-prof">
-      {/* ---------- Hero ---------- */}
-      <header className="sc-prof-hero">
-        <div className="sc-prof-hero-band" aria-hidden />
-        <div className="sc-prof-hero-body">
-          <ProfileAvatar
-            src={photoSrc}
-            initials={profile.initials}
-            name={profile.name}
-          />
-          <div className="sc-prof-hero-main">
-            <div className="sc-prof-name">
-              <h1>{heading}</h1>
-              <FaCircleCheck size={19} className="sc-prof-verified" aria-hidden />
-              <span className="sc-sr-only">Verified Archivyn scholar</span>
-              <span className="sc-prof-name-edit">
-                <SuggestButton
-                  sectionKey="identity"
-                  label="Name & headline"
-                  currentText={identitySnapshot}
-                />
-              </span>
-            </div>
-            {profile.tagline ? (
-              <p className="sc-prof-tagline">{profile.tagline}</p>
-            ) : null}
-            {facts.length > 0 ? (
-              <div className="sc-prof-facts">
-                {facts.map(([icon, value]) => (
-                  <span className="sc-prof-fact" key={value}>
-                    {icon}
-                    {value}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="sc-prof-stats">
-            <div className="sc-prof-stat">
-              <b>{profile.counts?.editorials ?? 0}</b>
-              <span>Editorials</span>
-            </div>
-            <div className="sc-prof-stat">
-              <b>{profile.counts?.publications ?? 0}</b>
-              <span>Publications</span>
-            </div>
-            <div className="sc-prof-stat">
-              <b>{profile.counts?.podcasts ?? 0}</b>
-              <span>Podcasts</span>
-            </div>
-          </div>
+    <div className="dash prof">
+      {/* ── Who ─────────────────────────────────────────────────────────── */}
+      <header className="prof-head">
+        <ProfileAvatar src={photoSrc} initials={profile.initials} name={profile.name} />
+        <div className="prof-head__id">
+          <p className="dash-date">Your profile, as Archivyn holds it</p>
+          <h1 className="dash-greet prof-name">
+            {heading}
+            <span className="prof-verified" title="Verified Archivyn scholar">
+              <HiCheckBadge size={22} aria-hidden />
+              <span className="sr-only">Verified Archivyn scholar</span>
+            </span>
+          </h1>
+          {tagline ? <p className="prof-tagline">{tagline}</p> : null}
+          {newFacts.length ? (
+            <ul className="prof-facts" aria-label="At a glance">
+              {newFacts.map(([Icon, value]) => (
+                <li key={value}><Icon size={15} aria-hidden />{value}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <div className="prof-head__actions">
+          <SuggestButton sectionKey="identity" label="Name and headline" currentText={snapshot.identity} />
+          <Link href="/content" className="dash-btn">What Archivyn says about you <HiOutlineArrowRight size={14} aria-hidden /></Link>
         </div>
       </header>
 
-      {/* ---------- Body ---------- */}
-      <div className="sc-prof-grid">
-        <div className="sc-prof-main">
+      {/* ── The record, in four numbers ─────────────────────────────────── */}
+      <section className="dash-kpis prof-kpis" aria-label="Your record at a glance">
+        <Tile
+          label="Stories published"
+          value={storyCounts.published.toLocaleString()}
+          sub={[storyCounts.drafts ? plural(storyCounts.drafts, "draft") : null, storyCounts.scheduled ? `${storyCounts.scheduled} scheduled` : null].filter(Boolean).join(" · ") || (storyCounts.total ? "everything is out" : "none yet")}
+          href="/editorial"
+        />
+        <Tile label="Publications" value={Number(counts.publications || 0).toLocaleString()} sub="on your public record" href={publications.length ? "#publications" : "/papers"} />
+        <Tile
+          label="Conversations"
+          value={talkCounts.total.toLocaleString()}
+          sub={talkCounts.total ? [talkCounts.live ? `${talkCounts.live} released` : null, talkCounts.pending ? `${talkCounts.pending} not yet released` : null].filter(Boolean).join(" · ") || "in the making" : "none in your name yet"}
+          href="/podcasts"
+          className={talkCounts.pending ? "is-attention" : ""}
+        />
+        <Tile
+          label="Corrections"
+          value={openCorrections.toLocaleString()}
+          unit={correctionItems.length ? ` / ${correctionItems.length}` : null}
+          sub={correctionItems.length ? (openCorrections ? "awaiting our reply" : "all answered") : "none asked for"}
+          href="#corrections"
+        />
+      </section>
+
+      <div className="dash-grid">
+        {/* ── The record ─────────────────────────────────────────────────── */}
+        <div className="dash-col-main">
+          {recordIsEmpty ? (
+            <section className="st-card dash-card prof-empty" aria-labelledby="prof-empty-title">
+              <h2 id="prof-empty-title" className="dash-h2">Your record is still being assembled</h2>
+              <p className="dash-muted">
+                Your background, research focus, education, career and publications are drawn from public sources about you.
+                Nothing has been found for them yet. If you know where something is, tell us and we will look.
+              </p>
+              <div className="dash-links">
+                <SuggestButton sectionKey="about" label="Your record" currentText="" text="Tell us what is missing" />
+              </div>
+            </section>
+          ) : null}
+
           {hasAbout ? (
-            <SectionCard
-              icon={<FaRegIdCard size={13} aria-hidden />}
-              kicker="About"
-              title="Scholar overview"
-              suggest={{ sectionKey: "about", label: "About", currentText: aboutSnapshot }}
-            >
-              {bioLead ? <p className="sc-prof-lead">{bioLead}</p> : null}
-              {aboutBlocks.length > 0 ? (
-                <div className="sc-prof-blocks">
-                  {aboutBlocks.map(([label, value]) => (
-                    <div className="sc-prof-block" key={label}>
-                      <strong>{label}</strong>
-                      <p>{value}</p>
-                    </div>
-                  ))}
-                </div>
+            <RecordCard id="about" title="About" suggest={{ sectionKey: "about", label: "About", currentText: snapshot.about }}>
+              {bioLead ? <p className="prof-lead">{bioLead}</p> : null}
+              {/* The overview is the record's own summary; the rest is the long form, there when wanted. */}
+              {aboutBlocks.length ? (
+                <details className="prof-more" open={!bioLead}>
+                  <summary>{aboutBlocks.map(([label]) => label.toLowerCase()).join(", ").replace(/^./, (c) => c.toUpperCase())}</summary>
+                  <dl className="prof-blocks">
+                    {aboutBlocks.map(([label, value]) => (
+                      <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+                    ))}
+                  </dl>
+                </details>
               ) : null}
-            </SectionCard>
+            </RecordCard>
           ) : null}
 
-          {researchFocus.length > 0 ? (
-            <SectionCard
-              icon={<FaWandMagicSparkles size={13} aria-hidden />}
-              kicker="Research focus"
-              title="Fields & themes"
-              suggest={{
-                sectionKey: "research_focus",
-                label: "Research focus",
-                currentText: researchSnapshot,
-              }}
-            >
-              <div className="sc-prof-chips">
-                {researchFocus.map((item) => (
-                  <span className="sc-prof-chip" key={item}>
-                    {item}
-                  </span>
-                ))}
-              </div>
-            </SectionCard>
+          {researchFocus.length ? (
+            <RecordCard id="research" title="Research focus" suggest={{ sectionKey: "research_focus", label: "Research focus", currentText: snapshot.research }}>
+              <ul className="prof-chips">{researchFocus.map((item) => <li key={item}>{item}</li>)}</ul>
+            </RecordCard>
           ) : null}
 
-          {education.length > 0 ? (
-            <SectionCard
-              icon={<FaGraduationCap size={13} aria-hidden />}
-              kicker="Education"
-              title="Academic background"
-              suggest={{
-                sectionKey: "education",
-                label: "Education",
-                currentText: educationSnapshot,
-              }}
-            >
-              <div className="sc-prof-timeline">
-                {education.map((item, index) => (
-                  <div className="sc-prof-tl-item" key={`${item.degree}-${item.year || index}`}>
-                    <span className="sc-prof-tl-year">{item.year || "—"}</span>
-                    <div className="sc-prof-tl-body">
-                      <strong>{item.degree || "Degree"}</strong>
-                      {item.institution ? <span className="sc-prof-tl-sub">{item.institution}</span> : null}
-                      {item.brief ? <p>{item.brief}</p> : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          ) : null}
-
-          {milestones.length > 0 ? (
-            <SectionCard
-              icon={<FaFlag size={13} aria-hidden />}
-              kicker="Career timeline"
-              title="Milestones"
-              suggest={{
-                sectionKey: "milestones",
-                label: "Career timeline",
-                currentText: milestonesSnapshot,
-              }}
-            >
-              <div className="sc-prof-timeline">
-                {milestones.map((item, index) => (
-                  <div className="sc-prof-tl-item" key={`${item.title}-${item.year || index}`}>
-                    <span className="sc-prof-tl-year">{item.year || "Current"}</span>
-                    <div className="sc-prof-tl-body">
-                      <strong>{item.title || "Milestone"}</strong>
-                      {item.type ? <span className="sc-prof-tl-sub">{item.type}</span> : null}
-                      {item.description ? <p>{item.description}</p> : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          ) : null}
-
-          {publications.length > 0 ? (
-            <SectionCard
-              icon={<FaBookOpen size={13} aria-hidden />}
-              kicker="Publications"
-              title="Featured publications"
-              suggest={{
-                sectionKey: "publications",
-                label: "Publications",
-                currentText: publicationsSnapshot,
-              }}
-            >
-              <div className="sc-prof-pubs">
+          {publications.length ? (
+            <RecordCard id="publications" title="Publications" suggest={{ sectionKey: "publications", label: "Publications", currentText: snapshot.publications }}>
+              <ul className="prof-pubs">
                 {publications.map((item, index) => (
-                  <article className="sc-prof-pub" key={`${item.title}-${item.year || index}`}>
-                    <div className="sc-prof-pub-meta">
-                      <span className="sc-prof-pub-type">{item.type || "Publication"}</span>
-                      {[item.publisher, item.year].filter(Boolean).length > 0 ? (
-                        <span className="sc-prof-pub-src">
-                          {[item.publisher, item.year].filter(Boolean).join(" · ")}
-                        </span>
-                      ) : null}
+                  <li key={`${item.title}-${item.year || index}`}>
+                    <div className="prof-pubs__meta">
+                      <span className="dash-pill">{item.type || "Publication"}</span>
+                      {[item.publisher, item.year].filter(Boolean).length ? <span>{[item.publisher, item.year].filter(Boolean).join(" · ")}</span> : null}
                     </div>
-                    <h3>{item.title || "Untitled publication"}</h3>
+                    <strong>{item.title || "Untitled publication"}</strong>
                     {item.brief_description ? <p>{item.brief_description}</p> : null}
-                  </article>
+                  </li>
                 ))}
-              </div>
-            </SectionCard>
+              </ul>
+              {counts.publications > publications.length ? (
+                <p className="dash-faint prof-note">{publications.length} of {Number(counts.publications).toLocaleString()} shown: the ones your record features.</p>
+              ) : null}
+            </RecordCard>
+          ) : null}
+
+          {milestones.length ? (
+            <RecordCard id="career" title="Career" suggest={{ sectionKey: "milestones", label: "Career timeline", currentText: snapshot.milestones }}>
+              <Timeline items={milestones} limit={5} yearOf={(i) => i.year} titleOf={(i) => i.title || "Milestone"} subOf={(i) => i.type} bodyOf={(i) => i.description} />
+            </RecordCard>
           ) : null}
 
           {hasLinks ? (
-            <SectionCard
-              icon={<FaLink size={13} aria-hidden />}
-              kicker="Links & media"
-              title="Around the web"
-              suggest={{ sectionKey: "links_and_media", label: "Links & media" }}
-            >
+            <RecordCard id="links" title="Links and media" suggest={{ sectionKey: "links_and_media", label: "Links and media" }}>
               {featuredVideo ? (
-                <a
-                  className="sc-prof-video"
-                  href={featuredVideo.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  <span className="sc-prof-video-ic" aria-hidden>
-                    <FaRegCirclePlay size={20} />
-                  </span>
-                  <span className="sc-prof-video-txt">
-                    <strong>{featuredVideo.title || "Featured video"}</strong>
-                    <span>Watch now</span>
-                  </span>
+                <a className="prof-video" href={featuredVideo.url} target="_blank" rel="noreferrer noopener">
+                  <HiOutlinePlayCircle size={28} aria-hidden />
+                  <span><strong>{featuredVideo.title || "Featured video"}</strong><span>Opens in a new tab</span></span>
                 </a>
               ) : null}
-              {socialProfiles.length > 0 ? (
-                <div className="sc-prof-links">
+              {socialProfiles.length ? (
+                <ul className="prof-chips is-links">
                   {socialProfiles.map((item, index) => (
-                    <a
-                      className="sc-prof-linkchip"
-                      key={`${item.url}-${index}`}
-                      href={item.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                    >
-                      <FaLink size={12} aria-hidden />
-                      {item.platform || item.handle || item.url}
-                    </a>
+                    <li key={`${item.url}-${index}`}>
+                      <a href={item.url} target="_blank" rel="noreferrer noopener">{item.platform || item.handle || item.url}<HiOutlineArrowTopRightOnSquare size={12} aria-hidden /></a>
+                    </li>
                   ))}
-                </div>
+                </ul>
               ) : null}
-              {references.length > 0 ? (
-                <ul className="sc-prof-refs">
+              {references.length ? (
+                <ul className="prof-refs">
                   {references.map((item, index) => (
                     <li key={`${item.url}-${index}`}>
-                      <a href={item.url} target="_blank" rel="noreferrer noopener">
-                        {item.title || item.url}
-                      </a>
+                      <a href={item.url} target="_blank" rel="noreferrer noopener">{item.title || item.url}</a>
                       {item.description ? <span>{item.description}</span> : null}
                     </li>
                   ))}
                 </ul>
               ) : null}
-            </SectionCard>
+            </RecordCard>
           ) : null}
 
-          {mainIsEmpty ? (
-            <SectionCard
-              icon={<FaWandMagicSparkles size={13} aria-hidden />}
-              kicker="Getting started"
-              title="Your profile is taking shape"
-            >
-              <p className="sc-prof-lead">
-                As your record grows, your research focus, education, milestones,
-                and publications will appear here automatically. Publish an
-                editorial or podcast to start building your scholar commons.
-              </p>
-              <Link href="/editorial/new" className="sc-prof-cta">
-                <FaPen size={13} aria-hidden /> Write an editorial
-              </Link>
-            </SectionCard>
-          ) : null}
+          <CorrectionHistory data={corrections} />
         </div>
 
-        <aside className="sc-prof-side">
-          <SectionCard
-            icon={<FaRegIdCard size={13} aria-hidden />}
-            kicker="Details"
-            suggest={{
-              sectionKey: "details",
-              label: "Profile details",
-              currentText: detailsSnapshot,
-            }}
-          >
-            {detailItems.length > 0 ? (
-              <dl className="sc-prof-details">
+        {/* ── Beside it: the details, and your work here ──────────────────── */}
+        <aside className="dash-col-side">
+          <RecordCard id="details" title="Details" className="dash-side-card" suggest={{ sectionKey: "details", label: "Profile details", currentText: snapshot.details }}>
+            {detailItems.length ? (
+              <dl className="prof-details">
                 {detailItems.map(([label, value]) => (
-                  <div className="sc-prof-detail" key={label}>
-                    <dt>{label}</dt>
-                    <dd>{value}</dd>
-                  </div>
+                  <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
                 ))}
               </dl>
             ) : (
-              <p className="sc-prof-muted">No profile details on file yet.</p>
+              <p className="dash-muted">No details on file yet.</p>
             )}
-          </SectionCard>
+          </RecordCard>
 
-          {editorials.length > 0 ? (
-            <SectionCard
-              icon={<FaPen size={13} aria-hidden />}
-              kicker="Editorials"
-            >
-              <div className="sc-prof-mini">
-                {editorials.map((item) => {
-                  const href = item.slug ? `/stories/${item.slug}` : `/editorial/${item.id}`;
-                  const date = formatDate(item.updatedAt || item.createdAt);
+          {education.length ? (
+            <RecordCard id="education" title="Education" className="dash-side-card" suggest={{ sectionKey: "education", label: "Education", currentText: snapshot.education }}>
+              <Timeline items={education} yearOf={(i) => i.year} titleOf={(i) => i.degree || "Degree"} subOf={(i) => i.institution} bodyOf={(i) => i.brief} />
+            </RecordCard>
+          ) : null}
+
+          <section className="st-card dash-card dash-side-card" aria-labelledby="prof-stories-title">
+            <div className="dash-card__head">
+              <div className="dash-card__title">
+                <h2 id="prof-stories-title" className="dash-h3">Your stories</h2>
+                <span className="dash-count is-quiet">{storyCounts.total}</span>
+              </div>
+              <Link href="/editorial" className="dash-link">All stories <HiOutlineArrowRight size={12} aria-hidden /></Link>
+            </div>
+            {stories.length ? (
+              <ul className="prof-list">
+                {stories.slice(0, 5).map((story) => {
+                  const status = storyStatus(story);
+                  const when = story.status === "published" ? formatDate(story.publishedAt || story.updatedAt) : story.status === "scheduled" ? `For ${formatDate(story.scheduledFor)}` : formatDate(story.updatedAt);
                   return (
-                    <Link href={href} className="sc-prof-mini-item" key={item.id}>
-                      <strong>{item.title}</strong>
-                      <span>
-                        {statusLabel(item.status)}
-                        {date ? <> · {date}</> : null}
+                    <li key={story.id}>
+                      <Link href={`/editorial/${story.id}`} title={story.title}>{story.title}</Link>
+                      <span className="prof-list__meta">
+                        <span className={`dash-status is-${status.tone}`}>{status.label}</span>
+                        {when ? <span>{when}</span> : null}
                       </span>
-                    </Link>
+                    </li>
                   );
                 })}
-              </div>
-            </SectionCard>
-          ) : null}
+              </ul>
+            ) : (
+              <p className="dash-muted">Nothing written here yet. Your first story starts from the Studio.</p>
+            )}
+          </section>
 
-          {podcasts.length > 0 ? (
-            <SectionCard
-              icon={<FaMicrophone size={13} aria-hidden />}
-              kicker="Podcasts"
-            >
-              <div className="sc-prof-mini">
-                {podcasts.map((item, index) => (
-                  <div className="sc-prof-mini-item" key={item.podcast_id || item.title || index}>
-                    <strong>{item.title || "Untitled episode"}</strong>
-                    <span>{item.status || item.media_type || "audio"}</span>
-                  </div>
-                ))}
+          <section className="st-card dash-card dash-side-card" aria-labelledby="prof-talks-title">
+            <div className="dash-card__head">
+              <div className="dash-card__title">
+                <h2 id="prof-talks-title" className="dash-h3">Conversations</h2>
+                <span className="dash-count is-quiet">{talkCounts.total}</span>
               </div>
-            </SectionCard>
-          ) : null}
+              <Link href="/podcasts" className="dash-link">All <HiOutlineArrowRight size={12} aria-hidden /></Link>
+            </div>
+            {conversations.length ? (
+              <ul className="prof-list">
+                {conversations.slice(0, 4).map((c) => {
+                  const state = CONVERSATION[c.state] || CONVERSATION.making;
+                  return (
+                    <li key={c.id}>
+                      <Link href={`/podcasts/${c.id}`} title={c.title}>{c.title}</Link>
+                      <span className="prof-list__meta">
+                        <span className={state.pill}>{state.label}</span>
+                        {c.with ? <span>with {c.with}</span> : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="dash-muted">No conversation has been made in your name yet.</p>
+            )}
+            {recordings.length ? (
+              <p className="dash-faint prof-note">Also on your record: {plural(recordings.length, "other recording")}.</p>
+            ) : null}
+          </section>
         </aside>
       </div>
     </div>

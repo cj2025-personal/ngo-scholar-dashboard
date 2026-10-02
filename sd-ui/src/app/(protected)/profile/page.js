@@ -1,6 +1,5 @@
 import Topbar from "@/components/scholar/Topbar";
 import ScholarProfileView from "@/components/profile/ScholarProfileView";
-import CorrectionHistory from "@/components/profile/CorrectionHistory";
 import { getScholarProfile } from "@/lib/profile";
 import { getScholarCorrections } from "@/lib/corrections";
 
@@ -23,12 +22,9 @@ export default async function ProfilePage() {
   return (
     <div className="sc-shell">
       <Topbar activeHref="/profile" me={me} />
-      <ScholarProfileView data={data} />
-      {/* Below the profile, because it is the answer to something raised on it.
-          Inside `sc-prof` so it sits in the same column as the cards above. */}
-      <div className="sc-prof sc-prof--append">
-        <CorrectionHistory data={corrections} />
-      </div>
+      {/* The corrections are drawn inside the view, at the foot of the record
+          they are about, and counted in its tiles. */}
+      <ScholarProfileView data={data} corrections={corrections} />
     </div>
   );
 }
