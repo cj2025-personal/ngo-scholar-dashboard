@@ -57,9 +57,9 @@ Below the full lockup's minimum, use the compact lockup instead of shrinking the
 - Put the tagline under the full lockup's minimum size.
 - Rebuild the lockup by hand from the parts.
 
-# Alyno's mark
+# Alyno AI's mark
 
-Alyno is the scholar directory's AI. Its mark is the **kite in flight**, built only from parts of the A: the peak (navy left, red right) and its reflection with the colours swapped, meeting at the A's crossbar cut, tilted as if flying, with the A's point of light at its tip.
+Alyno AI is the scholar directory's chatbot. Its mark is the **kite in flight**, built only from parts of the A: the peak (navy left, red right) and its reflection with the colours swapped, meeting at the A's crossbar cut, tilted as if flying, with the A's point of light at its tip.
 
 Regenerate with `npm run brand:alyno`. It imports `archivyn_logo.py`, so the gradients, the point of light, the wordmark's face, weight and tracking can't drift from Archivyn's.
 
@@ -72,7 +72,7 @@ The files are in `public/brand/alyno/`, and the directory app keeps a copy in it
 | `alyno-mark.svg` | the kite, full colour | avatars, headers, app icons | 32px and up |
 | `alyno-mark-small.svg` | no point of light, thicker cut | favicons, chat avatars, anything small | under 32px |
 | `alyno-mark-mono-navy.svg`, `-white`, `-black` | one colour | embossing, stamps, tinted phone icons, single-ink print | any |
-| `alyno-lockup.svg` | the kite and the word | introducing Alyno: sign-in, splash, decks, documents | 32px tall, so the kite keeps its point of light |
+| `alyno-lockup.svg` | the kite and the name, Alyno AI | introducing Alyno AI: sign-in, splash, decks, documents | 32px tall, so the kite keeps its point of light |
 
 The colour files have an `-on-dark` twin. As with the A, the navy turns pale on dark grounds, and the point of light turns navy.
 
@@ -82,15 +82,22 @@ In one colour the silhouette and the cut carry the mark, as they do for the A. T
 
 ## Movement
 
-- **Thinking:** while Alyno is working on a reply, the kite rises, settles and rests, about 1.6 seconds per cycle, until the reply starts.
-- **At rest:** still. It never moves to decorate, only to show real work.
-- **Reduced motion:** still, always, for anyone who asks for less motion.
+Each movement says something true. In the directory, `AlynoMark` implements all of them.
+
+| When | What the kite does | Timing |
+|---|---|---|
+| A surface showing Alyno AI opens (the chat or Teach panel, a disclosure) | lifts into place: rises in from below, tilted, overshoots a little, settles | 720ms, after a 140ms wait for the panel's slide |
+| Alyno AI is working on a reply | rises, settles, rests, until the reply starts | 1.8s per cycle |
+| A button that asks Alyno AI is pointed at or focused | tips up a little | 260ms |
+| Otherwise | still | |
+
+For anyone who asks their device for less motion, it never moves.
 
 ## The line
 
-Say it once, where Alyno introduces itself:
+Say it once, where Alyno AI introduces itself:
 
-> A kite flies high, but its string keeps it tied to the ground. Every answer Alyno gives is tied to the scholar's own words.
+> A kite flies high, but its string keeps it tied to the ground. Every answer Alyno AI gives is tied to the scholar's own words.
 
 ## Don't
 

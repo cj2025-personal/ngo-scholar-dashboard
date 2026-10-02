@@ -2,7 +2,7 @@
 
     python scripts/brand/alyno_logo.py          (npm run brand:alyno)
 
-Alyno is the scholar directory's AI. Its mark is built only from parts of
+Alyno AI is the scholar directory's chatbot. Its mark is built only from parts of
 Archivyn's A, so the two read as one family:
 
 -- The kite ---------------------------------------------------------------------
@@ -11,7 +11,7 @@ swapped, meeting at the A's crossbar cut; kite proportions (a short peak over a
 long tail); tilted 28 degrees, in flight; the A's point of light at its tip.
 
 A kite flies high, but its string keeps it tied to the ground: every answer
-Alyno gives is tied to the scholar's own words. The swapped halves are the two
+Alyno AI gives is tied to the scholar's own words. The swapped halves are the two
 directions it works in: you ask and it answers; it asks and you teach.
 
 -- The files -------------------------------------------------------------------
@@ -21,7 +21,7 @@ alyno-mark-small           below 32 px: no point of light (it is under a pixel
 alyno-mark-mono-{navy,white,black}
                            one colour, for embossing, stamps, tinted icons: the
                            silhouette and the cut carry it, as the A's do
-alyno-lockup               the kite and the word, Archivyn's wordmark spec
+alyno-lockup               the kite and the name, Alyno AI, to Archivyn's wordmark spec
 Each colour file has an -on-dark twin. Shapes, gradients, the wordmark's face,
 weight and tracking all come from archivyn_logo.py; nothing is restated here.
 """
@@ -128,8 +128,8 @@ def build(out):
         cap = COMPACT["word_cap"]
         wx = box[2] + 30
         base = mark_h / 2 + cap / 2
-        wd, wbox = word.layout("Alyno", cap, wx, base, track)
-        files[f"alyno-lockup{suffix}.svg"] = document("Alyno", defs, body + f'<path fill="{word_fill}" d="{wd}"/>', [box, wbox], pad=4)
+        wd, wbox = word.layout("Alyno AI", cap, wx, base, track)
+        files[f"alyno-lockup{suffix}.svg"] = document("Alyno AI", defs, body + f'<path fill="{word_fill}" d="{wd}"/>', [box, wbox], pad=4)
 
     for name in MONO:
         defs, body, box = kite(f"aly-{name}", mark_h, mono=name, light=False)
