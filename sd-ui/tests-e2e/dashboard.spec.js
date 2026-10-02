@@ -102,12 +102,18 @@ test("every number on the Studio is the API's", async ({ page }) => {
 });
 
 test("the reads chart is the API's day by day, over the range asked for", async ({ page }) => {
-  const { stories } = await api(page, "/api/editorial-stories");
+  const [{ stories }, { jobs }] = await Promise.all([api(page, "/api/editorial-stories"), api(page, "/api/drafting/jobs?limit=10")]);
   const out = stories.filter((s) => s.status === "published" || s.status === "scheduled").length;
 
   await page.goto("/");
   await page.waitForLoadState("networkidle");
   const card = page.locator("#dash-reads");
+  /* Nothing written yet: the first visit has no chart to draw, by design. */
+  if (stories.length === 0 && jobs.length === 0) {
+    await expect(page.locator(".dash-first")).toBeVisible();
+    await expect(card).toHaveCount(0);
+    return;
+  }
   if (out === 0) {
     await expect(card.locator(".dash-reads-empty")).toContainText("once a story is published");
     return;
@@ -173,7 +179,10 @@ test("the bar's logo is the vector lockup, and it draws", async ({ page }) => {
   await expect(logo).toHaveAttribute("alt", "Archivyn");
   await expect.poll(() => logo.evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
   const box = await logo.boundingBox();
-  expect(Math.round(box.height)).toBe(34);
+  expect(Math.round(box.height)).toBe(42);
+  /* The places sit at the bar's centre on a laptop, clear of the lockup. */
+  const nav = await page.locator(".nb-nav").boundingBox();
+  expect(nav.x - (box.x + box.width)).toBeGreaterThanOrEqual(32);
 });
 
 test("the Studio at the sizes it is judged at", async ({ page }) => {

@@ -1941,17 +1941,25 @@ select {
   backdrop-filter: saturate(1.4) blur(16px); -webkit-backdrop-filter: saturate(1.4) blur(16px);
   box-shadow: 0 10px 28px -26px rgba(23, 37, 84, 0.5);
 }
-.nb-bar__inner { display: flex; align-items: center; gap: 20px; height: 64px; padding: 0 24px; }
+/* Three zones: the brand, the places, the tools. The places sit at the bar's
+   centre, so the lockup keeps clear space of its own instead of running into
+   the tray. The side columns never shrink below what they hold, so when a
+   window is too narrow to centre the places they move over, not under. */
+.nb-bar__inner {
+  display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  align-items: center; column-gap: 32px; height: 64px; padding: 0 24px;
+}
 
-.nb-brand { display: inline-flex; align-items: center; flex: 0 0 auto; border-radius: 10px; }
+.nb-brand { display: inline-flex; align-items: center; justify-self: start; border-radius: 10px; }
 .nb-brand:focus-visible { outline: 2px solid var(--ark-navy); outline-offset: 4px; }
 /* The compact lockup, the mark and the word, as vector (public/brand, from
-   scripts/brand/archivyn_logo.py): 34px tall, where the word's cap height is 14px. */
-.nb-lockup { display: block; height: 34px; width: auto; max-width: none; }
+   scripts/brand/archivyn_logo.py): 42px tall, where the word's capitals are
+   17px, a clear step above the 14px places beside it, so the brand leads. */
+.nb-lockup { display: block; height: 42px; width: auto; max-width: none; }
 
 /* The places, as pills in a tray: where you are is the one lifted out of it. */
 .nb-nav {
-  display: flex; align-items: center; gap: 2px; min-width: 0; padding: 3px;
+  display: flex; align-items: center; justify-self: center; gap: 2px; min-width: 0; padding: 3px;
   border: 1px solid var(--ark-card-line); border-radius: 13px; background: rgba(238, 243, 251, 0.72);
 }
 .nb-nav__link {
@@ -1968,7 +1976,7 @@ select {
 .nb-nav__link.is-active svg, .nb-nav__link:hover svg { opacity: 1; }
 .nb-nav__link:focus-visible { outline: 2px solid var(--ark-navy); outline-offset: 1px; }
 
-.nb-end { display: flex; align-items: center; gap: 8px; margin-inline-start: auto; flex: 0 0 auto; }
+.nb-end { display: flex; align-items: center; justify-self: end; gap: 8px; }
 
 /* ── Search ─────────────────────────────────────────────────────────────────
    A compact trigger. Opened, the field and its results drop from it over the
@@ -1983,7 +1991,7 @@ select {
 .nb-search__trigger:hover, .nb-search__trigger:focus-visible {
   outline: 0; color: var(--ark-text); border-color: rgba(30, 58, 138, 0.34); box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.08);
 }
-.nb-search__label { min-width: 84px; text-align: left; }
+.nb-search__label { min-width: 60px; text-align: left; }
 .nb-search__trigger kbd, .nb-search__field kbd {
   border: 1px solid var(--ark-border); border-radius: 6px; padding: 3px 6px; background: var(--ark-surface-2);
   font-family: inherit; font-size: var(--fs-xs); font-weight: var(--weight-medium); line-height: 1; color: var(--ark-text-faint);
@@ -2092,16 +2100,21 @@ select {
   .nb-write__text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 }
 @media (max-width: 900px) {
-  .nb-bar__inner { gap: 12px; padding: 0 16px; }
+  .nb-bar__inner { column-gap: 12px; padding: 0 16px; }
   .nb-nav__link span { display: none; }
   .nb-nav__link { padding: 0 10px; }
 }
 /* A phone: the brand and the account on top, the places in a swipeable row. */
 @media (max-width: 760px) {
-  .nb-bar__inner { flex-wrap: wrap; height: auto; row-gap: 8px; padding: 10px 16px 8px; }
-  .nb-lockup { height: 28px; }
+  .nb-bar__inner {
+    grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand end" "nav nav";
+    height: auto; row-gap: 8px; padding: 10px 16px 8px;
+  }
+  .nb-brand { grid-area: brand; }
+  .nb-end { grid-area: end; }
+  .nb-lockup { height: 32px; }
   .nb-iconbtn { display: none; }
-  .nb-nav { order: 3; flex: 1 0 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .nb-nav { grid-area: nav; justify-self: stretch; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .nb-nav::-webkit-scrollbar { display: none; }
   .nb-nav__link span { display: inline; }
   .nb-nav__link { padding: 0 12px; }
