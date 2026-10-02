@@ -48,6 +48,20 @@ function initialsFrom(name) {
 }
 
 /**
+ * The letters a scholar's avatar shows when there is no photo, everywhere.
+ *
+ * The record's own `about.avatar_initial` first, because it is curated; then
+ * the name, as above. One rule, because the profile and the dashboard used to
+ * work it out two ways and the same scholar was "T" on one page and "TS" on
+ * the next.
+ */
+function scholarInitials(scholar) {
+  const curated = clean(scholar?.about?.avatar_initial);
+  if (curated) return curated.toUpperCase();
+  return initialsFrom(scholar?.name?.display || scholar?.name?.full) || "SD";
+}
+
+/**
  * The byline for a curated scholar record.
  *
  * Returns null when there is no name, because a byline with an affiliation and
@@ -103,4 +117,4 @@ function bylineStructuredData(byline) {
   };
 }
 
-module.exports = { buildByline, bylineStructuredData, initialsFrom };
+module.exports = { buildByline, bylineStructuredData, initialsFrom, scholarInitials };

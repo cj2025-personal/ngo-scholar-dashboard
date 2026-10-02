@@ -4,28 +4,7 @@ const { COLLECTIONS, getDb } = require("../db/mongo");
 const { ownedByScholarFilter } = require("../lib/identity");
 const { ApiError } = require("../lib/api-error");
 const { serializeMongoValue } = require("../lib/serialize");
-
-function getScholarInitials(scholar) {
-  const displayName =
-    scholar?.name?.display ||
-    scholar?.name?.full ||
-    scholar?.about?.avatar_initial ||
-    "";
-
-  const parts = displayName
-    .split(" ")
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (parts.length === 0) {
-    return "SD";
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0].toUpperCase())
-    .join("");
-}
+const { scholarInitials } = require("../lib/byline");
 
 function formatDuration(seconds) {
   if (!seconds || Number.isNaN(Number(seconds))) {
@@ -137,7 +116,7 @@ function buildProfile(scholar) {
   ].filter(Boolean);
 
   return {
-    initials: getScholarInitials(scholar),
+    initials: scholarInitials(scholar),
     name: displayName,
     summary,
     tags,

@@ -6,6 +6,8 @@ const { toImageProxyPath } = require("../config/s3");
 const { ApiError } = require("../lib/api-error");
 const { serializeMongoValue } = require("../lib/serialize");
 const { getAiTerms } = require("./aiTerms.service");
+const { listEpisodesForScholar } = require("./podcasts.service");
+const { scholarInitials } = require("../lib/byline");
 
 /**
  * Resolve a scholar headshot into something the frontend can render.
@@ -34,22 +36,6 @@ function resolveScholarPhoto(scholar) {
   return null;
 }
 
-function getInitials(name) {
-  const parts = String(name || "")
-    .split(" ")
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (parts.length === 0) {
-    return "SD";
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0].toUpperCase())
-    .join("");
-}
-
 function buildScholarStoryFilters({ scholarId, profileId }) {
   /* One writer, one shape, one indexed equality.
      The six-way $or this replaces existed because the collection was shared
@@ -57,6 +43,12 @@ function buildScholarStoryFilters({ scholarId, profileId }) {
      Nothing writes that shape here, so matching on it could only ever return
      another service's rows. */
   return [ownedByScholarFilter(profileId)];
+}
+
+/* A deleted story is gone from every owner-facing read, the profile included:
+   it was counted here, and listed as "deleted", after the scholar removed it. */
+function liveStoryFilter({ scholarId, profileId }) {
+  return { $and: [{ $or: buildScholarStoryFilters({ scholarId, profileId }) }, { status: { $ne: "deleted" } }] };
 }
 
 async function findScholarRecord({ scholarId, profileId }) {
@@ -72,12 +64,41 @@ async function findScholarStories({ scholarId, profileId }) {
 
   return db
     .collection(COLLECTIONS.scholarEditorials)
-    .find({
-      $or: buildScholarStoryFilters({ scholarId, profileId }),
+    .find(liveStoryFilter({ scholarId, profileId }), {
+      projection: { title: 1, slug: 1, status: 1, provenance: 1, createdAt: 1, updatedAt: 1, published_at: 1, scheduled_for: 1 },
     })
     .sort({ updatedAt: -1, createdAt: -1 })
-    .limit(24)
+    .limit(12)
     .toArray();
+}
+
+/**
+ * How many stories, by where they stand, counted by the database. The count
+ * used to be the length of a list capped at 24, so a scholar with thirty
+ * stories was told they had twenty-four. "In review" is a draft Kivyn wrote
+ * from a paper, the same line the Studio draws.
+ */
+async function tallyScholarStories({ scholarId, profileId }) {
+  const db = await getDb();
+  const is = (status) => ({ $cond: [{ $eq: ["$status", status] }, 1, 0] });
+  const [tally] = await db
+    .collection(COLLECTIONS.scholarEditorials)
+    .aggregate([
+      { $match: liveStoryFilter({ scholarId, profileId }) },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          published: { $sum: is("published") },
+          scheduled: { $sum: is("scheduled") },
+          drafts: { $sum: is("draft") },
+          inReview: { $sum: { $cond: [{ $and: [{ $eq: ["$status", "draft"] }, { $eq: [{ $type: "$provenance" }, "object"] }] }, 1, 0] } },
+        },
+      },
+    ])
+    .toArray();
+  const { _id, ...counts } = tally || { _id: null, total: 0, published: 0, scheduled: 0, drafts: 0, inReview: 0 };
+  return counts;
 }
 
 async function getScholarProfileData({ scholarId, profileId, user }) {
@@ -87,7 +108,12 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
     throw new ApiError(404, "Scholar profile was not found for this account.");
   }
 
-  const scholarStories = await findScholarStories({ scholarId, profileId });
+  const [scholarStories, storyCounts, conversations] = await Promise.all([
+    findScholarStories({ scholarId, profileId }),
+    tallyScholarStories({ scholarId, profileId }),
+    /* The same episodes the Podcasts page lists, so the two can never disagree. */
+    listEpisodesForScholar(profileId || scholarId),
+  ]);
   /* Keyed the way the scholar record is found: the profile id, or the
      scholar id for an account that carries only that. */
   const aiTerms = await getAiTerms({ profileId: profileId || scholarId });
@@ -104,7 +130,7 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
     profile: {
       name: displayName,
       title: scholar?.name?.title || null,
-      initials: scholar?.about?.avatar_initial || getInitials(displayName),
+      initials: scholarInitials(scholar),
       photo: resolveScholarPhoto(scholar),
       tagline:
         scholar?.description?.tagline ||
@@ -130,11 +156,17 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
         scholar?.metadata?.field_of_study || scholar?.about?.field_of_study,
       ].filter(Boolean),
       counts: {
-        editorials: scholarStories.length,
-        podcasts: podcasts.length,
+        stories: storyCounts,
         publications:
           scholar?.publications?.total_publications_count ||
           featuredPublications.length,
+        /* What the Podcasts page shows: the conversations, then the catalogue. */
+        podcasts: conversations.length + podcasts.length,
+        conversations: {
+          total: conversations.length,
+          live: conversations.filter((c) => c.state === "live").length,
+          pending: conversations.filter((c) => c.state === "pending").length,
+        },
       },
     },
     about: {
@@ -161,13 +193,24 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
       featuredVideo: scholar?.links_and_media?.featured_video || null,
     },
     podcasts: podcasts.slice(0, 12),
-    editorials: scholarStories.slice(0, 12).map((story) => ({
+    conversations: conversations.slice(0, 6).map((c) => ({
+      id: c.id,
+      title: c.title,
+      state: c.state,
+      with: c.with?.name || null,
+      publishedAt: c.publishedAt,
+      updatedAt: c.updatedAt,
+    })),
+    stories: scholarStories.map((story) => ({
       id: story._id,
-      title: story.title || "Untitled editorial",
+      title: story.title || "Untitled story",
       slug: story.slug || null,
       status: story.status || "draft",
+      inReview: story.status === "draft" && Boolean(story.provenance),
       createdAt: story.createdAt || null,
       updatedAt: story.updatedAt || null,
+      publishedAt: story.published_at || null,
+      scheduledFor: story.scheduled_for || null,
     })),
     source: {
       profile_collection: "scholars",

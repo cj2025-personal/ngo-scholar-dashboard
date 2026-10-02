@@ -1327,3 +1327,57 @@ test("a story written by hand can still be written for younger readers", async (
     assert.match(refused.data.error, /no paragraphs/i);
   }
 });
+
+test("the profile counts what the scholar has, never what they deleted, and its podcasts are the Podcasts page's", async () => {
+  /* A story written and then deleted: it must leave the profile with it. */
+  const form = new FormData();
+  form.set("title", "Written, then removed");
+  form.set("content", "A paragraph that will not last.");
+  form.set("bodyBlocks", JSON.stringify([{ type: "paragraph", html: "A paragraph that will not last." }]));
+  form.set("inlineImageKeys", "[]");
+  form.set("retainImageIds", "[]");
+  form.set("status", "draft");
+  const made = await call("POST", "/api/editorial-stories", { form });
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  const removed = await call("DELETE", `/api/editorial-stories/${made.data.story.id}`);
+  assert.equal(removed.status, 200);
+
+  /* A conversation in the scholar's name, as the admin portal writes one. */
+  const seat = { entity_type: "scholar", scholar_id: PROFILE_ID, profile_id: PROFILE_ID, display_name: "Test Scholar" };
+  const legend = { entity_type: "legend", scholar_id: "carter-g-woodson", profile_id: "carter-g-woodson", display_name: "Carter G. Woodson" };
+  await db.collection("scholar_dialogue_generation_jobs").insertOne({
+    _id: new ObjectId(), status: "review", selected_contemporary: seat, selected_legacy: legend,
+    generated_episode: { title: "What the record kept", turns: [] }, createdAt: new Date(), updatedAt: new Date(),
+  });
+
+  const [profile, list, podcasts, dashboard] = await Promise.all([
+    call("GET", "/api/profile/me"),
+    call("GET", "/api/editorial-stories"),
+    call("GET", "/api/podcasts"),
+    call("GET", "/api/dashboard"),
+  ]);
+  for (const r of [profile, list, podcasts, dashboard]) assert.equal(r.status, 200, JSON.stringify(r.data));
+
+  /* The counts are the Stories list's own, status by status. */
+  const stories = list.data.stories;
+  const by = (status) => stories.filter((s) => s.status === status).length;
+  assert.deepEqual(profile.data.profile.counts.stories, {
+    total: stories.length,
+    published: by("published"),
+    scheduled: by("scheduled"),
+    drafts: by("draft"),
+    inReview: stories.filter((s) => s.status === "draft" && s.provenance).length,
+  });
+  assert.ok(!profile.data.stories.some((s) => s.id === made.data.story.id || s.status === "deleted"), "a deleted story is listed");
+
+  /* Podcasts: the conversations the Podcasts page lists, plus the record's catalogue. */
+  const episodes = podcasts.data.episodes;
+  assert.ok(episodes.length >= 1);
+  assert.equal(profile.data.profile.counts.conversations.total, episodes.length);
+  assert.equal(profile.data.profile.counts.podcasts, episodes.length + (profile.data.podcasts || []).length);
+  assert.ok(profile.data.conversations.some((c) => c.title === "What the record kept" && c.with === "Carter G. Woodson"));
+
+  /* One scholar, one set of initials, whichever page asks. */
+  assert.equal(profile.data.profile.initials, "T");
+  assert.equal(dashboard.data.profile.initials, profile.data.profile.initials);
+});
