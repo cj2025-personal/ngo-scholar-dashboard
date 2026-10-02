@@ -32,6 +32,8 @@ const Face = () => <Kivyn variant="mark" size={28} />;
  */
 
 const PLACEHOLDER_START = "Describe the article you want, or say which paper it should come from…";
+/* With a paper chosen, asking which paper is a question already answered. */
+const PLACEHOLDER_FROM_PAPER = "Describe the article you want: what to focus on, and who it is for…";
 const PLACEHOLDER_REPLY = "Reply with what to change about the outline, or approve it above";
 
 function paperKey(p) {
@@ -62,6 +64,18 @@ function PaperCards({ papers, onPick, disabled }) {
     </div>
   );
 }
+
+/* Ways to begin a story. Each puts words in the box for the scholar to finish or send; none is sent for them. */
+const STARTERS = [
+  { label: "From one of my papers", text: "I'd like to write from one of my papers." },
+  { label: "For a general reader", text: "Write for a general reader about " },
+  { label: "For ages 12–14", text: "Write for readers aged 12 to 14 about " },
+];
+const STARTERS_FROM_PAPER = [
+  { label: "What could this become?", text: "What could this paper become as an article?" },
+  { label: "Its main finding, plainly", text: "Focus on the main finding, for a general reader." },
+  { label: "Be honest about the limits", text: "Focus on what the study shows, and be clear about its limits." },
+];
 
 function AudienceChips({ onPick, disabled }) {
   return (
@@ -241,10 +255,21 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     }
     const chosen = (inv.draftable || []).find((p) => paperKey(p) === paper) || null;
     if (chosen) {
-      push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? We are working from “${chosen.title}”. Tell me what the article should be: what to focus on, what to leave out, who it is for — or ask what the paper could become. I will read it and propose an outline before a word is drafted. What you approve lands in the page beside us${hasText ? ", after what you have written" : ""}, as a draft under your name for you to read and change.` });
+      push({
+        role: "agent",
+        /* The paper is named in the line under Kivyn's name and in the card
+           above the composer; said a third time here, the greeting outgrew a
+           laptop's pane and its first line scrolled away. */
+        text: `What shall we write${first ? `, ${first}` : ""}? Tell me what to focus on and who it is for; I'll propose an outline${hasText ? " that follows what you have written" : ""} for you to approve first.`,
+        starters: STARTERS_FROM_PAPER,
+      });
       return;
     }
-    push({ role: "agent", text: `What shall we write${first ? `, ${first}` : ""}? Tell me in plain words: what to focus on, what to leave out, who it is for. If it should come from one of your papers, say so, or name the paper, and I will show you which we can draw from. I read the paper and propose an outline before a word is drafted; what you approve lands in the page beside us${hasText ? ", after what you have written" : ""}, as a draft under your name for you to read and change.` });
+    push({
+      role: "agent",
+      text: `What shall we write${first ? `, ${first}` : ""}? Tell me what it is about and who it is for, or name one of your papers; I'll propose an outline${hasText ? " that follows what you have written" : ""} for you to approve first.`,
+      starters: STARTERS,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.name, push, resumeJobId]);
 
@@ -255,8 +280,10 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* A conversation reads from its latest message; the greeting alone, from its first line. */
   useEffect(() => {
-    if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
+    const el = threadRef.current;
+    if (el) el.scrollTop = messages.length > 1 || busy ? el.scrollHeight : 0;
   }, [messages, busy]);
 
   /* One line until there is more to show; `auto` first or it never shrinks. */
@@ -598,6 +625,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     setMessages((cur) => cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m)));
   }
 
+  const saidAnything = messages.some((m) => m.role === "user");
   const latestOutlineId = [...messages].reverse().find((m) => m.role === "outline" && !m.superseded && !m.approved)?.id;
 
   return (
@@ -650,7 +678,22 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
             );
           }
           if (m.role === "error") return <div key={m.id} className="ch-msg is-agent"><Face /><div className="ch-bubble is-error">{m.text}</div></div>;
-          return <div key={m.id} className="ch-msg is-agent"><Face /><div className="ch-bubble">{m.text}</div></div>;
+          return (
+            <div key={m.id} className="ch-msg is-agent">
+              <Face />
+              <div className="ch-bubble">
+                {m.text}
+                {/* Ways to begin: each fills the box, never sends, so the scholar finishes the sentence. Gone once anything is said. */}
+                {m.starters && !saidAnything ? (
+                  <div className="ch-chips ch-starters" role="group" aria-label="Ways to begin">
+                    {m.starters.map((st) => (
+                      <button key={st.label} type="button" className="ch-chip" disabled={!ready || busy} onClick={() => { setText(st.text); inputRef.current?.focus(); }}>{st.label}</button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          );
         })}
       </div>
 
@@ -721,7 +764,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
               ref={inputRef}
               className="ag-input"
               rows={1}
-              placeholder={outlineWaiting ? PLACEHOLDER_REPLY : awaitingAudience ? "Tap an age above, or tell me who it is for…" : PLACEHOLDER_START}
+              placeholder={outlineWaiting ? PLACEHOLDER_REPLY : awaitingAudience ? "Tap an age above, or tell me who it is for…" : selectedPaper ? PLACEHOLDER_FROM_PAPER : PLACEHOLDER_START}
               value={text}
               disabled={!ready || busy || (locked && !outlineWaiting)}
               onChange={(e) => setText(e.target.value)}

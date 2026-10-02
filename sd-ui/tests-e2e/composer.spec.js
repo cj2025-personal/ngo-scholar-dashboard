@@ -133,7 +133,8 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* Inline editing: the scholar types straight into the article, the draft
      saves itself, and the agent will not act until it has. */
-  await expect(page.locator(".sc-write-saved")).toHaveText(/^v\d+$/);
+  /* At rest, a saved story says so; its version is in "This draft". */
+  await expect(page.locator(".sc-write-saved")).toHaveText("Saved");
   await firstParagraph.locator(".block-editor-surface").click();
   await page.keyboard.press("End");
   await page.keyboard.type(" Written by hand.");

@@ -2536,15 +2536,19 @@ select {
   border: 0;
 }
 
-.sc-write-status { font-size: var(--fs-xs); font-weight: var(--weight-medium); line-height: 1; color: var(--burgundy); background: rgba(178, 34, 52, 0.07); border: 1px solid rgba(178, 34, 52, 0.18); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.sc-write-status { font-size: var(--fs-xs); font-weight: var(--weight-medium); line-height: 1; color: var(--ark-text-muted); background: var(--ark-surface-2); border: 1px solid var(--ark-border-soft); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
+.sc-write-status.is-published { color: var(--ark-navy); background: var(--ark-navy-soft); border-color: #c7d6f8; }
+.sc-write-status.is-scheduled { color: var(--ark-info-strong); background: var(--ark-info-soft); border-color: #c6dcf7; }
 .sc-write-metatext { font-size: var(--fs-xs); font-weight: var(--weight-regular); line-height: 1.5; color: var(--sd-faint); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-write-bar-right { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .sc-write-ghost { font-size: var(--fs-base); font-weight: var(--weight-medium); line-height: 1; color: var(--sd-muted); background: transparent; border: 0; cursor: pointer; padding: 8px 12px; border-radius: 9px; }
 .sc-write-ghost:hover { color: var(--navy); background: var(--sd-surface-2); }
 .sc-write-secondary { height: 36px; padding: 0 15px; border-radius: 10px; border: 1px solid var(--sd-line); background: var(--sd-surface); color: var(--ink); font-size: var(--fs-base); font-weight: var(--weight-medium); line-height: 1; cursor: pointer; transition: border-color 0.15s, color 0.15s; }
 .sc-write-secondary:hover { border-color: var(--navy); color: var(--navy); }
-.sc-write-publish { height: 36px; padding: 0 20px; border-radius: 10px; border: 0; color: #fff; font-size: var(--fs-base); font-weight: var(--weight-semibold); line-height: 1; cursor: pointer; background: linear-gradient(180deg, var(--navy-2), var(--navy)); box-shadow: 0 8px 18px -8px rgba(30, 58, 138, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18); transition: transform 0.15s; }
-.sc-write-publish:hover { transform: translateY(-1px); }
+.sc-write-publish { height: 36px; padding: 0 18px; border-radius: 10px; border: 0; color: #fff; font-size: var(--fs-base); font-weight: var(--weight-semibold); line-height: 1; cursor: pointer; background: var(--ark-navy); box-shadow: 0 6px 14px -10px rgba(23, 37, 84, 0.7); transition: background-color 140ms ease; }
+.sc-write-publish:hover:enabled { background: var(--ark-navy-ink); }
+.sc-write-publish:focus-visible { outline: 2px solid var(--ark-blue); outline-offset: 2px; }
+.sc-write-publish:hover { transform: none; }
 .sc-write-secondary:disabled, .sc-write-publish:disabled { opacity: 0.55; cursor: default; transform: none; }
 
 /* Banners */
@@ -5539,4 +5543,90 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 }
 @media (prefers-reduced-motion: reduce) {
   .pp-table tbody tr { transition: none; }
+}
+
+/* ══ The editor, finished ════════════════════════════════════════════════════
+   What the editor needed to sit with the rest of the platform. */
+
+/* The rail's composer hints, one above the other: side by side in a narrow
+   rail each wrapped into the other's lines. */
+.ws-right .ag-hint, .ws-agent-rail .ag-hint { flex-direction: column; align-items: flex-start; gap: 2px; }
+
+/* Sources: the same inset as Checks and Ideas, under the paragraph/story switch. */
+.ws-sources > .sr-wrap, .ws-sources > .ev-wrap { padding: 12px 16px 16px; }
+
+/* The other reading ages: on the article's measure, not the whole centre. */
+.ws-center > .lv-wrap { max-width: 760px; margin-left: auto; margin-right: auto; }
+
+/* Kivyn's ways to begin, under its first message. */
+.ch-starters { margin-top: 10px; }
+
+/* Below 1100px the three columns stack: the article first, Kivyn next, the
+   outline last; and the outline takes its own height, not the screen's. */
+@media (max-width: 1100px) {
+  .sc-writer.is-review .ws-grid { display: flex; flex-direction: column; }
+  .sc-writer.is-review .ws-center { order: 1; }
+  .sc-writer.is-review .ws-right { order: 2; }
+  .sc-writer.is-review .ws-left { order: 3; height: auto; border-bottom: 0; border-top: 1px solid var(--sd-line); }
+}
+.ws-jump {
+  display: none; position: fixed; left: 16px; bottom: 16px; z-index: 30; align-items: center; gap: 8px;
+  height: 44px; padding: 0 16px 0 8px; border-radius: 999px; background: var(--ark-navy); color: #fff;
+  font-size: var(--fs-sm); font-weight: var(--weight-semibold); text-decoration: none; box-shadow: var(--ark-shadow-md);
+}
+.ws-jump:focus-visible { outline: 2px solid var(--ark-blue); outline-offset: 2px; }
+@media (max-width: 1100px) { .sc-writer.is-review .ws-jump { display: inline-flex; } }
+
+/* On a phone a paragraph's handle and "+" show for the paragraph being edited, not above every one. */
+@media (max-width: 900px) {
+  .block-gutter { display: none; }
+  .block-row.is-active .block-gutter, .block-gutter:focus-within { display: flex; }
+}
+
+/* The other reading ages, in the editor: still a card, but resting flat on the page, so the
+   offer does not sit above the article's own title. It lifts when pointed at. */
+.ws-center > .lv-wrap.is-folded .lv-fold { box-shadow: none; background: var(--ark-card-wash); padding: 10px 12px; }
+
+/* The review bar on a phone: the page's gutter. */
+@media (max-width: 760px) {
+  .sc-writer.is-review .sc-write-bar, .sc-writer.is-review > .sc-write-msg { margin-left: 16px; margin-right: 16px; }
+}
+
+/* The paragraph handle sits 54px into the margin. At a laptop's width the
+   centre column had 32px of it, so the "+" landed on the outline's border. */
+@media (min-width: 1101px) {
+  .ws-center { padding: 0 32px 0 64px; }
+}
+
+/* The reading-ages offer, then the article: one step of space, not two. */
+.ws-center > .lv-wrap + .sc-write-canvas { padding-top: 16px; }
+
+/* Preview: the reader's page, on its width, as one sheet of paper. It used to
+   run the width of the screen under two labels saying "preview". */
+.sc-write-previewpane { padding: 24px 0 96px; }
+.sc-write-preview-tag { margin-bottom: 14px; }
+.sc-write-previewpane .preview-shell {
+  width: min(100%, var(--ark-width-reading)); margin: 0 auto; position: static;
+  background: var(--ark-surface); border: 1px solid var(--ark-border-soft); border-radius: var(--ark-radius-card);
+  box-shadow: var(--ark-shadow-sm); padding: 40px 48px 48px;
+}
+.sc-write-previewpane .preview-story-copy h1 { color: var(--flag-blue); }
+@media (max-width: 760px) {
+  .sc-write-previewpane { padding: 16px 16px 72px; }
+  .sc-write-previewpane .preview-shell { padding: 24px 20px 32px; }
+}
+
+/* The bar on a phone, in two rows: where the story stands and whether it is
+   saved; then what to do with it. It used to wrap wherever it ran out, which
+   left Publish alone on a third row under "Saved". */
+.sc-write-saved-phone { display: none; font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 680px) {
+  .sc-write-bar { row-gap: 10px; }
+  .sc-write-bar-left { flex: 1 1 100%; }
+  .sc-write-saved-phone { display: inline; margin-left: auto; }
+  .sc-write-bar-right > .sc-write-saved { display: none; }
+  .sc-write-bar-right { flex: 1 1 100%; justify-content: flex-end; flex-wrap: wrap; min-width: 0; }
+  .sc-write-bar-right .sc-write-ghost { padding: 8px 10px; }
+  .sc-write-bar-right .sc-write-secondary { padding: 0 12px; }
+  .sc-write-bar-right .sc-write-publish { padding: 0 14px; }
 }

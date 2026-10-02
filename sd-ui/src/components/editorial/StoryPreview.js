@@ -64,23 +64,19 @@ function renderBodyBlock(block, index) {
   );
 }
 
+/* The article as the reader's page lays it out: title, subtitle, cover, body.
+   The summary is not on that page (it is the feed's and the search result's),
+   so it is not here either; it used to sit under the subtitle, often saying
+   the same thing twice. */
 export default function StoryPreview({
   title,
   subtitle,
-  excerpt,
   coverImageUrl,
   coverImageFilename,
   bodyBlocks,
 }) {
   return (
-    <article className="panel preview-shell">
-      <div className="panel-heading">
-        <div>
-          <span className="eyebrow">Live Preview</span>
-          <h3>Reader view</h3>
-        </div>
-      </div>
-
+    <article className="preview-shell">
       <div className="preview-story-layout">
         {coverImageUrl ? (
           <img
@@ -93,7 +89,6 @@ export default function StoryPreview({
         <div className="preview-story-copy">
           <h1>{title || "Untitled story"}</h1>
           {subtitle ? <p className="preview-story-subtitle">{subtitle}</p> : null}
-          {excerpt ? <p className="preview-story-excerpt">{excerpt}</p> : null}
         </div>
 
         <div className="preview-body-stack">

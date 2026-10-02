@@ -257,6 +257,16 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const [pendingDraftJob, setPendingDraftJob] = useState(null);
   const stopWatchingRef = useRef(null);
   const [mode, setMode] = useState("write"); // "write" | "preview"
+  /* The preview opens at its title, and "Keep writing" returns to the place
+     left: the editor's scroll offset landed the preview mid-article. */
+  const writeScrollRef = useRef(0);
+  const togglePreview = () => {
+    const toPreview = mode === "write";
+    if (toPreview) writeScrollRef.current = window.scrollY;
+    setMode(toPreview ? "preview" : "write");
+    const y = toPreview ? 0 : writeScrollRef.current;
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  };
   /* Checks when the draft has something flagged, the agent otherwise. Opening
      on "What should change?" while four paragraphs need a look answers a
      question the scholar has not asked yet. */
@@ -770,9 +780,19 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
 
   const effectiveCoverImageUrl = form.coverPreviewUrl || form.coverImageUrl;
   const hasCover = Boolean(effectiveCoverImageUrl);
+  /* The same words, and the same pills, as the Studio and Stories: a draft Kivyn
+     wrote is in review, one by hand is a draft, and the rest say what they are. */
   const statusPill = reviewMode && form.status === "draft"
     ? { cls: "sc-write-status is-review", text: "Machine draft · in review" }
-    : { cls: "sc-write-status", text: form.id ? `Editing ${form.status}` : "New draft" };
+    : form.status === "published" && form.id
+      ? { cls: "sc-write-status is-published", text: "Published" }
+      : form.status === "scheduled" && form.id
+        ? { cls: "sc-write-status is-scheduled", text: "Scheduled" }
+        : { cls: "sc-write-status is-draft", text: form.id ? "Draft" : "New draft" };
+  /* Nothing to publish until there is something on the page. */
+  const pageIsEmpty = !String(form.title || "").trim() && totalWords === 0;
+  /* The version lives in "This draft"; the bar says only whether the page is saved. */
+  const savedLabel = isSaving ? "Saving…" : dirty ? (form.status === "draft" ? "Unsaved · saving shortly" : "Unsaved changes") : form.id || savedAt ? "Saved" : "";
 
   const editorColumn = (
     <div className="sc-write-canvas">
@@ -835,13 +855,16 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
           <span className="sc-write-metatext">
             {outlineStage
               ? "Nothing written yet — the outline is waiting for you"
-              : `${totalWords.toLocaleString()} ${totalWords === 1 ? "word" : "words"} · ${readingTime} min`}
+              : totalWords === 0
+                ? "Nothing written yet"
+                : `${totalWords.toLocaleString()} ${totalWords === 1 ? "word" : "words"} · ${readingTime} min read`}
           </span>
+          {/* On a phone the saved state rides in this row, beside the status,
+              so the actions below it fit on one line. One of the two shows. */}
+          <span className="sc-write-saved-phone">{savedLabel}</span>
         </div>
         <div className="sc-write-bar-right">
-          <span className="sc-write-saved">
-            {isSaving ? "Saving…" : dirty ? (form.status === "draft" ? "Unsaved · saving shortly" : "Unsaved changes") : savedAt ? "Saved" : `v${form.version}`}
-          </span>
+          <span className="sc-write-saved">{savedLabel}</span>
           {/* It used to be a label. Saying what needs doing without offering
               to take you there makes the reader hunt for it in a rail. */}
           {reviewMode && summary.attention > 0 ? (
@@ -861,12 +884,12 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               screen. */}
           {outlineStage ? null : (
             <>
-              <button type="button" className="sc-write-ghost" onClick={() => setMode(mode === "write" ? "preview" : "write")}>{mode === "write" ? "Preview" : "Keep writing"}</button>
+              <button type="button" className="sc-write-ghost" onClick={togglePreview}>{mode === "write" ? "Preview" : "Keep writing"}</button>
               <button type="button" className="sc-write-secondary" onClick={() => submitStory("draft")} disabled={isSaving || proposalPending}>{isSaving ? "Saving…" : "Save draft"}</button>
               {reviewMode ? (
                 <button type="button" className="sc-write-publish" onClick={() => setShowPublishCheck(true)} disabled={isSaving || proposalPending || dirty}>Publish check</button>
               ) : (
-                <button type="button" className="sc-write-publish" onClick={() => submitStory("published")} disabled={isSaving}>Publish</button>
+                <button type="button" className="sc-write-publish" onClick={() => submitStory("published")} disabled={isSaving || pageIsEmpty} title={pageIsEmpty ? "Write a title or a paragraph first" : undefined}>Publish</button>
               )}
             </>
           )}
@@ -896,8 +919,8 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
 
       {mode === "preview" ? (
         <div className="sc-write-previewpane">
-          <div className="sc-write-preview-tag">Draft preview &middot; reader view</div>
-          <StoryPreview title={form.title} subtitle={form.subtitle} excerpt={form.excerpt} coverImageUrl={effectiveCoverImageUrl} coverImageFilename={form.coverImageFilename} bodyBlocks={form.bodyBlocks.map((block) => (block.type === "image" ? { ...block, url: block.previewUrl || block.imageUrl } : block))} />
+          <div className="sc-write-preview-tag">Preview · how the article will read</div>
+          <StoryPreview title={form.title} subtitle={form.subtitle} coverImageUrl={effectiveCoverImageUrl} coverImageFilename={form.coverImageFilename} bodyBlocks={form.bodyBlocks.map((block) => (block.type === "image" ? { ...block, url: block.previewUrl || block.imageUrl } : block))} />
         </div>
       ) : !reviewMode ? (
         (
@@ -1008,7 +1031,9 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
             {viewLevel ? null : editorColumn}
           </div>
 
-          <aside className={railTab === "chat" ? "ws-right is-agent" : "ws-right"}>
+          {/* Below 1100px the rail stacks under the article; this keeps Kivyn one tap away. */}
+          <a href="#ws-kivyn" className="ws-jump"><Kivyn variant="mark" size={28} /> {AGENT_NAME}</a>
+          <aside id="ws-kivyn" className={railTab === "chat" ? "ws-right is-agent" : "ws-right"}>
             <StudioAgentShell
               status={!consented ? "Read the terms once to begin" : reviewPose === "tracing" ? (sourcesView === "story" ? "Tracing the story to its sources" : "Tracing the paragraph to its passages") : agentStatus.text}
               busy={consented && agentStatus.busy}

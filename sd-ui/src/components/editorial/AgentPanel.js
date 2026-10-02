@@ -26,7 +26,6 @@ const EXAMPLES = [
   "Add a paragraph about the limitations, citing the paper",
   "Make the opening plainer for a fifteen-year-old",
   "Add an illustration of the experiment after paragraph 1",
-  "Delete the last section",
 ];
 
 /* Kivyn beside each reply: still, so a thread does not blink at the reader from every line. */
@@ -160,8 +159,11 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
     return () => { alive = false; };
   }, [storyId]);
 
+  /* A conversation reads from its latest turn; an empty one from its heading,
+     which a short screen used to scroll out of sight above the examples. */
   useEffect(() => {
-    if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
+    const el = threadRef.current;
+    if (el) el.scrollTop = turns.length || busy ? el.scrollHeight : 0;
   }, [turns.length, busy]);
 
   const pending = turns.find((t) => t.status === "proposed" && t.changes?.length);
@@ -245,7 +247,7 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
             <Face />
             <div className="ag-reply-body ag-empty">
               <p className="ag-empty-title">What should change?</p>
-              <p className="st-muted">Say it in plain words. I read the draft and the paper, make the change, check it against the passages, and show it to you before it lands. Nothing changes until you accept. Try one of these:</p>
+              <p className="st-muted">Say it in plain words. I check the change against the paper and show it to you; nothing lands until you accept.</p>
               <div className="ag-examples">{EXAMPLES.map((e) => <button key={e} type="button" className="ag-example" onClick={() => send(e)}>{e}</button>)}</div>
             </div>
           </div>
