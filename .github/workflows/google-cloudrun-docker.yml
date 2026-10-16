@@ -121,16 +121,14 @@ jobs:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
-      # To switch to Workload Identity Federation, replace the credentials_json
-      # line with:
-      #   workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
-      #   service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}'
-      # Keep token_format — Docker Auth needs the access token either way.
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v2'
         with:
-          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+          # No key file: GitHub's token for this repository is exchanged for the
+          # deployer account through the project's workload identity pool.
+          workload_identity_provider: '${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || ''projects/77137640226/locations/global/workloadIdentityPools/github-pool/providers/github-provider'' }}'
+          service_account: '${{ vars.GCP_SERVICE_ACCOUNT || ''github-deployer@ngo-application-services.iam.gserviceaccount.com'' }}'
           token_format: 'access_token'
           access_token_scopes: 'https://www.googleapis.com/auth/cloud-platform'
 
@@ -301,7 +299,10 @@ jobs:
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v2'
         with:
-          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+          # No key file: GitHub's token for this repository is exchanged for the
+          # deployer account through the project's workload identity pool.
+          workload_identity_provider: '${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || ''projects/77137640226/locations/global/workloadIdentityPools/github-pool/providers/github-provider'' }}'
+          service_account: '${{ vars.GCP_SERVICE_ACCOUNT || ''github-deployer@ngo-application-services.iam.gserviceaccount.com'' }}'
           token_format: 'access_token'
           access_token_scopes: 'https://www.googleapis.com/auth/cloud-platform'
 
