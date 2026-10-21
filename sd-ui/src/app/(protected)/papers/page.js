@@ -6,7 +6,7 @@ import { getScholarProfile } from "@/lib/profile";
 
 export const metadata = {
   title: "Your papers",
-  description: "What Archivyn holds of your work, and what it may be used for",
+  description: "What Proj Arch holds of your work, and what it may be used for",
 };
 
 export const dynamic = "force-dynamic";

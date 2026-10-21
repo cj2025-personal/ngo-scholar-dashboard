@@ -3,7 +3,7 @@
     python scripts/brand/alyno_logo.py          (npm run brand:alyno)
 
 Alyno AI is the scholar directory's chatbot. Its mark is built only from parts of
-Archivyn's A, so the two read as one family:
+Proj Arch's A, so the two read as one family:
 
 -- The kite ---------------------------------------------------------------------
 The A's peak (navy left, red right) and its reflection beneath it, colours
@@ -21,7 +21,7 @@ alyno-mark-small           below 32 px: no point of light (it is under a pixel
 alyno-mark-mono-{navy,white,black}
                            one colour, for embossing, stamps, tinted icons: the
                            silhouette and the cut carry it, as the A's do
-alyno-lockup               the kite and the name, Alyno AI, to Archivyn's wordmark spec
+alyno-lockup               the kite and the name, Alyno AI, to Proj Arch's wordmark spec
 Each colour file has an -on-dark twin. Shapes, gradients, the wordmark's face,
 weight and tracking all come from archivyn_logo.py; nothing is restated here.
 """
@@ -30,7 +30,7 @@ import argparse
 import math
 import os
 
-from archivyn_logo import COMPACT, FULL, GLINT, GRADIENTS, NAVY, ON_DARK_WORD, WORD, WORD_WEIGHT, Face, document, num
+from archivyn_logo import COMPACT, FULL, GLINT, GRADIENTS, NAVY, ON_DARK_WORD, WORD_TRACKING, WORD_WEIGHT, Face, document, num
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUT = os.path.join(HERE, "..", "..", "public", "brand", "alyno")
@@ -112,10 +112,10 @@ def kite(prefix, height, x=0.0, y=0.0, tone="light", cut=CUT, light=True, mono=N
 def build(out):
     os.makedirs(out, exist_ok=True)
     word = Face(WORD_WEIGHT)
-    # Archivyn's own tracking, measured the way its script measures it, so the two words match.
-    track = word.tracking_for(WORD, FULL["word_cap"], FULL["word_w"])
+    # Proj Arch's own tracking, so the two words match.
+    track = WORD_TRACKING
     files = {}
-    mark_h = 223  # Archivyn's mark height, so the two lockups stand at one size
+    mark_h = 223  # Proj Arch's mark height, so the two lockups stand at one size
     for tone, word_fill, suffix in (("light", NAVY, ""), ("dark", ON_DARK_WORD, "-on-dark")):
         p = f"aly{suffix.replace('-', '')}"
         defs, body, box = kite(f"{p}-m", mark_h, tone=tone)
@@ -124,7 +124,7 @@ def build(out):
         sdefs, sbody, sbox = kite(f"{p}-s", mark_h, tone=tone, cut=SMALL_CUT, light=False)
         files[f"alyno-mark-small{suffix}.svg"] = document("Alyno", sdefs, sbody, [sbox], pad=4)
 
-        # The word as in Archivyn's compact lockup: same cap height and tracking; centred on the kite.
+        # The word as in Proj Arch's compact lockup: same cap height and tracking; centred on the kite.
         cap = COMPACT["word_cap"]
         wx = box[2] + 30
         base = mark_h / 2 + cap / 2

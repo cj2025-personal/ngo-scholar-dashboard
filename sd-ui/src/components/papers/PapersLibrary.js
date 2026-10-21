@@ -92,7 +92,7 @@ export default function PapersLibrary({ inventory, stories }) {
         <div>
           <p className="dash-date">Papers</p>
           <h1 className="dash-greet">Your papers</h1>
-          <p className="pods-intro">What Archivyn holds of your work, and what each may be used for, in the words of the rule that decides it.</p>
+          <p className="pods-intro">What Proj Arch holds of your work, and what each may be used for, in the words of the rule that decides it.</p>
         </div>
         <a href={DOCS_PORTAL_URL} target="_blank" rel="noreferrer" className="dash-btn is-primary papers-add">
           <HiOutlineArrowUpTray size={15} aria-hidden /> Add a paper

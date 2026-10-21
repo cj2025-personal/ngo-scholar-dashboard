@@ -37,7 +37,7 @@ const SECTIONS = [
 /* Said as it is: a turn is meant to stand on a cited passage, and the page
    exists because some do not, so the second step promises the flag, not the source. */
 const STEPS = [
-  ["Paired", "Archivyn pairs your work with another scholar's, often one from the archive, on a theme you share."],
+  ["Paired", "Proj Arch pairs your work with another scholar's, often one from the archive, on a theme you share."],
   ["Written from both records", "Each turn is meant to stand on a passage one of you wrote. You see which, and any turn of yours that cites nothing is flagged."],
   ["Shown to you first", "It appears here before anyone can hear it. The editors decide when it goes out."],
 ];
@@ -104,7 +104,7 @@ export default async function PodcastsPage() {
                 <span className="pods-empty__icon" aria-hidden><HiOutlineMicrophone size={26} /></span>
                 <h2 id="pods-empty-title" className="dash-h2">No conversation has been made in your name yet</h2>
                 <p className="dash-muted">
-                  When Archivyn pairs your work with a scholar from the archive, the conversation appears here first:
+                  When Proj Arch pairs your work with a scholar from the archive, the conversation appears here first:
                   every turn spoken as you, and the passages each one was built from, before anyone can hear it.
                   Conversations are built from your record, so it is worth making sure the record is right.
                 </p>

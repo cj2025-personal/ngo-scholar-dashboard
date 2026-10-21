@@ -25,7 +25,7 @@ export default async function LoginPage({ searchParams }) {
     <main className="auth-shell">
       <section className="auth-card">
         <div className="auth-copy">
-          <span className="auth-kicker">Archivyn</span>
+          <span className="auth-kicker">Proj Arch</span>
           <h1>Scholar sign in</h1>
           <p>
             Use your scholar credentials to access the dashboard. Authentication

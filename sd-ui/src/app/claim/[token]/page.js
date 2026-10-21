@@ -4,8 +4,8 @@ import ClaimForm from "@/components/auth/ClaimForm";
 import { describeInvite } from "@/lib/invites";
 
 export const metadata = {
-  title: "Claim your Archivyn account",
-  description: "Set up your scholar account on Archivyn",
+  title: "Claim your Proj Arch account",
+  description: "Set up your scholar account on Proj Arch",
 };
 
 /**
@@ -38,7 +38,7 @@ export default async function ClaimPage({ params }) {
               </>
             ) : (
               <>
-                Ask the Archivyn team for a new invitation, or{" "}
+                Ask the Proj Arch team for a new invitation, or{" "}
                 <Link href="/login">sign in</Link> if you already have an account.
               </>
             )}
@@ -55,13 +55,13 @@ export default async function ClaimPage({ params }) {
           be able to see WHOSE before they commit — an invitation sent to the
           wrong address should be obvious to the wrong recipient. */}
       <div className="auth-card auth-card--single auth-card--identity">
-        <p className="auth-card__eyebrow">Archivyn scholar account</p>
+        <p className="auth-card__eyebrow">Proj Arch scholar account</p>
         <h2 className="auth-card__identity-name">{invite.scholarName}</h2>
         {invite.institution ? (
           <p className="auth-card__identity-meta">{invite.institution}</p>
         ) : null}
         <p className="auth-card__lede">
-          If this isn&rsquo;t you, don&rsquo;t continue — tell the Archivyn team
+          If this isn&rsquo;t you, don&rsquo;t continue — tell the Proj Arch team
           so the invitation can be withdrawn.
         </p>
       </div>

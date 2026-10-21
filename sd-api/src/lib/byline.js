@@ -2,7 +2,7 @@
  * Who wrote this, as a reader should see it.
  *
  * ── Why a published article needs this at all ──────────────────────────────
- * The scholar portal exists so that what Archivyn shows students under a named
+ * The scholar portal exists so that what Proj Arch shows students under a named
  * person's name is something that person can see and stand behind. An article
  * published through it that carries no author defeats that on the one surface
  * where it matters most — and it was carrying none: the story document holds a

@@ -8,7 +8,7 @@
  *
  * ── What these assert, and what they deliberately do not ───────────────────
  * The counts move: other specs in this suite publish stories and approve
- * levels, and the Archivyn half of the benchmark counts exactly those things.
+ * levels, and the Proj Arch half of the benchmark counts exactly those things.
  * So nothing here asserts a number. What is asserted is the shape a benchmark
  * has to have to be one — every mark accounted for, every unmet mark carrying
  * the sentence that would move it, and the standing itself consistent with the
@@ -159,7 +159,7 @@ test("one mark short puts an invitation in the queue, and holding Legacy does no
 
     /* Asserted, not branched on. The seed gives this scholar four papers with
        three licensed in full, so the two scholarship marks hold and only the
-       Archivyn one is short — exactly one mark. Branching here instead would
+       Proj Arch one is short — exactly one mark. Branching here instead would
        let a seed change turn this into a test that quietly checks nothing. */
     expect(standing.standing, `expected one mark short, got ${standing.met}/${standing.total}`).toBe("approaching");
     expect(standing.grandfathered).toBe(false);

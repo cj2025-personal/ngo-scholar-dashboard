@@ -34,7 +34,7 @@ import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
  * written has no other way to start the next one. Everywhere else it would
  * be in the way. The Studio carries it as a nudge in the page; the new story
  * and a story's own page are already the editor; Papers starts a story from
- * each paper's row; Podcasts, Profile, what Archivyn says about you and Where
+ * each paper's row; Podcasts, Profile, what Proj Arch says about you and Where
  * you stand are not about writing.
  *
  * It is not pinned. It scrolls away with the page — on a reading and writing
@@ -245,7 +245,7 @@ function AccountMenu({ me, active = false }) {
 /* The compact lockup (the mark and the word, no tagline: at bar size the
    tagline would be 5px tall). Width and height are the file's viewBox, so the
    box is reserved before it loads; CSS sets the drawn height. */
-const LOCKUP = { src: "/brand/archivyn-lockup-compact.svg", width: 748.5, height: 225.83 };
+const LOCKUP = { src: "/brand/archivyn-lockup-compact.svg", width: 752.59, height: 226.22 };
 
 export default function Topbar({ activeHref = "/", me = { initials: "SC", name: "Scholar" }, write = false }) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -271,14 +271,14 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
   return (
     <header className="nb-bar">
       <div className="nb-bar__inner">
-        <Link href="/" className="nb-brand" aria-label="Archivyn — home">
+        <Link href="/" className="nb-brand" aria-label="Proj Arch — home">
           {/* Vector, from scripts/brand/archivyn_logo.py: sharp at every size
               and density. A plain <img>, because next/image has nothing to
               optimise in an SVG. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={LOCKUP.src}
-            alt="Archivyn"
+            alt="Proj Arch"
             width={LOCKUP.width}
             height={LOCKUP.height}
             className="nb-lockup"

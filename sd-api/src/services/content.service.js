@@ -6,7 +6,7 @@ const { serializeMongoValue } = require("../lib/serialize");
  * "What content of mine is shown to students?"
  *
  * ── The question this platform could not answer ────────────────────────────
- * Archivyn publishes to children about 9,925 real, named researchers, and until
+ * Proj Arch publishes to children about 9,925 real, named researchers, and until
  * the identity bridge existed it could not tell any of them what it had
  * published under their name.
  *

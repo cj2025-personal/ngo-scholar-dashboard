@@ -11,7 +11,7 @@ const AUTH_API_URL =
  * The corrections this scholar has asked for, and what happened to each.
  *
  * ── Why this page exists at all ────────────────────────────────────────────
- * Archivyn publishes claims about named individuals curated from public
+ * Proj Arch publishes claims about named individuals curated from public
  * sources. A scholar who reports that something about them is wrong is
  * exercising a right of reply, and a right of reply nobody answers visibly is
  * not one. Until this view existed, a request went in and the person who made

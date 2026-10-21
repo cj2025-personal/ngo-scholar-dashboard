@@ -96,9 +96,9 @@ function inviteRejection(invite, now = new Date()) {
 
 const REJECTION_MESSAGES = {
   unknown: "This invitation link is not valid.",
-  expired: "This invitation has expired. Ask the Archivyn team for a new one.",
+  expired: "This invitation has expired. Ask the Proj Arch team for a new one.",
   already_redeemed: "This invitation has already been used. Try signing in instead.",
-  revoked: "This invitation was withdrawn. Contact the Archivyn team.",
+  revoked: "This invitation was withdrawn. Contact the Proj Arch team.",
   malformed: "This invitation is not valid.",
 };
 

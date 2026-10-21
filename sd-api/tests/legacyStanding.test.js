@@ -53,7 +53,7 @@ test("two gates short is contemporary, with everything still measured", () => {
  * The half that did not exist before. A scholar whose public record is thin
  * but who has done the work here must be able to see that it counted.
  */
-test("Archivyn work is measured on its own, and counts toward the benchmark", () => {
+test("Proj Arch work is measured on its own, and counts toward the benchmark", () => {
   const thin = at({ publishedStories: 0, approvedLevels: 0, substantiveResponses: 0 });
   const busy = at({});
   const gate = (a) => a.gates.find((g) => g.key === "archivyn");
@@ -62,7 +62,7 @@ test("Archivyn work is measured on its own, and counts toward the benchmark", ()
   assert.deepEqual(gate(busy).measured, { published: 4, levels: 5, responses: 2 });
 });
 
-test("Archivyn work alone does not clear the benchmark", () => {
+test("Proj Arch work alone does not clear the benchmark", () => {
   /* Prolific here, nothing on the public record: the scholarship gates still
      hold it, which is the documented policy rather than an accident. */
   const a = at({ sourcesOnRecord: 0, fullUseSources: 0, publishedStories: 40, approvedLevels: 40 });

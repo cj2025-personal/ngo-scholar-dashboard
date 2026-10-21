@@ -3,7 +3,7 @@
 /**
  * Whose voice a paragraph is written in, judged by a model.
  *
- * An article on Archivyn is either the scholar's own account under their
+ * An article on Proj Arch is either the scholar's own account under their
  * byline — impersonal, the work as its subject — or an article about them in
  * the third person. In neither may the prose speak as the scholar. In the
  * scholar's own account it may not refer to them either.

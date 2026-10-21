@@ -3,13 +3,13 @@ import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
 
 /*
- * Archivyn type system: Inter, for every surface of the product.
+ * Proj Arch type system: Inter, for every surface of the product.
  *
  * One family, loaded here once as `--font-inter` and read through
  * `--font-ui` / `--font-reading` in archivyn-tokens.css; the stack behind it
  * holds the layout until it arrives. The roles — page titles, sections, cards,
  * controls, the 16px reading register, AI responses — are the shared ones in
- * archivyn-tokens.css and archivyn-type.css, the same in every Archivyn app.
+ * archivyn-tokens.css and archivyn-type.css, the same in every Proj Arch app.
  *
  * The variable class sits on <html> so that everything rendered into <body>,
  * portals and dialogs included, sees the variable.
@@ -17,7 +17,7 @@ import "./globals.css";
  * No `weight`: leaving it out fetches the variable font, one file for the
  * whole axis, rather than a static cut per weight the sheet uses.
  *
- * The Archivyn logo is outlined vector (public/brand/, from scripts/brand/archivyn_logo.py) and needs no
+ * The Proj Arch logo is outlined vector (public/brand/, from scripts/brand/archivyn_logo.py) and needs no
  * face of its own: its letters are Figtree, already converted to shapes.
  */
 const inter = Inter({
@@ -27,7 +27,7 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "Archivyn · Scholar Commons",
+  title: "Proj Arch · Scholar Commons",
   description: "Where university scholars publish research, stories, and podcasts.",
   metadataBase: new URL(getSiteUrl()),
 };

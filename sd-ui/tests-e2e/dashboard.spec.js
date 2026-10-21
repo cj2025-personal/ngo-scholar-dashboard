@@ -66,7 +66,7 @@ test("every number on the Studio is the API's", async ({ page }) => {
   const papers = page.locator(".st-rail .st-card", { hasText: "Your papers" });
   await expect(papers.locator(".dash-legend")).toContainText(`${sources.counts.draftable} ready to draft`);
   /* The Kivyn card and the profile card were the bar's door and account menu, said again. */
-  await expect(page.locator(".st-rail")).not.toContainText("What Archivyn says about you");
+  await expect(page.locator(".st-rail")).not.toContainText("What Proj Arch says about you");
   await expect(page.locator(".st-rail")).not.toContainText("can plan your next story");
 
   if (stories.length === 0 && jobs.length === 0) {
@@ -180,7 +180,7 @@ test("the bar's logo is the vector lockup, and it draws", async ({ page }) => {
   await page.goto("/papers");
   const logo = page.locator(".nb-brand img");
   await expect(logo).toHaveAttribute("src", "/brand/archivyn-lockup-compact.svg");
-  await expect(logo).toHaveAttribute("alt", "Archivyn");
+  await expect(logo).toHaveAttribute("alt", "Proj Arch");
   await expect.poll(() => logo.evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
   const box = await logo.boundingBox();
   expect(Math.round(box.height)).toBe(42);

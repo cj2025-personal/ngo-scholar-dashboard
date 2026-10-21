@@ -1,4 +1,4 @@
-# The Archivyn logo
+# The Proj Arch logo
 
 The logo as vector, in `public/brand/`. Every file is outlined, so it needs no font and looks the same in a browser, an email client that shows SVG, a PDF, Figma or Canva.
 
@@ -11,7 +11,7 @@ Regenerate with `npm run brand:logo` after `pip install fonttools uharfbuzz`. Do
 | `archivyn-lockup.svg` | the mark, the wordmark and the tagline | sign-in screens, splash and empty states, footers, documents, decks, email headers | **96px tall** (the tagline's capitals are 8.5px there) |
 | `archivyn-lockup-compact.svg` | the mark and the wordmark | interface chrome: the top bar (34px), sidebars, loaders | 20px tall |
 | `archivyn-wordmark.svg` | the word alone | where the mark already appears nearby, or space is wide and short | 12px tall |
-| `archivyn-mark.svg` | the A alone | app icons, favicons, avatars for Archivyn, tight squares | 16px tall |
+| `archivyn-mark.svg` | the A alone | app icons, favicons, avatars for Proj Arch, tight squares | 16px tall |
 
 Each file has an `-on-dark` twin for navy or photographic backgrounds. Don't place the light files on dark grounds: the navy half of the A disappears into navy.
 
@@ -21,11 +21,11 @@ Below the full lockup's minimum, use the compact lockup instead of shrinking the
 
 ```jsx
 {/* A plain <img>: next/image has nothing to optimise in an SVG. */}
-<img src="/brand/archivyn-lockup-compact.svg" alt="Archivyn" width={748.5} height={225.83} style={{ height: 34, width: "auto" }} />
+<img src="/brand/archivyn-lockup-compact.svg" alt="Proj Arch" width={752.59} height={226.22} style={{ height: 34, width: "auto" }} />
 ```
 
 - Set the height in CSS and the width to `auto`. The `width` and `height` attributes are the file's `viewBox`, so the space is reserved before the file loads.
-- Use `alt="Archivyn"`. If the logo is a link home, name the link: `aria-label="Archivyn — home"`.
+- Use `alt="Proj Arch"`. If the logo is a link home, name the link: `aria-label="Proj Arch — home"`.
 
 ## Clear space and colour
 
@@ -47,7 +47,7 @@ Below the full lockup's minimum, use the compact lockup instead of shrinking the
 - **Licence:** Figtree is licensed under the SIL Open Font License 1.1 (`fonts/OFL.txt`), which allows commercial use, embedding and use in logos.
 - **Getting it:** install it from Google Fonts. Figma has it built in.
 - **Where it came from:** the logo was first set in Avenir in Canva. Avenir is commercial and can't ship in these files. Figtree is the open face with the same tells: the round dot on the i, the hooked tail of the y, the flat apex of the A and the open c.
-- **Reuse the files, don't retype:** for logo use, take the SVGs (Canva accepts SVG uploads) rather than re-typing "Archivyn". The spacing in the files is tuned.
+- **Reuse the files, don't retype:** for logo use, take the SVGs (Canva accepts SVG uploads) rather than re-typing "Proj Arch". The spacing in the files is tuned.
 
 ## Don't
 
@@ -61,7 +61,7 @@ Below the full lockup's minimum, use the compact lockup instead of shrinking the
 
 Alyno AI is the scholar directory's chatbot. Its mark is the **kite in flight**, built only from parts of the A: the peak (navy left, red right) and its reflection with the colours swapped, meeting at the A's crossbar cut, tilted as if flying, with the A's point of light at its tip.
 
-Regenerate with `npm run brand:alyno`. It imports `archivyn_logo.py`, so the gradients, the point of light, the wordmark's face, weight and tracking can't drift from Archivyn's.
+Regenerate with `npm run brand:alyno`. It imports `archivyn_logo.py`, so the gradients, the point of light, the wordmark's face, weight and tracking can't drift from Proj Arch's.
 
 ## Which file, where
 

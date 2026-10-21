@@ -2,7 +2,7 @@
  * The lifecycle of a scholar's correction request.
  *
  * ── What this is for ───────────────────────────────────────────────────────
- * Archivyn publishes claims about 9,925 named individuals, curated from public
+ * Proj Arch publishes claims about 9,925 named individuals, curated from public
  * sources. Those people have no other way to correct the record. That is a
  * right of reply, and a right of reply that goes into a box nobody empties is
  * not one — which is what existed before this file: requests were stored with

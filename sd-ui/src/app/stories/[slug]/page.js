@@ -47,7 +47,7 @@ export async function generateMetadata({ params }) {
   const image = buildPublicImageUrl(story.coverImage?.url);
   const title = story.title;
   const description =
-    story.excerpt || "Published scholar story from Archivyn.";
+    story.excerpt || "Published scholar story from Proj Arch.";
 
   return {
     title,
@@ -60,7 +60,7 @@ export async function generateMetadata({ params }) {
       url: canonical,
       title,
       description,
-      siteName: "Archivyn Stories",
+      siteName: "Proj Arch Stories",
       publishedTime: story.publishedAt || undefined,
       modifiedTime: story.updatedAt || undefined,
       images: image ? [{ url: image, alt: title }] : [],

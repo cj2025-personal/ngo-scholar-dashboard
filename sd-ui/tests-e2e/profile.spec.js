@@ -1,5 +1,5 @@
 /**
- * Profile: the record as Archivyn holds it, and the numbers beside it.
+ * Profile: the record as Proj Arch holds it, and the numbers beside it.
  *
  * What it used to get wrong, and this keeps right:
  *   - a deleted story was counted, and listed as "deleted";
@@ -64,7 +64,7 @@ test("every part of the record says how to correct it, in words, and the answers
   expect(await suggest.count()).toBeGreaterThanOrEqual(2);
   await expect(page.getByRole("button", { name: "Suggest an edit: Name and headline" })).toBeVisible();
   await expect(page.locator("#corrections")).toBeVisible();
-  await expect(page.getByRole("link", { name: /What Archivyn says about you/ })).toHaveAttribute("href", "/content");
+  await expect(page.getByRole("link", { name: /What Proj Arch says about you/ })).toHaveAttribute("href", "/content");
 
   /* The seeded scholar's record is thin: the page says so, and offers the one useful thing. */
   const { about, researchFocus, education, milestones, featuredPublications } = await api(page, "/api/profile/me");

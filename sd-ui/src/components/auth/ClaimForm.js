@@ -61,7 +61,7 @@ export default function ClaimForm({ token, scholarName }) {
         },
       );
     } catch {
-      setError("We couldn't reach Archivyn. Check your connection and try again.");
+      setError("We couldn't reach Proj Arch. Check your connection and try again.");
       setSubmitting(false);
       return;
     }
@@ -103,7 +103,7 @@ export default function ClaimForm({ token, scholarName }) {
     <form className="auth-card auth-card--single" onSubmit={handleSubmit} noValidate>
       <h1 className="auth-card__title">Set your password</h1>
       <p className="auth-card__lede">
-        You&rsquo;re setting up the Archivyn account for{" "}
+        You&rsquo;re setting up the Proj Arch account for{" "}
         <strong>{scholarName || "your scholar profile"}</strong>.
       </p>
 

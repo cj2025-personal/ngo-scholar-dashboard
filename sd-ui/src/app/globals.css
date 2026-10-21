@@ -2,7 +2,7 @@
 @import "./archivyn-type.css";
 
 :root {
-  /* ── Legacy "flag" palette — aliased onto the canonical Archivyn tokens ── */
+  /* ── Legacy "flag" palette — aliased onto the canonical Proj Arch tokens ── */
   --flag-red: var(--ark-red);
   --flag-blue: var(--ark-navy);
   --flag-white: #ffffff;
@@ -19,7 +19,7 @@
   --shadow-lg: var(--ark-shadow-lg);
   --shadow-md: var(--ark-shadow-md);
 
-  /* ── Scholar Commons — aliased onto the canonical Archivyn tokens ───── */
+  /* ── Scholar Commons — aliased onto the canonical Proj Arch tokens ───── */
   --ink: var(--ark-text);
   --navy: var(--ark-navy);
   --navy-2: var(--ark-blue);
@@ -2903,7 +2903,7 @@ select {
 .st-page {
   padding: 20px 24px 44px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 18px; align-items: start;
   /* Aliases, not values. The recipe lives in archivyn-tokens.css, which every
-     Archivyn app ships a copy of; these short names keep the rules below
+     Proj Arch app ships a copy of; these short names keep the rules below
      readable without giving this page its own definition of a card. */
   --st-line: var(--ark-card-line);
   --st-line-strong: var(--ark-card-line-strong);
@@ -5118,7 +5118,7 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 
 /* ══ Profile ═════════════════════════════════════════════════════════════════
    The record, in the Studio's cards and tiles: who, then four numbers, then
-   the record beside the details and the work on Archivyn. Everything here is
+   the record beside the details and the work on Proj Arch. Everything here is
    the dashboard's own parts (.dash, .dash-card, .dash-tile, .dash-pill); these
    rules are only what a record has that a dashboard does not. */
 .prof-head { display: flex; align-items: center; gap: 20px; }

@@ -1,5 +1,5 @@
 /* ============================================================
-   Archivyn Design Tokens · v1
+   Proj Arch Design Tokens · v1
    Canonical sheet, shared verbatim across all four app repos:
    user-dashboard/frontend · ngo-admin-app/ngo-admin-ui ·
    scholar-dashboard/sd-ui · ngo-profile-app/frontend
@@ -95,7 +95,7 @@
    *
    * One family, loaded by each app's root layout through next/font as
    * --font-inter; the stack behind it holds the layout until it arrives.
-   * The Archivyn logo is artwork and keeps its own lettering; code keeps a
+   * The Proj Arch logo is artwork and keeps its own lettering; code keeps a
    * monospace face. Two registers from the one face:
    *   product UI  14px / 1.55  dashboards, menus, controls, filters, tables
    *   reading     16px / 1.65  articles, scholar work, passages, generated

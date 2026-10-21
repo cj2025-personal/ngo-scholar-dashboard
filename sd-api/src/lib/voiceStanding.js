@@ -1,5 +1,5 @@
 /**
- * Whether Archivyn may speak *as* a scholar, rather than *about* them.
+ * Whether Proj Arch may speak *as* a scholar, rather than *about* them.
  *
  * ── The line this draws ────────────────────────────────────────────────────
  * The legendary-story pipeline carries `safety.assume_deceased: true`. Every
@@ -33,13 +33,13 @@
  */
 
 const STANDING = {
-  /** The default. Archivyn writes about them, third person, cited. */
+  /** The default. Proj Arch writes about them, third person, cited. */
   CONTEMPORARY: "contemporary",
   /** Opted in, working through the gates. Still written about. */
   CANDIDATE: "candidate",
   /** Corpus, record and consent hold. Voice fidelity under test. */
   CALIBRATING: "calibrating",
-  /** Archivyn may speak as them, inside their declared scope. */
+  /** Proj Arch may speak as them, inside their declared scope. */
   STANDING: "standing",
   /** Held standing; a gate regressed or a warden tripped. Recoverable. */
   SUSPENDED: "suspended",
@@ -65,7 +65,7 @@ function maySpeakAs(standing) {
  * That is the point rather than an oversight. A voice built from 13 third-party
  * chunks under short-quote licences would be neither faithful nor lawful. The
  * gate is cleared by the scholar contributing their own work, which is the one
- * thing Archivyn cannot acquire by scraping — and which simultaneously gives it
+ * thing Proj Arch cannot acquire by scraping — and which simultaneously gives it
  * rights it does not otherwise have.
  */
 const THRESHOLDS = {
@@ -155,7 +155,7 @@ const GATES = [
   {
     key: "record",
     title: "Your record, checked by you",
-    /* Why it exists: everything Archivyn generates about a scholar — passages,
+    /* Why it exists: everything Proj Arch generates about a scholar — passages,
        stories, and any answer a voice would give — is produced from the curated
        record. Checking a generated artefact fixes one disposable thing; checking
        the record fixes every artefact that will ever be made from it.

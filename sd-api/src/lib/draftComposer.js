@@ -6,7 +6,7 @@
  * scholar then edits and publishes under their own byline.
  *
  * ── Two voices, and the line between them ──────────────────────────────────
- * `voiceStanding.js` draws the line that Archivyn may write ABOUT a living
+ * `voiceStanding.js` draws the line that Proj Arch may write ABOUT a living
  * scholar by default and AS them only with standing, and no scholar has
  * standing yet. A draft that starts "I found…" under a real name is a claim
  * the person did not make. That rule still holds, in both voices here.
@@ -177,7 +177,7 @@ function buildSystemInstruction({ voice = DEFAULT_VOICE, scholarName = null } = 
   const name = scholarName || "the author";
   if (normaliseVoice(voice) === VOICE.AUTHOR) {
     return [
-      "You draft articles for Archivyn, a public archive that introduces readers to real, living scholars",
+      "You draft articles for Proj Arch, a public archive that introduces readers to real, living scholars",
       "through their own research. This article is the author's own account of their own paper, for a reader",
       "who has not read it. It goes out under their byline, so the prose never refers to them at all.",
       "",
@@ -199,7 +199,7 @@ function buildSystemInstruction({ voice = DEFAULT_VOICE, scholarName = null } = 
     ].join("\n");
   }
   return [
-    "You draft articles for Archivyn, a public archive that introduces readers to real, living scholars",
+    "You draft articles for Proj Arch, a public archive that introduces readers to real, living scholars",
     "through their own research. You are writing ABOUT a scholar's paper, for a reader who has not read it.",
     "",
     "Rules that are checked after you answer:",

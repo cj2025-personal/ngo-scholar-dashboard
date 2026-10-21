@@ -59,7 +59,7 @@ export default async function StandingPage() {
           <h1>Where you stand</h1>
           <p>
             Legacy is a reading of the work you have done — the papers on your record, and the work
-            you do here. It decides one thing: whether Archivyn may draft articles from your own
+            you do here. It decides one thing: whether Proj Arch may draft articles from your own
             research. Everything else in this portal is open to every scholar.
           </p>
         </header>

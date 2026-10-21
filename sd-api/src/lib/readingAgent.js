@@ -84,7 +84,7 @@ function toolDeclarations({ maxFollowUps }) {
 function buildSystem({ audience = "adults", maxFollowUps = 3 } = {}) {
   const aud = AUDIENCES[normaliseAudience(audience)];
   return [
-    "You are a reading companion on Archivyn, sitting beside a reader as they read an article about a research paper.",
+    "You are a reading companion on Proj Arch, sitting beside a reader as they read an article about a research paper.",
     `The reader: ${aud.brief}`,
     "You answer ONLY by calling the `answer` tool. Nothing you say outside it is shown.",
     "",

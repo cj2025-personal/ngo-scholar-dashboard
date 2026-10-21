@@ -17,7 +17,7 @@ import SuggestButton from "@/components/profile/SuggestButton";
 import Tile from "@/components/scholar/Tile";
 
 /**
- * Profile: who you are here, as Archivyn holds it.
+ * Profile: who you are here, as Proj Arch holds it.
  *
  * ── What it is for ─────────────────────────────────────────────────────────
  * The record behind everything the platform says about a scholar, curated
@@ -29,7 +29,7 @@ import Tile from "@/components/scholar/Tile";
  * ── What it is not ─────────────────────────────────────────────────────────
  * A second Studio. It used to carry its own "Write an editorial" button, a
  * third name for the door the Studio and Stories already have, and it called
- * stories "editorials". It now has neither: the work on Archivyn is listed,
+ * stories "editorials". It now has neither: the work on Proj Arch is listed,
  * by the names the rest of the app uses, and writing starts where it starts
  * everywhere else.
  *
@@ -216,12 +216,12 @@ export default function ScholarProfileView({ data, corrections }) {
       <header className="prof-head">
         <ProfileAvatar src={photoSrc} initials={profile.initials} name={profile.name} />
         <div className="prof-head__id">
-          <p className="dash-date">Your profile, as Archivyn holds it</p>
+          <p className="dash-date">Your profile, as Proj Arch holds it</p>
           <h1 className="dash-greet prof-name">
             {heading}
-            <span className="prof-verified" title="Verified Archivyn scholar">
+            <span className="prof-verified" title="Verified Proj Arch scholar">
               <HiCheckBadge size={22} aria-hidden />
-              <span className="sr-only">Verified Archivyn scholar</span>
+              <span className="sr-only">Verified Proj Arch scholar</span>
             </span>
           </h1>
           {tagline ? <p className="prof-tagline">{tagline}</p> : null}
@@ -235,7 +235,7 @@ export default function ScholarProfileView({ data, corrections }) {
         </div>
         <div className="prof-head__actions">
           <SuggestButton sectionKey="identity" label="Name and headline" currentText={snapshot.identity} />
-          <Link href="/content" className="dash-btn">What Archivyn says about you <HiOutlineArrowRight size={14} aria-hidden /></Link>
+          <Link href="/content" className="dash-btn">What Proj Arch says about you <HiOutlineArrowRight size={14} aria-hidden /></Link>
         </div>
       </header>
 

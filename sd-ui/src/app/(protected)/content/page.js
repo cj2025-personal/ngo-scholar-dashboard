@@ -5,7 +5,7 @@ import { getScholarProfile } from "@/lib/profile";
 
 export const metadata = {
   title: "Published under your name",
-  description: "Everything Archivyn shows students from your work",
+  description: "Everything Proj Arch shows students from your work",
 };
 
 /**

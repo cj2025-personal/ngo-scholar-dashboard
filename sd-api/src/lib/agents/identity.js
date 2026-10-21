@@ -9,7 +9,7 @@
  */
 
 const AGENT_NAME = "Kivyn";
-const PLATFORM_NAME = "Archivyn";
+const PLATFORM_NAME = "Proj Arch";
 
 /** The opening of a system prompt: the name, where it works, and that it is a program. */
 function introduce(role) {

@@ -1,5 +1,5 @@
 """
-The Archivyn logo, as outlined SVG: the mark, the wordmark and the tagline.
+The Proj Arch logo, as outlined SVG: the mark, the wordmark and the tagline.
 
     python scripts/brand/archivyn_logo.py            # writes public/brand/
     python scripts/brand/archivyn_logo.py --out DIR  # writes somewhere else, to try a change
@@ -23,9 +23,11 @@ a browser, an email, a PDF or a design tool.
 -- What is matched to the PNG ------------------------------------------------
 The composition is the PNG's, measured in its own pixels (the lockup is
 720x227 there, and those are the design units here): the mark 223 tall; the
-wordmark's cap height 72 on a baseline 169 down, starting 11 past the mark and
-423 wide; the tagline's cap height 20 on a baseline 219 down, 520 wide. Only
-tracking moves to hold those widths, and the script prints it.
+wordmark's cap height 72 on a baseline 169 down, starting 11 past the mark; the
+tagline's cap height 20 on a baseline 219 down, 520 wide. The tagline's tracking
+moves to hold its width, and the script prints it. The wordmark keeps the
+tracking it was tuned at (WORD_TRACKING), which set the PNG's word, Archivyn,
+423 wide; the name became Proj Arch on 2026-10-21 and is 426 wide at it.
 
 The mark is public/archivyn-logo.svg, the brand's own vector, with one
 change: the white crossbar is a cut, not white paint, so the background shows
@@ -60,10 +62,11 @@ ON_DARK_WORD = "#FFFFFF"
 ON_DARK_TAG = "#FF7A88"  # the tagline's red, lifted to read on navy (6.5:1 on #0B1F44)
 
 # -- Type --------------------------------------------------------------------
-WORD = "Archivyn"
+WORD = "Proj Arch"
 TAGLINE = "From Archives to You, accelerated by AI"
 WORD_WEIGHT = 800       # Figtree ExtraBold: the named weight nearest the PNG's stroke
 TAG_WEIGHT = 600        # Figtree SemiBold
+WORD_TRACKING = -0.0150573  # em: what held the PNG's word at 423 wide; the letters keep this spacing
 
 # -- Composition, in the PNG's pixels -----------------------------------------
 MARK_H = 223
@@ -230,7 +233,7 @@ def build(out):
     os.makedirs(out, exist_ok=True)
     word = Face(WORD_WEIGHT)
     tag = Face(TAG_WEIGHT)
-    word_track = word.tracking_for(WORD, FULL["word_cap"], FULL["word_w"])
+    word_track = WORD_TRACKING
     tag_track = tag.tracking_for(TAGLINE, FULL["tag_cap"], FULL["tag_w"])
     print(f"wordmark  Figtree {WORD_WEIGHT}, tracking {word_track * 1000:+.1f}/1000 em")
     print(f"tagline   Figtree {TAG_WEIGHT}, tracking {tag_track * 1000:+.1f}/1000 em")
@@ -243,17 +246,17 @@ def build(out):
         wd, wbox = word.layout(WORD, FULL["word_cap"], FULL["word_x"], FULL["word_base"], word_track)
         td, tbox = tag.layout(TAGLINE, FULL["tag_cap"], FULL["tag_x"], FULL["tag_base"], tag_track)
         files[f"archivyn-lockup{suffix}.svg"] = document(
-            "Archivyn: From Archives to You, accelerated by AI", mdefs,
+            "Proj Arch: From Archives to You, accelerated by AI", mdefs,
             mbody + f'<path fill="{word_fill}" d="{wd}"/><path fill="{tag_fill}" d="{td}"/>', [mbox, wbox, tbox])
 
         cd, cbox = word.layout(WORD, COMPACT["word_cap"], COMPACT["word_x"], COMPACT["word_base"], word_track)
         files[f"archivyn-lockup-compact{suffix}.svg"] = document(
-            "Archivyn", mdefs, mbody + f'<path fill="{word_fill}" d="{cd}"/>', [mbox, cbox])
+            "Proj Arch", mdefs, mbody + f'<path fill="{word_fill}" d="{cd}"/>', [mbox, cbox])
 
         od, obox = word.layout(WORD, FULL["word_cap"], 0, FULL["word_cap"], word_track)
-        files[f"archivyn-wordmark{suffix}.svg"] = document("Archivyn", "", f'<path fill="{word_fill}" d="{od}"/>', [obox])
+        files[f"archivyn-wordmark{suffix}.svg"] = document("Proj Arch", "", f'<path fill="{word_fill}" d="{od}"/>', [obox])
 
-        files[f"archivyn-mark{suffix}.svg"] = document("Archivyn", mdefs, mbody, [mbox])
+        files[f"archivyn-mark{suffix}.svg"] = document("Proj Arch", mdefs, mbody, [mbox])
 
     for name, text in files.items():
         with open(os.path.join(out, name), "w", encoding="utf-8", newline="\n") as fh:

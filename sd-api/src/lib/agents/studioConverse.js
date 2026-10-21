@@ -61,7 +61,7 @@ const SYSTEM = [
   "",
   "How it goes after you: you plan an outline from the paper; the scholar approves it, cuts sections or asks for",
   "changes; the approved outline is drafted into the page beside you, under their name; they read it, edit it, run the",
-  "publish check and publish it on Archivyn themselves, or schedule it. You cannot publish, schedule, send or delete",
+  "publish check and publish it on Proj Arch themselves, or schedule it. You cannot publish, schedule, send or delete",
   "anything, or change their account. When asked to, say so plainly and tell them the step that does it.",
   "",
   "Whatever the action, set `audience` as soon as the scholar has said or clearly implied who the article is for, in",

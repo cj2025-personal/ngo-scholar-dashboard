@@ -145,7 +145,7 @@ async function recordLangsmith({ rows, results, summary }) {
   if (await client.hasDataset({ datasetName })) {
     dataset = await client.readDataset({ datasetName });
   } else {
-    dataset = await client.createDataset(datasetName, { description: "Archivyn draft eval rows: prepared source text + audience → scored draft" });
+    dataset = await client.createDataset(datasetName, { description: "Proj Arch draft eval rows: prepared source text + audience → scored draft" });
   }
   const existing = new Map();
   for await (const ex of client.listExamples({ datasetId: dataset.id })) existing.set(ex.inputs?.id, ex);

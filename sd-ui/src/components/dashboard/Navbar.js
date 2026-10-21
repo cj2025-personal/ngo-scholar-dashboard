@@ -10,13 +10,13 @@ export default function Navbar({ navItems, activeHref }) {
         <Link href="/" className="company-brand">
           <Image
             src="/archivyn-logo.svg"
-            alt="Archivyn logo"
+            alt="Proj Arch logo"
             width={36}
             height={36}
             className="company-logo"
             priority
           />
-          <span className="company-wordmark">Archivyn</span>
+          <span className="company-wordmark">Proj Arch</span>
         </Link>
 
         <div className="brand-block">

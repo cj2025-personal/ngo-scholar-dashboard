@@ -50,7 +50,7 @@ function buildStructuredData(story) {
     mainEntityOfPage: canonical,
     publisher: {
       "@type": "Organization",
-      name: "Archivyn",
+      name: "Proj Arch",
     },
   };
 }
@@ -91,7 +91,7 @@ export default function PublishedStoryReader({ story }) {
       <article className="public-story-article">
         <header className="public-story-header">
           <div className="public-story-brand">
-            <span className="eyebrow">Archivyn Stories</span>
+            <span className="eyebrow">Proj Arch Stories</span>
             <Link href="/" className="public-story-brand-link">
               Scholar Dashboard
             </Link>
@@ -102,7 +102,7 @@ export default function PublishedStoryReader({ story }) {
             {story?.subtitle ? (
               <p className="public-story-subtitle">{story.subtitle}</p>
             ) : null}
-            {/* The whole portal exists so that what Archivyn publishes under
+            {/* The whole portal exists so that what Proj Arch publishes under
                 a person's name is something that person stands behind. An
                 article with no byline says the opposite. Absent rather than
                 guessed when the curated record cannot be resolved. */}

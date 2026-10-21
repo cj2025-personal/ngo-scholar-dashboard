@@ -21,7 +21,7 @@
  *
  * ── What is counted ────────────────────────────────────────────────────────
  * The scholarship half comes from the curated record and the scholar's own
- * contributed papers. The Archivyn half comes from this service's own
+ * contributed papers. The Proj Arch half comes from this service's own
  * collections: articles published, reading levels approved, corrections
  * filed. Approved is the operative word for levels — a level nobody approved
  * is a level no reader ever saw.
@@ -33,7 +33,7 @@ const legacyStanding = require("../lib/legacyStanding");
 const STANDING_COLLECTION = "scholar_standing";
 
 /**
- * The Archivyn half: what the scholar has done here.
+ * The Proj Arch half: what the scholar has done here.
  *
  * One aggregation per question rather than one clever pipeline, because these
  * are read on a dashboard load and each is an indexed count over one

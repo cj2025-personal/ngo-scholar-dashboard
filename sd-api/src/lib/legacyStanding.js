@@ -30,7 +30,7 @@
  *
  * ARCHIVYN_WORK_ALONE_SUFFICES = false. A benchmark for scholarship cannot be
  * cleared purely by activity on one platform; the body of work gate has to
- * hold. Archivyn work is weighted heavily inside the benchmark, and it is what
+ * hold. Proj Arch work is weighted heavily inside the benchmark, and it is what
  * most scholars will actually move, but it does not replace the scholarship.
  *
  * STANDING_IS_LOSABLE = false, with one exception. Work done is done, so
@@ -52,7 +52,7 @@ const STANDING = {
   WITHDRAWN: "withdrawn",
 };
 
-/** Archivyn work counts toward the benchmark; it does not replace scholarship. */
+/** Proj Arch work counts toward the benchmark; it does not replace scholarship. */
 const ARCHIVYN_WORK_ALONE_SUFFICES = false;
 /** Work already done is not taken back for inactivity. */
 const STANDING_IS_LOSABLE = false;
@@ -67,7 +67,7 @@ const STANDING_IS_LOSABLE = false;
  * person's mouth is higher than the bar for that person writing about
  * themselves with help.
  *
- * The Archivyn numbers are set where a scholar has plainly used the product
+ * The Proj Arch numbers are set where a scholar has plainly used the product
  * for its purpose rather than tried it once. One published article is a trial;
  * three with levels approved is a practice.
  */
@@ -87,7 +87,7 @@ const THRESHOLDS = {
      what decides whether we may build on it — see draftEligibility. */
   MIN_FULL_USE_SOURCES: 1,
 
-  /* Archivyn. Published, not drafted: a draft is an intention. */
+  /* Proj Arch. Published, not drafted: a draft is an intention. */
   MIN_PUBLISHED_STORIES: 3,
   /* Approved, not generated: generating is a machine act, approving is the
      scholar's. This is the number that carries the mission. */

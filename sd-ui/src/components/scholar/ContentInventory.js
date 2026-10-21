@@ -111,7 +111,7 @@ export default function ContentInventory({ data }) {
         <h3>We can&rsquo;t load this right now</h3>
         <p>
           Please try again shortly. This isn&rsquo;t a statement about what
-          Archivyn publishes about you &mdash; we simply couldn&rsquo;t reach it.
+          Proj Arch publishes about you &mdash; we simply couldn&rsquo;t reach it.
         </p>
       </div>
     );
@@ -128,10 +128,10 @@ export default function ContentInventory({ data }) {
   return (
     <>
       <header className="sc-page-head">
-        <span className="sc-kicker">Your work on Archivyn</span>
+        <span className="sc-kicker">Your work on Proj Arch</span>
         <h1>Published under your name</h1>
         <p>
-          Everything Archivyn currently shows students, drawn from your
+          Everything Proj Arch currently shows students, drawn from your
           published research or written by you.
         </p>
       </header>
@@ -165,7 +165,7 @@ export default function ContentInventory({ data }) {
           </div>
           <h3>Nothing yet</h3>
           <p>
-            Archivyn hasn&rsquo;t published anything under your name. When it
+            Proj Arch hasn&rsquo;t published anything under your name. When it
             does, it will appear here &mdash; before most people see it.
           </p>
         </div>
@@ -212,7 +212,7 @@ export default function ContentInventory({ data }) {
       {unlinkedEditorials > 0 ? (
         <p className="sc-rail-note">
           {unlinkedEditorials} editorial{unlinkedEditorials === 1 ? "" : "s"} on
-          Archivyn predate scholar sign-in and aren&rsquo;t yet linked to a
+          Proj Arch predate scholar sign-in and aren&rsquo;t yet linked to a
           profile. If you wrote one, tell us and we&rsquo;ll connect it.
         </p>
       ) : null}
