@@ -40,6 +40,12 @@ const COLLECTIONS = {
   /* One row per reader per UTC day, and one for every reader together:
      how many questions were asked. The caps read them. Private, expiring. */
   readerQuota: "reader_quota",
+  /* One row per rate-limit budget per window: how many requests it saw, so
+     every replica enforces one limit. Private, expiring within minutes. */
+  rateLimits: "rate_limits",
+  /* One row per paper text the source guard screened: which passages it
+     set aside, and why, so a paper is screened once. Private, expiring. */
+  sourceScreenings: "source_screenings",
   /* Agent policies: every limit, model choice and threshold an agent works
      to, versioned, with who set it. The baseline is src/policies/defaults.json;
      a row here overrides it at runtime. Private to this service. */
@@ -55,6 +61,11 @@ const COLLECTIONS = {
   readerSuggestions: "reader_suggestions",
   /* Ideas the studio agent wrote for a scholar's page. Expiring. */
   agentIdeas: "agent_ideas",
+  /* One row per conversation a scholar has with the studio agent about a
+     new story: the scholar's words, the agent's replies and what the page
+     did, appended here as they happen, so the thread the model reads is
+     this service's record and not the browser's. Expiring. Private. */
+  studioConversations: "scholar_studio_conversations",
   agentRulings: "agent_rulings",
 };
 
@@ -311,6 +322,16 @@ async function ensureIndexes() {
         { story_id: 1, created_at: -1 },
         { name: "idx_scholar_story_turns_story_created" },
       );
+      /* The day's token budget: an account's turns since midnight, summed. */
+      await db.collection(COLLECTIONS.storyTurns).createIndex(
+        { profile_id: 1, created_at: -1 },
+        { name: "idx_scholar_story_turns_profile_created" },
+      );
+      /* One turn per ask: the page's request key, unique within a story. */
+      await db.collection(COLLECTIONS.storyTurns).createIndex(
+        { story_id: 1, request_key: 1 },
+        { unique: true, partialFilterExpression: { request_key: { $type: "string" } }, name: "idx_scholar_story_turns_story_request_key_unique" },
+      );
       await db.collection(COLLECTIONS.storyRevisions).createIndex(
         { story_id: 1, version: -1 },
         { name: "idx_scholar_editorial_revisions_story_version", unique: true },
@@ -341,6 +362,39 @@ async function ensureIndexes() {
       await readerQuota.createIndex(
         { expires_at: 1 },
         { expireAfterSeconds: 0, name: "idx_reader_quota_expires_at_ttl" },
+      );
+
+      /* Rate limits: one row per budget per window, and the expiry. */
+      const rateLimits = db.collection(COLLECTIONS.rateLimits);
+      await rateLimits.createIndex(
+        { key: 1, window_start: 1 },
+        { unique: true, name: "idx_rate_limits_key_window_unique" },
+      );
+      await rateLimits.createIndex(
+        { expires_at: 1 },
+        { expireAfterSeconds: 0, name: "idx_rate_limits_expires_at_ttl" },
+      );
+
+      /* Source screenings: one per paper text per guard version, and the expiry. */
+      const sourceScreenings = db.collection(COLLECTIONS.sourceScreenings);
+      await sourceScreenings.createIndex(
+        { key: 1, hash: 1, version: 1 },
+        { unique: true, name: "idx_source_screenings_key_hash_version_unique" },
+      );
+      await sourceScreenings.createIndex(
+        { expires_at: 1 },
+        { expireAfterSeconds: 0, name: "idx_source_screenings_expires_at_ttl" },
+      );
+
+      /* Studio conversations: the scholar's newest, and the expiry. */
+      const studioConversations = db.collection(COLLECTIONS.studioConversations);
+      await studioConversations.createIndex(
+        { profile_id: 1, updated_at: -1 },
+        { name: "idx_scholar_studio_conversations_profile_updated" },
+      );
+      await studioConversations.createIndex(
+        { expires_at: 1 },
+        { expireAfterSeconds: 0, name: "idx_scholar_studio_conversations_expires_at_ttl" },
       );
 
       /* Policies: the active version of each, newest first. */

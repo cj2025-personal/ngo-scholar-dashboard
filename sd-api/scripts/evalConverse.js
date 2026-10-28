@@ -30,7 +30,12 @@ const path = require("path");
 const vertex = require("../src/lib/vertex");
 const { env } = require("../src/config/env");
 const { createRouter } = require("../src/lib/modelRouter");
-const { defaultsFor } = require("../src/lib/policyDefaults");
+/* Every policy this run reads: the baseline, or a proposed change laid over
+   it when started with `--policy <file>` (scripts/policy.js does that before
+   it writes the change). */
+const { readProposal, policyFor: policyUnder } = require("../src/lib/policyChange");
+const proposal = readProposal(process.argv);
+const policyFor = (name) => policyUnder(name, proposal);
 const converse = require("../src/lib/agents/studioConverse");
 
 const PAPERS = [
@@ -56,9 +61,9 @@ const main = async () => {
     if (!r.id || !Array.isArray(r.said) || !r.said.length || !r.expect?.action) throw new Error(`row ${i + 1} is missing id, said or expect.action`);
     return r;
   });
-  const floors = defaultsFor("evals").converse;
+  const floors = policyFor("evals").converse;
   const calls = [];
-  const router = createRouter({ models: defaultsFor("models"), deploymentModel: env.llm.model, call: (req) => vertex.generateContent(req), onCall: (e) => calls.push(e) });
+  const router = createRouter({ models: policyFor("models"), deploymentModel: env.llm.model, call: (req) => vertex.generateContent(req), onCall: (e) => calls.push(e) });
   const generate = router.bound("studio.converse");
 
   console.log("=".repeat(78));
@@ -103,7 +108,7 @@ const main = async () => {
   const pass = !failures.length && !errored;
   console.log(pass ? "\nPASS" : `\nFAIL: ${[...failures, ...(errored ? [`${errored} row(s) errored`] : [])].join("; ")}`);
   if (jsonOut) {
-    fs.writeFileSync(path.resolve(jsonOut), JSON.stringify({ dataset: path.basename(datasetPath), agent: converse.CONVERSE_VERSION, route: defaultsFor("models").routes["studio.converse"], at: new Date().toISOString(), scores, floors, results }, null, 2));
+    fs.writeFileSync(path.resolve(jsonOut), JSON.stringify({ dataset: path.basename(datasetPath), agent: converse.CONVERSE_VERSION, route: policyFor("models").routes["studio.converse"], at: new Date().toISOString(), scores, floors, results }, null, 2));
     console.log(`wrote ${jsonOut}`);
   }
   process.exit(pass ? 0 : 1);

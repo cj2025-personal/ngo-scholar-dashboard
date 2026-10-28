@@ -19,8 +19,13 @@
       "studio.ideas":    { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-flash-lite"], "thinkingBudget": 0, "temperature": 0.6, "maxOutputTokens": 2048, "timeoutMs": 30000 },
       "drafting.voice":  { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 30000 },
       "drafting.band":   { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 45000 },
-      "drafting.review": { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 4096, "timeoutMs": 60000 }
+      "drafting.review": { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 4096, "timeoutMs": 60000 },
+      "drafting.fidelity": { "primary": "gemini-2.5-pro", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 1024, "temperature": 0, "maxOutputTokens": 8192, "timeoutMs": 90000 },
+      "drafting.reach":    { "primary": "gemini-2.5-pro", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 1024, "temperature": 0, "maxOutputTokens": 8192, "timeoutMs": 90000 },
+      "drafting.context":  { "primary": "gemini-2.5-pro", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 1024, "temperature": 0, "maxOutputTokens": 8192, "timeoutMs": 90000 },
+      "drafting.guard":    { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 4096, "timeoutMs": 60000 }
     },
+    "$routes": "The three fact-checking judges (fidelity, reach, context) run on a model other than the writer's, so a draft is never marked by the model that wrote it; the writer is the deployment model, flash.",
     "modelLimits": {
       "gemini-2.5-pro": { "minThinkingBudget": 128 },
       "gemini-2.5-flash-lite": { "minThinkingBudgetWhenOn": 512 }
@@ -56,12 +61,17 @@
   },
 
   "studio": {
-    "converse": { "historyMessages": 12 },
+    "converse": { "historyMessages": 12, "keepDays": 14, "maxNotes": 6 },
     "ideas": { "count": 8, "cacheHours": 12 },
-    "edit": { "maxSteps": 12, "maxToolCalls": 24, "historyTurns": 6, "searchTopK": 4 },
+    "edit": { "maxSteps": 12, "maxToolCalls": 24, "historyTurns": 6, "searchTopK": 4, "turnDeadlineSeconds": 240 },
+    "budget": {
+      "$comment": "Tokens an account may spend on edit turns per UTC day, counted from the turns it stored; a full eval run of 18 turns costs about 85,000. The warn share is where a log line says the account is near it.",
+      "edit": { "tokensPerDay": 400000, "warnAt": 0.8 }
+    },
     "rateLimit": {
       "drafting": { "burst": 8, "windowSeconds": 600 },
-      "converse": { "burst": 60, "windowSeconds": 600 }
+      "converse": { "burst": 60, "windowSeconds": 600 },
+      "edit": { "burst": 30, "windowSeconds": 600 }
     }
   },
 
@@ -71,7 +81,8 @@
     "bandRetries": 1,
     "rulingCacheDays": 30,
     "borrowLimit": 0.2,
-    "maxBeyondPerPaper": 1
+    "maxBeyondPerPaper": 1,
+    "guard": { "batch": 24, "cacheDays": 90 }
   },
 
   "audit": { "retainDays": 30 },
@@ -80,6 +91,8 @@
     "reader": { "grounding": 0.8, "sentinel": 0.9, "cited": 0.8, "bandFit": 0.8, "firstTry": 0.6 },
     "voice": { "speaks": 0.95, "names": 0.9, "quoted": 0.9 },
     "converse": { "action": 0.9, "fields": 0.9 },
-    "review": { "headings": 0.9, "pronouns": 0.9 }
+    "review": { "headings": 0.9, "pronouns": 0.9 },
+    "edit": { "finished": 0.9, "scope": 0.85, "asked": 0.8, "supported": 0.85 },
+    "guard": { "caught": 0.9, "kept": 0.95 }
   }
 }

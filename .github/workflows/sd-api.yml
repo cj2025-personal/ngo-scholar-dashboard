@@ -113,6 +113,23 @@ jobs:
             exit 0
           fi
           npm run eval:reader -- --json reader-eval-results.json
+      - name: Studio evals (skipped without model credentials)
+        # Kivyn's four judgements, each against its floor: what a scholar
+        # means (converse), whose voice a paragraph is in (voice), the
+        # article reviewer's headings and pronouns (review), and the editing
+        # agent itself — scope, what was asked, and the fact-checker's verdict
+        # on what it wrote (edit). A prompt or route change that drops one
+        # below its floor fails the build here.
+        run: |
+          if [ -z "$GCP_SERVICE_ACCOUNT_JSON" ] || [ -z "$GCP_PROJECT_ID" ]; then
+            echo "No Vertex credentials in this run; evals skipped."
+            exit 0
+          fi
+          npm run eval:converse -- --json converse-eval-results.json
+          npm run eval:voice -- --json voice-eval-results.json
+          npm run eval:review -- --json review-eval-results.json
+          npm run eval:edit -- --json edit-eval-results.json
+          npm run eval:guard -- --json guard-eval-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -120,4 +137,9 @@ jobs:
           path: |
             sd-api/eval-results.json
             sd-api/reader-eval-results.json
+            sd-api/converse-eval-results.json
+            sd-api/voice-eval-results.json
+            sd-api/review-eval-results.json
+            sd-api/edit-eval-results.json
+            sd-api/guard-eval-results.json
           if-no-files-found: ignore

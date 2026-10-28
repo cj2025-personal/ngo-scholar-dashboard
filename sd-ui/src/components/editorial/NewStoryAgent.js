@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FaCheck, FaXmark } from "react-icons/fa6";
 import { HiOutlineArrowUp, HiOutlinePlus } from "react-icons/hi2";
 
-import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, converseWithAgent, createDraftJob, discardDraftJob, getDraftJob, getDraftSources, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
+import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, converseWithAgent, createDraftJob, discardDraftJob, endConversation, getDraftJob, getDraftSources, latestConversation, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 import Kivyn from "@/components/kivyn/Kivyn";
 import KivynButton from "@/components/kivyn/KivynButton";
 import { useKivynMoment } from "@/components/kivyn/useKivynMoment";
@@ -40,14 +40,21 @@ function paperKey(p) {
   return `${p.origin}:${p.id}`;
 }
 
-/* ── the conversation, as the studio agent's model reads it ──────────────── */
+/* ── what the page tells the agent it did ────────────────────────────────── */
 
-/** The thread in words: what the scholar said or tapped, and what the agent said back. */
-function transcript(messages) {
+/**
+ * The conversation itself is kept by the API: the scholar's words and the
+ * agent's replies go on the record there as they are said. What the API
+ * cannot see is what this page did between turns — an outline shown,
+ * approved or replaced, a line the page said on its own — so those go with
+ * the next turn as notes. A line the agent itself said (`spoken`) is already
+ * on the record and is never sent back.
+ */
+function pageNotes(messages) {
   return messages.flatMap((m) => {
-    if (m.role === "user") return [{ role: "scholar", text: m.text }];
-    if (m.role === "outline") return [{ role: "agent", text: `Proposed an outline, “${m.outline?.title || "untitled"}”: ${(m.outline?.beats || []).map((b) => b.heading).join("; ")}${m.approved ? " (approved)" : m.superseded ? " (replaced)" : ""}` }];
-    if (["agent", "papers", "audience", "story", "error"].includes(m.role) && m.text) return [{ role: "agent", text: m.text }];
+    if (m.spoken || m.role === "user") return [];
+    if (m.role === "outline") return [`Proposed an outline, “${m.outline?.title || "untitled"}”: ${(m.outline?.beats || []).map((b) => b.heading).join("; ")}${m.approved ? " (approved)" : m.superseded ? " (replaced)" : ""}`];
+    if (["agent", "papers", "audience", "story", "error"].includes(m.role) && m.text) return [m.text];
     return [];
   });
 }
@@ -189,6 +196,10 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   const threadRef = useRef(null);
   const inputRef = useRef(null);
   const bandsRef = useRef(null);
+  /* The conversation on the API's record, and which of this page's lines
+     have been reported to it. */
+  const conversationRef = useRef(null);
+  const reportedRef = useRef(new Set());
   /* The bands chosen when the job was started; the page writes them once the
      story exists, so they ride along with the finished draft. */
   const wantedLevelsRef = useRef([]);
@@ -275,7 +286,26 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
 
   useEffect(() => {
     let alive = true;
-    getDraftSources().then((r) => { if (alive && r.ok) { setInventory(r.data); greet(r.data); } });
+    /* A conversation under way is picked up where it was, from the API's
+       record, instead of greeting the scholar as if nothing had been said.
+       Not when the page already knows what the scholar wants: a job to
+       resume, or a paper to propose from. */
+    const pickUp = resumeJobId || autoPropose ? Promise.resolve(null) : latestConversation().then((c) => (c.ok ? c.data?.conversation : null)).catch(() => null);
+    Promise.all([getDraftSources(), pickUp]).then(([r, found]) => {
+      if (!alive || !r.ok) return;
+      setInventory(r.data);
+      if (found && found.lines.some((l) => l.role === "scholar")) {
+        conversationRef.current = found.conversationId;
+        const kept = found.lines.map((l, i) => ({ id: `kept-${i}`, role: l.role === "scholar" ? "user" : "agent", text: l.text, spoken: true }));
+        kept.forEach((m) => reportedRef.current.add(m.id));
+        setMessages(kept);
+        if (found.state?.paperKey && (r.data.draftable || []).some((p) => paperKey(p) === found.state.paperKey)) setPaper(found.state.paperKey);
+        if (found.state?.audience) { setAudience(found.state.audience); setAudienceSet(true); }
+        if (found.state?.voice) setVoice(found.state.voice);
+        return;
+      }
+      greet(r.data);
+    });
     return () => { alive = false; if (stopRef.current) stopRef.current(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -307,6 +337,8 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     if (settled.storyId) {
       showMoment("done");
       push({ role: "agent", text: "Your draft is ready. Opening it, where you can read it against the paper and keep editing by instruction." });
+      /* The story is where the work goes on; this conversation is over. */
+      if (conversationRef.current) { endConversation(conversationRef.current); conversationRef.current = null; }
       onStoryReady?.(settled.storyId);
       return true;
     }
@@ -478,7 +510,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
 
   /** Which paper: shown as cards in the thread, for a tap or a name. */
   function askWhichPaper(lead) {
-    push({ role: "papers", text: lead || "Which of your papers should this come from? Tap one, or name it. Only papers we hold in full and may reproduce are listed." });
+    push({ role: "papers", text: lead || "Which of your papers should this come from? Tap one, or name it. Only papers we hold in full and may reproduce are listed.", spoken: Boolean(lead) });
   }
 
   /**
@@ -493,12 +525,17 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       audience: set.audience !== undefined ? set.audience : audience,
       audienceSet: set.audience !== undefined ? true : audienceSet,
     };
-    const thread = [...transcript(messages), { role: "scholar", text: said }];
+    /* What this page did since the last turn, for the record; then every
+       line so far counts as reported, whatever the agent makes of it. */
+    const notes = pageNotes(messages.filter((m) => !reportedRef.current.has(m.id)));
+    messages.forEach((m) => reportedRef.current.add(m.id));
     push({ role: "user", text: said });
     setBusy(true);
     setProgress("Reading what you said…", "converse");
     const r = await converseWithAgent({
-      messages: thread,
+      conversationId: conversationRef.current,
+      message: said,
+      notes,
       state: {
         paperKey: now.paperKey || null,
         paperFrom: now.paperKey ? (now.paperKey === initialSource ? "shelf" : "conversation") : null,
@@ -512,6 +549,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     setBusy(false);
     clearProgress();
     if (!r.ok) { push({ role: "error", text: r.error }); return; }
+    conversationRef.current = r.data.conversationId || conversationRef.current;
     act(r.data.decision, now);
   }
 
@@ -532,15 +570,15 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
         askWhichPaper(d.reply);
         return;
       case "ask_audience":
-        push({ role: "audience", text: d.reply || "Who is this for? Tap an age, or tell me." });
+        push({ role: "audience", text: d.reply || "Who is this for? Tap an age, or tell me.", spoken: Boolean(d.reply) });
         return;
       case "plan":
-        if (d.reply) push({ role: "agent", text: d.reply });
+        if (d.reply) push({ role: "agent", text: d.reply, spoken: true });
         startJob(d.brief, { from, forAudience, forVoice, extras });
         return;
       case "propose":
         if (!from) { askWhichPaper(d.reply); return; }
-        if (d.reply) push({ role: "agent", text: d.reply });
+        if (d.reply) push({ role: "agent", text: d.reply, spoken: true });
         propose({ from, said: false });
         return;
       case "replan":
@@ -551,10 +589,10 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
         return;
       case "discard":
         if (job) discard({ reply: d.reply });
-        else if (d.reply) push({ role: "agent", text: d.reply });
+        else if (d.reply) push({ role: "agent", text: d.reply, spoken: true });
         return;
       default:
-        if (d.reply) push({ role: "agent", text: d.reply });
+        if (d.reply) push({ role: "agent", text: d.reply, spoken: true });
     }
   }
 
@@ -620,6 +658,8 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
 
   function startAnother() {
     if (stopRef.current) stopRef.current();
+    /* Another article is another conversation; this one closes on the record. */
+    if (conversationRef.current) { endConversation(conversationRef.current); conversationRef.current = null; }
     setJob(null);
     setBusy(false);
     setMessages((cur) => cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m)));

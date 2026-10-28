@@ -22,9 +22,8 @@ const { ApiError } = require("../lib/api-error");
 const fidelity = require("../lib/fidelity");
 const reach = require("../lib/reach");
 const storyVersion = require("../lib/storyVersion");
-const vertex = require("../lib/vertex");
-const { traced } = require("../lib/tracing");
 const { getDb } = require("../db/mongo");
+const { routerFor } = require("./models.service");
 const { normaliseAudience } = require("../lib/audiences");
 const { passagesFor } = require("./passages.service");
 
@@ -61,11 +60,11 @@ async function recheckBlock({ storyId, scholarId, profileId, user, index, baseVe
   const passages = await passagesFor(db, story);
   if (!passages.length) throw new ApiError(409, "This story has no source paper on record, so its paragraphs cannot be checked against it.");
 
-  const gen = generate || traced("recheck.generateContent", (req) => vertex.generateContent(req), { metadata: { storyId: String(story._id) } });
-
   /* The judges take the client-shaped block, the same one the drafter hands
-     them, so a re-check is judged exactly as the first pass was. */
+     them, so a re-check is judged exactly as the first pass was: by the
+     judge that owns the paragraph, on that judge's own model route. */
   const extension = Boolean(provenance.extension);
+  const gen = generate || (await routerFor({ db })).bound(extension ? "drafting.reach" : "drafting.fidelity");
   const before = extension ? provenance.reach?.verdict || null : provenance.fidelity?.verdict || null;
   const subject = {
     type: "paragraph",

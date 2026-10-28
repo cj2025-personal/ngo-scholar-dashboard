@@ -272,7 +272,7 @@ function answerAgent(contents) {
   const ask = (opening.split("THE SCHOLAR ASKS:")[1] || "").trim();
   const low = ask.toLowerCase();
   const blockNum = (re) => { const m = low.match(re); return m ? Number(m[1]) : null; };
-  const blockLine = (n) => (opening.match(new RegExp(`^\\[${n}\\] \\(([a-z]+)\\)[^:]*: (.+)$`, "m")) || []);
+  const blockLine = (n) => (opening.match(new RegExp(`^\\[${n}\\] block ${n} \\(([a-z]+)\\)[^:]*: (.+)$`, "m")) || []);
   const firstPassage = (opening.match(/^\[(p\d+)\] (.+)$/m) || []);
   const calls = [];
   if (/^add (an )?(image|illustration|picture)/.test(low) || /add (an )?(image|illustration|picture)/.test(low)) {
@@ -281,7 +281,7 @@ function answerAgent(contents) {
   } else if (/shorten|tighten|cut down/.test(low)) {
     const n = blockNum(/(?:block|paragraph) (\d+)/) ?? 2;
     const [, , text] = blockLine(n);
-    const cites = (opening.match(new RegExp(`^\\[${n}\\] \\([a-z]+\\) cites ([p\\d,]+)`, "m")) || [])[1];
+    const cites = (opening.match(new RegExp(`^\\[${n}\\] block ${n} \\([a-z]+\\) cites ([p\\d,]+)`, "m")) || [])[1];
     const first = String(text || "").split(/(?<=[.!?])\s+/)[0] || "Shortened.";
     calls.push({ name: "replace_block", args: { index: n, text: first, passage_ids: cites ? cites.split(",") : [firstPassage[1] || "p1"] } });
   } else if (/delete|remove|drop/.test(low)) {
@@ -379,6 +379,21 @@ function answerReader(contents, signal = null) {
  * reader gives about themselves are spans to mask; "hurt someone" is
  * declined; everything else goes on to the companion.
  */
+/**
+ * The source guard, for the test double: a passage that addresses whoever
+ * reads it is set aside; the ordinary text of a paper is kept.
+ */
+function answerSourceGuard(prompt) {
+  const body = prompt.split("PASSAGES TO SCREEN:")[1] || "";
+  const rows = [...body.matchAll(/^\[([^\]]+)\] (.+)$/gm)].map((m) => ({ id: m[1], text: m[2] }));
+  const addressed = (t) =>
+    /\b(ignore|override|disregard)\b[^.]{0,40}\binstructions?\b/i.test(t) && !/\b(participants?|were instructed|prompt:|such as|attacks?)/i.test(t) ||
+    /\b(note to|if you are)\b[^.]{0,30}\b(ai|assistant|model|reviewer|language model)\b/i.test(t) ||
+    /\bmark (every|all|each) claims?\b/i.test(t) ||
+    /\b(you are now|assistant:|system:|\(automated\)|claims verified|reviewer_guidance|supported=true|must say that)/i.test(t);
+  return JSON.stringify({ passages: rows.map((r) => ({ id: r.id, set_aside: addressed(r.text), reason: addressed(r.text) ? "fake: addresses the reader" : "" })) });
+}
+
 function answerGuard(prompt) {
   const q = (prompt.split("QUESTION TO SCREEN:")[1] || "").trim();
   const pii = [];
@@ -864,6 +879,7 @@ async function generateContent({ prompt, contents = null, tools = null, signal =
   const p = String(prompt || (contents ? contents.map((c) => (c.parts || []).map((x) => x.text || "").join("\n")).join("\n") : ""));
   let text;
   if (p.includes("QUESTION TO SCREEN:")) text = answerGuard(p);
+  else if (p.includes("PASSAGES TO SCREEN:")) text = answerSourceGuard(p);
   else if (p.includes("ANSWER TO RULE ON:")) text = answerSentinelRuling(p);
   else if (p.includes("REFUSAL TO WRITE:")) text = answerRefusal(p);
   else if (p.includes("THREAD TO SUMMARISE:")) text = answerMemory(p);

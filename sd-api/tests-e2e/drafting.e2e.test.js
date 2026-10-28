@@ -515,32 +515,60 @@ test("a read of the published story shows on the scholar's chart, day by day, an
 test("the studio agent decides what the scholar means, from their own papers only, and every decision is on the record", async () => {
   const anon = await fetch(`${base}/api/drafting/converse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
   assert.equal(anon.status, 401);
-  const empty = await call("POST", "/api/drafting/converse", { body: { messages: [{ role: "agent", text: "Hello" }] } });
-  assert.equal(empty.status, 400, "the last word must be the scholar's");
+  const empty = await call("POST", "/api/drafting/converse", { body: { message: "   ", notes: ["Hello"] } });
+  assert.equal(empty.status, 400, "the scholar must say something; a note from the page is not a turn");
+  assert.deepEqual((await call("GET", "/api/drafting/converse/latest")).data, { conversation: null }, "nothing to pick up yet");
 
   const brief = "Explain how the experiment was done, step by step";
-  const first = await call("POST", "/api/drafting/converse", { body: { messages: [{ role: "scholar", text: brief }], state: {} } });
+  const first = await call("POST", "/api/drafting/converse", { body: { message: brief, notes: ["What shall we write? Tell me what it is about and who it is for."], state: {} } });
   assert.equal(first.status, 200, JSON.stringify(first.data));
   assert.equal(first.data.decision.action, "ask_paper");
   assert.equal("rationale" in first.data.decision, false, "the rationale is kept for the record, not sent to the page");
+  const conversationId = first.data.conversationId;
+  assert.ok(conversationId, "the turn names the conversation it opened");
 
   /* A paper the page says is set, that the scholar does not hold, never reaches the model. */
-  const forged = await call("POST", "/api/drafting/converse", { body: { messages: [{ role: "scholar", text: `${brief}, for adults` }], state: { paperKey: "harvested:not-theirs", audience: "adults" } } });
+  const forged = await call("POST", "/api/drafting/converse", { body: { message: `${brief}, for adults`, state: { paperKey: "harvested:not-theirs", audience: "adults" } } });
   assert.equal(forged.data.decision.action, "ask_paper");
+  assert.notEqual(forged.data.conversationId, conversationId, "without a conversation named, a new one is opened");
 
+  /* The thread is this service's: the page sends only the new words, and
+     the model reads what was said before from the record. */
+  const chose = await call("POST", "/api/drafting/converse", { body: { conversationId, message: "Use “Second paper”.", state: { paperKey: "harvested:src-e2e-2", paperFrom: "conversation", stage: "start" } } });
+  assert.equal(chose.status, 200, JSON.stringify(chose.data));
+  assert.equal(chose.data.conversationId, conversationId);
   const planned = await call("POST", "/api/drafting/converse", { body: {
-    messages: [{ role: "scholar", text: brief }, { role: "agent", text: first.data.decision.reply }, { role: "scholar", text: "Use “Second paper”." }, { role: "agent", text: "Who is this for?" }, { role: "scholar", text: "For adults." }],
+    conversationId, message: "For adults.",
     state: { paperKey: "harvested:src-e2e-2", paperFrom: "conversation", audience: "adults", stage: "start" },
   } });
   assert.equal(planned.data.decision.action, "plan");
   assert.equal(planned.data.decision.paperKey, "harvested:src-e2e-2");
   assert.equal(planned.data.decision.audience, "adults");
-  assert.equal(planned.data.decision.brief, brief, "the brief said first is the one planned");
+  assert.equal(planned.data.decision.brief, brief, "the brief said first is the one planned, read from the record");
+
+  const kept = await db.collection("scholar_studio_conversations").findOne({ _id: new ObjectId(conversationId) });
+  assert.equal(kept.profile_id, PROFILE_ID);
+  assert.deepEqual(kept.lines.map((l) => l.role), ["page", "scholar", "agent", "scholar", "agent", "scholar", "agent"], "the page's note, then each side in turn");
+  assert.equal(kept.lines[1].text, brief);
+  assert.equal(kept.lines[kept.lines.length - 1].action, "plan");
+  assert.ok(kept.expires_at > kept.updated_at);
+
+  const latest = await call("GET", "/api/drafting/converse/latest");
+  assert.equal(latest.data.conversation.conversationId, conversationId, "the open conversation spoken in last is the one to pick up");
+  assert.ok(latest.data.conversation.lines.every((l) => l.role && l.text));
+  assert.equal(latest.data.conversation.lines.length, kept.lines.length, "every line with words comes back, the page's note too");
+  assert.equal(latest.data.conversation.state.paperKey, "harvested:src-e2e-2", "with what the page had set");
+  assert.equal((await call("POST", `/api/drafting/converse/${conversationId}/end`, { body: {} })).status, 200);
+  assert.equal((await call("GET", "/api/drafting/converse/latest")).data.conversation.conversationId, forged.data.conversationId, "ended, it is not picked up; the other open one is");
+  const closed = await call("POST", "/api/drafting/converse", { body: { conversationId, message: "And now?", state: {} } });
+  assert.equal(closed.status, 409, "an ended conversation takes no more turns");
+  const stranger = await call("POST", "/api/drafting/converse", { body: { conversationId: new ObjectId().toString(), message: "Hello", state: {} } });
+  assert.equal(stranger.status, 404);
 
   const audit = await db.collection("agent_audit").find({ agent: "studio.converse", "subject.id": PROFILE_ID }).toArray();
-  assert.equal(audit.length, 3);
-  assert.ok(audit.every((a) => a.rationale && a.prompt_version && a.model && a.expires_at > a.created_at));
-  assert.deepEqual(audit.map((a) => a.decision.action).sort(), ["ask_paper", "ask_paper", "plan"]);
+  assert.equal(audit.length, 4);
+  assert.ok(audit.every((a) => a.rationale && a.prompt_version && a.model && a.expires_at > a.created_at && a.decision.conversationId));
+  assert.deepEqual(audit.map((a) => a.decision.action).sort(), ["ask_audience", "ask_paper", "ask_paper", "plan"], "the paper named with the brief already on the record asks for the reader next");
 });
 
 test("ideas are written for the story the scholar is on, and before there is one, cached until the page changes", async () => {
@@ -737,6 +765,98 @@ test("the agent refuses first person and a stale proposal cannot be applied", as
   const stale = await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${proposal.data.turn.id}/accept`, { body: {} });
   assert.equal(stale.status, 409);
   assert.match(stale.data.error, /changed after this proposal/);
+});
+
+test("an account that has spent the day's edit budget is told so before any model runs, and nothing is stored", async () => {
+  const turns = db.collection("scholar_story_turns");
+  const one = await turns.findOne({ story_id: new ObjectId(state.storyId) }, { sort: { created_at: -1 } });
+  assert.ok(one, "earlier scenarios stored turns");
+  assert.ok(one.usage && Number.isFinite(one.usage.input), "each turn records what it cost");
+  const budget = require("../src/policies/defaults.json").studio.budget.edit.tokensPerDay;
+  /* A day's worth of turns, as the record would hold them, under the same account. */
+  const { _id, ...rest } = one;
+  const spent = await turns.insertOne({ ...rest, instruction: "(budget fixture)", usage: { input: budget, output: 0 }, created_at: new Date() });
+  const before = await turns.countDocuments({});
+
+  const refused = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: "shorten paragraph 1" } });
+  assert.equal(refused.status, 429, JSON.stringify(refused.data));
+  assert.match(refused.data.error, /today's budget/);
+  assert.equal(await turns.countDocuments({}), before, "a refused turn is not a turn");
+
+  await turns.deleteOne({ _id: spent.insertedId });
+  const again = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: "shorten paragraph 1" } });
+  assert.equal(again.status, 200, "with the day's spend back under budget, the agent answers");
+  await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${again.data.turn.id}/reject`, { body: {} });
+});
+
+test("the same ask sent again is the same turn, not a second run", async () => {
+  const turns = db.collection("scholar_story_turns");
+  const before = await turns.countDocuments({ story_id: new ObjectId(state.storyId) });
+  const requestKey = `ask-${Date.now()}`;
+  const first = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: "shorten paragraph 1", requestKey } });
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  const second = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: "shorten paragraph 1", requestKey } });
+  assert.equal(second.status, 200);
+  assert.equal(second.data.turn.id, first.data.turn.id, "the turn already made");
+  assert.equal(second.data.repeated, true);
+  assert.equal(await turns.countDocuments({ story_id: new ObjectId(state.storyId) }), before + 1, "one turn for one key");
+  const other = await call("POST", `/api/editorial-stories/${state.storyId}/agent`, { body: { instruction: "shorten paragraph 1", requestKey: `${requestKey}-b` } });
+  assert.notEqual(other.data.turn.id, first.data.turn.id, "another key is another ask");
+  const stored = await turns.findOne({ _id: new ObjectId(first.data.turn.id) });
+  assert.equal(stored.request_key, requestKey);
+  for (const t of [first, other]) await call("POST", `/api/editorial-stories/${state.storyId}/agent/turns/${t.data.turn.id}/reject`, { body: {} });
+});
+
+test("a rate limit is counted in the database, one budget for every replica", async () => {
+  /* The invitation lookup allows 30 a minute per address. The 31st is refused,
+     and the count is a row any replica would read. */
+  const statuses = [];
+  for (let i = 0; i < 31; i += 1) {
+    const r = await fetch(`${base}/api/invites/not-a-real-token-${i}`, { headers: { "x-forwarded-for": "198.51.100.7" } });
+    statuses.push(r.status);
+    if (r.status === 429) {
+      assert.ok(Number(r.headers.get("retry-after")) >= 1, "says when to try again");
+      break;
+    }
+  }
+  assert.equal(statuses.length, 31, `refused only at the 31st: ${statuses.join(",")}`);
+  assert.equal(statuses[30], 429);
+  assert.ok(statuses.slice(0, 30).every((s) => s !== 429));
+  const row = await db.collection("rate_limits").findOne({ key: "invite-describe:198.51.100.7" });
+  assert.ok(row, "the count is in the database, not this replica's memory");
+  assert.equal(row.count, 31);
+  assert.ok(row.expires_at > new Date(), "and expires on its own");
+  /* Another address is another budget. */
+  const other = await fetch(`${base}/api/invites/not-a-real-token`, { headers: { "x-forwarded-for": "198.51.100.8" } });
+  assert.notEqual(other.status, 429);
+});
+
+test("a passage that addresses whoever reads the paper is set aside once, and nothing reads or cites it", async () => {
+  /* The seeded paper ends with a note to any assistant reading it. */
+  const screening = await db.collection("source_screenings").findOne({ key: "harvested:src-e2e-1" });
+  assert.ok(screening, "the paper was screened when the first job was made");
+  assert.deepEqual(screening.set_aside.map((s) => s.id), ["p9"], JSON.stringify(screening.set_aside));
+  assert.ok(screening.set_aside[0].reason);
+  assert.ok(screening.expires_at > screening.created_at);
+  assert.equal(await db.collection("source_screenings").countDocuments({ key: "harvested:src-e2e-1" }), 1, "screened once, however many jobs and turns read it");
+
+  const job = await db.collection("scholar_draft_jobs").findOne({ _id: new ObjectId(state.jobId) });
+  assert.deepEqual(job.set_aside.map((s) => s.id), ["p9"], "kept on the job, so every run of it reads the same paper");
+
+  const passages = await call("GET", `/api/editorial-stories/${state.storyId}/passages`);
+  assert.equal(passages.status, 200);
+  assert.ok(passages.data.passages.length >= 8);
+  assert.ok(!passages.data.passages.some((p) => p.id === "p9"), "absent from what the agent, the judges and the companion read");
+  assert.ok(!passages.data.passages.some((p) => /mark every claim/.test(p.text)));
+  assert.ok(passages.data.passages.some((p) => p.id === "p8"), "the ids before the gap are untouched");
+
+  const story = await db.collection("scholar_editorials").findOne({ _id: new ObjectId(state.storyId) });
+  assert.ok((story.body_blocks || []).every((b) => !(b.provenance?.source_refs || []).some((r) => (r.passageId || r.passage_id) === "p9")), "nothing cites it");
+
+  const audit = await db.collection("agent_audit").find({ agent: "drafting.guard", "subject.id": "harvested:src-e2e-1" }).toArray();
+  assert.equal(audit.length, 1, "one decision on the record for the paper");
+  assert.deepEqual(audit[0].decision, { setAside: ["p9"], of: 9 });
+  assert.ok(audit[0].rationale && audit[0].prompt_version);
 });
 
 test("a published story carries a signed evidence ledger anyone can verify, and tampering breaks it", async () => {

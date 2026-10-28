@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { test, expect } = require("@playwright/test");
 
-const { openAgent } = require("./agent");
+const { openAgent, freshConversation } = require("./agent");
 const { readState } = require("./stack");
 
 const OUT = process.env.SCREENS_OUT || path.join(__dirname, "screens");
@@ -20,6 +20,7 @@ test("capture the current screens", async ({ page, context, browser }) => {
   fs.mkdirSync(OUT, { recursive: true });
   const state = readState();
   await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
+  await freshConversation(context);
   const [vw, vh] = (process.env.SCREENS_VIEWPORT || "1440x900").split("x").map(Number);
   await page.setViewportSize({ width: vw, height: vh });
   const shot = (name) => page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: true });

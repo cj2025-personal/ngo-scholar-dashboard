@@ -29,7 +29,12 @@ const path = require("path");
 const vertex = require("../src/lib/vertex");
 const { env } = require("../src/config/env");
 const { createRouter } = require("../src/lib/modelRouter");
-const { defaultsFor } = require("../src/lib/policyDefaults");
+/* Every policy this run reads: the baseline, or a proposed change laid over
+   it when started with `--policy <file>` (scripts/policy.js does that before
+   it writes the change). */
+const { readProposal, policyFor: policyUnder } = require("../src/lib/policyChange");
+const proposal = readProposal(process.argv);
+const policyFor = (name) => policyUnder(name, proposal);
 const reviewer = require("../src/lib/agents/articleReviewer");
 const checks = require("../src/lib/checks");
 
@@ -57,9 +62,9 @@ const main = async () => {
     if (!r.id || !Array.isArray(r.blocks) || !r.blocks.length) throw new Error(`row ${i + 1} is missing id or blocks`);
     return r;
   });
-  const floors = defaultsFor("evals").review;
+  const floors = policyFor("evals").review;
   const calls = [];
-  const router = createRouter({ models: defaultsFor("models"), deploymentModel: env.llm.model, call: (req) => vertex.generateContent(req), onCall: (e) => calls.push(e) });
+  const router = createRouter({ models: policyFor("models"), deploymentModel: env.llm.model, call: (req) => vertex.generateContent(req), onCall: (e) => calls.push(e) });
   const generate = router.bound("drafting.review");
 
   console.log("=".repeat(78));
@@ -103,7 +108,7 @@ const main = async () => {
   const pass = !failures.length && !unchecked;
   console.log(pass ? "\nPASS" : `\nFAIL: ${[...failures, ...(unchecked ? [`${unchecked} row(s) unchecked`] : [])].join("; ")}`);
   if (jsonOut) {
-    fs.writeFileSync(path.resolve(jsonOut), JSON.stringify({ dataset: path.basename(datasetPath), reviewer: reviewer.REVIEW_VERSION, route: defaultsFor("models").routes["drafting.review"], at: new Date().toISOString(), scores, floors, results }, null, 2));
+    fs.writeFileSync(path.resolve(jsonOut), JSON.stringify({ dataset: path.basename(datasetPath), reviewer: reviewer.REVIEW_VERSION, route: policyFor("models").routes["drafting.review"], at: new Date().toISOString(), scores, floors, results }, null, 2));
     console.log(`wrote ${jsonOut}`);
   }
   process.exit(pass ? 0 : 1);

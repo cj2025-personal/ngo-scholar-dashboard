@@ -12,7 +12,7 @@ const { isAudience } = require("../lib/audiences");
 const { VOICE } = require("../lib/draftComposer");
 const { getAiTerms } = require("../services/aiTerms.service");
 const { getPolicy } = require("../services/policy.service");
-const { converseWith, ideasFor } = require("../services/studioAgent.service");
+const { converseWith, latestConversation, endConversation, ideasFor } = require("../services/studioAgent.service");
 
 const router = express.Router();
 
@@ -56,7 +56,9 @@ router.get(
 /**
  * What the scholar means by what they just said to the studio agent: an
  * action, the paper, the reader, the voice, the brief it understood, and the
- * words to say back. The page carries the decision out.
+ * words to say back. The page carries the decision out. The conversation is
+ * kept here: the page sends the scholar's new words, the conversation they
+ * belong to, and notes on what it did since the last turn.
  */
 router.post(
   "/converse",
@@ -67,7 +69,35 @@ router.post(
     if (!profileId) throw new ApiError(403, "This session is not linked to a scholar profile.");
     const name = req.auth.related?.scholars?.[0]?.name;
     const scholarName = (name && (name.display || name.full)) || null;
-    res.status(200).json(await converseWith({ profileId, scholarName, messages: req.body?.messages, state: req.body?.state || {} }));
+    res.status(200).json(await converseWith({
+      profileId, scholarName,
+      conversationId: typeof req.body?.conversationId === "string" ? req.body.conversationId : null,
+      message: req.body?.message,
+      notes: Array.isArray(req.body?.notes) ? req.body.notes : [],
+      state: req.body?.state || {},
+    }));
+  }),
+);
+
+/** The scholar's newest open conversation, so a reload picks it up where it was. */
+router.get(
+  "/converse/latest",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const profileId = canonicalScholarId(req.auth.user);
+    if (!profileId) throw new ApiError(403, "This session is not linked to a scholar profile.");
+    res.status(200).json(await latestConversation({ profileId }));
+  }),
+);
+
+/** Close a conversation: a draft landed, or the scholar started another. */
+router.post(
+  "/converse/:conversationId/end",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const profileId = canonicalScholarId(req.auth.user);
+    if (!profileId) throw new ApiError(403, "This session is not linked to a scholar profile.");
+    res.status(200).json(await endConversation({ profileId, conversationId: req.params.conversationId }));
   }),
 );
 

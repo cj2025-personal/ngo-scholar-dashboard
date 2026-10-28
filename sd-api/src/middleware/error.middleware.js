@@ -35,7 +35,9 @@ function notFoundHandler(req, res, next) {
 function describeError(error, req) {
   const status = error.statusCode || 500;
 
-  if (status >= 500) {
+  /* A turn that ran out of time (504) is said as written: it is a deadline
+     the policy set, not a fault to hide behind a reference. */
+  if (status >= 500 && status !== 504) {
     const ref = reference();
     console.error(`[error] ref=${ref} ${req.method} ${req.originalUrl}`, error);
     return {

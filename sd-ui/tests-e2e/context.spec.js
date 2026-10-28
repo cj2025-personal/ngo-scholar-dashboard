@@ -11,12 +11,13 @@
 
 const { test, expect } = require("@playwright/test");
 
-const { openAgent } = require("./agent");
+const { openAgent, freshConversation } = require("./agent");
 const { readState } = require("./stack");
 
 test.beforeEach(async ({ context }) => {
   const state = readState();
   await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
+  await freshConversation(context);
 });
 
 test("a brief about the world today gets the author's own context, held for the author to verify before it can be published", async ({ page }) => {

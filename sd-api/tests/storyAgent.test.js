@@ -32,9 +32,10 @@ test("the state is built from the story and rendered with numbers, types and cit
   const s = stateFromStory(story);
   assert.equal(s.blocks.length, 4);
   const r = renderState(s);
-  assert.match(r, /^\[2\] \(paragraph\) cites p2: Nineteen boards/m);
-  assert.match(r, /^\[4\] \(image\) caption: A canal/m);
-  assert.match(r, /^\[1\] \(subheading\) \(no citation\)/m);
+  assert.match(r, /^\[2\] block 2 \(paragraph\) cites p2: Nineteen boards/m);
+  assert.match(r, /^\[4\] block 4 \(image\) caption: A canal/m);
+  assert.match(r, /^\[1\] block 1 \(subheading\) \(no citation\)/m);
+  assert.match(r, /numbered as the scholar numbers them/, "the model is told the scholar's paragraph numbers are block numbers");
 });
 
 test("replace keeps the key, cites only known passages, and refuses the rules", () => {
@@ -209,7 +210,7 @@ test("a paragraph that goes beyond the paper must build on passages, is one kind
   assert.equal(s.blocks[4].extension, true);
   assert.equal(s.blocks[4].reach.verdict, "follows");
   assert.equal(s.blocks[1].extension, false);
-  assert.match(renderState(s), /^\[5\] \(paragraph\) builds on p3: Which means/m);
+  assert.match(renderState(s), /^\[5\] block 5 \(paragraph\) builds on p3: Which means/m);
   const c = ctx();
 
   const ok = applyTool(s, { name: "insert_block", args: { after: 2, kind: "paragraph", text: "Which means any board that talks would hold.", passage_ids: ["p3"], extension: true } }, c);
@@ -227,4 +228,34 @@ test("a paragraph that goes beyond the paper must build on passages, is one kind
   const heading = applyTool(s, { name: "insert_block", args: { after: 0, kind: "subheading", text: "Why it matters", passage_ids: [], extension: true } }, c);
   assert.equal(heading.state.blocks[0].extension, false, "only a paragraph can go beyond the paper");
   assert.ok(TOOL_DECLARATIONS.find((t) => t.name === "insert_block").parameters.properties.extension);
+});
+
+test("a stopped turn ends before the next model call or tool, names why, and carries the signal on every call", async () => {
+  const s = stateFromStory(story);
+  const control = new AbortController();
+  const signals = [];
+  let calls = 0;
+  const generate = async ({ signal }) => {
+    signals.push(signal);
+    calls += 1;
+    const fc = { name: "search_passages", args: { query: "boards" } };
+    return { text: "", functionCalls: [fc], parts: [{ functionCall: fc }] };
+  };
+  /* Stopped while the first tool runs: the loop must not ask the model again. */
+  const search = async () => { control.abort(new Error("the deadline passed")); return []; };
+  await assert.rejects(runStoryAgent({ state: s, passages, instruction: "x", generate, search, signal: control.signal }), (e) => e.name === "AbortError" && /deadline passed/.test(e.message));
+  assert.equal(calls, 1);
+  assert.ok(signals.every((x) => x === control.signal), "every model call carries the caller's signal");
+
+  /* Already stopped: nothing is asked at all. */
+  const gone = new AbortController();
+  gone.abort(new Error("the scholar left"));
+  let asked = 0;
+  await assert.rejects(runStoryAgent({ state: s, passages, instruction: "x", generate: async () => { asked += 1; }, signal: gone.signal }), /scholar left/);
+  assert.equal(asked, 0);
+
+  /* Without a signal the loop runs as before. */
+  const fin = { name: "finish", args: { summary: "Done." } };
+  const r = await runStoryAgent({ state: s, passages, instruction: "x", generate: async () => ({ text: "", functionCalls: [fin], parts: [{ functionCall: fin }] }) });
+  assert.equal(r.summary, "Done.");
 });

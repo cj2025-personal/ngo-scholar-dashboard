@@ -294,7 +294,13 @@ test("a message it would be harmful to engage with is declined by the guard befo
   assert.equal(answer.turn.declinedBy, "guard");
   assert.deepEqual(byEvent(frames, "step").map((f) => f.data.tool), ["guard"], "the companion never ran");
   assert.match(answer.text, /^I can't answer that one well from this article/);
-  const audit = await db.collection("agent_audit").findOne({ agent: "reader.guard", "decision.route": "decline" });
+  /* The decision is recorded after the answer is sent, not before, so the
+     row may land a moment after the stream ends. */
+  let audit = null;
+  for (let i = 0; i < 40 && !audit; i += 1) {
+    audit = await db.collection("agent_audit").findOne({ agent: "reader.guard", "decision.route": "decline" });
+    if (!audit) await new Promise((r) => setTimeout(r, 50));
+  }
   assert.ok(audit && audit.rationale && audit.prompt_version, "the guard's decision is in the audit log with its reason");
 });
 

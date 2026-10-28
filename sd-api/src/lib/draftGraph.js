@@ -87,6 +87,8 @@ const State = Annotation.Root({
   voice: Annotation(),
   prepared: Annotation(),
   brief: Annotation(),
+  /* The passages the source guard set aside: ids no section may use. */
+  setAside: Annotation(),
   /* produced */
   passages: Annotation(),
   outline: Annotation(),
@@ -107,7 +109,7 @@ const State = Annotation.Root({
  * @param {object} deps
  * @param {(req: {prompt: string, systemInstruction: string, responseSchema: object, temperature?: number, maxOutputTokens?: number}) => Promise<{text: string, usage?: object, modelVersion?: string|null}>} deps.generate
  * @param {(event: {step: string, message: string, detail?: object}) => (void|Promise<void>)} [deps.onProgress]
- * @param {{voice?: Function, band?: Function, review?: Function}} [deps.judges]   the voice, reading-level and article-review judges' models; the writer's when not given
+ * @param {{voice?: Function, band?: Function, review?: Function, fidelity?: Function, reach?: Function, context?: Function}} [deps.judges]   each judge's model; the writer's when not given. In production the fidelity, reach and context judges run on their own routes, so no draft is marked by the model that wrote it.
  * @param {{sectionVoiceRetries?: number, fidelityRetries?: number, bandRetries?: number}} [deps.limits]   from the drafting policy
  */
 function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, limits = {} }) {
@@ -116,6 +118,9 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
   const judgeVoice = judges.voice || generate;
   const judgeBand = judges.band || generate;
   const judgeReview = judges.review || generate;
+  const judgeFidelity = judges.fidelity || generate;
+  const judgeReach = judges.reach || generate;
+  const judgeContext = judges.context || generate;
   const progress = (step, message, detail) => Promise.resolve(onProgress({ step, message, detail }));
   /* The system instruction depends on whose account this is, so it is built
      per run rather than once per process. */
@@ -126,13 +131,21 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
     if (!s.source || s.source.use !== USE.DRAFTABLE) {
       throw new Error(`This source can't be drafted from: ${s.source?.reason || "not draftable"}.`);
     }
-    const passages = plan.splitPassages(s.prepared.text);
+    /* The split is the paper's; the source guard's verdicts, taken before
+       the job was queued, say which passages no model may read. Their ids
+       stay gaps, so nothing can cite them. */
+    const gone = new Set((s.setAside || []).map((x) => x.id));
+    const passages = plan.splitPassages(s.prepared.text).filter((p) => !gone.has(p.id));
     if (passages.length === 0) throw new Error("We hold this source's title but not enough of its text to draft from.");
     await progress("pick_source", `Reading “${s.source.title}” — ${passages.length} passages, ${s.prepared.words.toLocaleString()} words.`, {
       passages: passages.length,
       truncated: s.prepared.truncated,
+      setAside: gone.size,
     });
-    return { passages };
+    const warnings = gone.size
+      ? [`${gone.size === 1 ? "One passage" : `${gone.size} passages`} of the paper ${gone.size === 1 ? "was" : "were"} set aside because ${gone.size === 1 ? "it addresses" : "they address"} whoever reads it rather than reporting the work, so nothing here draws on ${gone.size === 1 ? "it" : "them"}.`]
+      : [];
+    return { passages, warnings };
   }
 
   async function plan_outline(s) {
@@ -271,7 +284,7 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
         /* Judge: the paper's paragraphs for fidelity, the extension paragraphs
            for reach. Each judge sees only its own kind. */
         await progress("judge_fidelity", `Checking section ${beat.index} of ${total} against the paper…`, { index: beat.index, total, round });
-        const judgedF = await fidelity.judgeSection({ blocks: result.blocks, passages: s.passages, generate });
+        const judgedF = await fidelity.judgeSection({ blocks: result.blocks, passages: s.passages, generate: judgeFidelity });
         if (judgedF.call) calls.push({ ...judgedF.call, beat: beat.index, round });
         let blocks = judgedF.blocks;
         let failingF = judgedF.failing;
@@ -279,7 +292,7 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
         let failingC = [];
         if (extension) {
           await progress("judge_reach", `Checking what section ${beat.index} of ${total} draws from the paper…`, { index: beat.index, total, round });
-          const judgedR = await reach.judgeSection({ blocks, passages: s.passages, audience: s.audience, generate });
+          const judgedR = await reach.judgeSection({ blocks, passages: s.passages, audience: s.audience, generate: judgeReach });
           if (judgedR.call) calls.push({ ...judgedR.call, beat: beat.index, round });
           blocks = judgedR.blocks;
           failingR = judgedR.failing;
@@ -288,7 +301,7 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
           /* The author's own context: judged for what it claims of the paper,
              and its specifics listed for the author to verify. */
           await progress("judge_context", `Checking section ${beat.index} of ${total} for what it claims of the paper…`, { index: beat.index, total, round });
-          const judgedC = await context.judgeSection({ blocks, passages: s.passages, audience: s.audience, generate });
+          const judgedC = await context.judgeSection({ blocks, passages: s.passages, audience: s.audience, generate: judgeContext });
           if (judgedC.call) calls.push({ ...judgedC.call, beat: beat.index, round });
           blocks = judgedC.blocks;
           failingC = judgedC.failing;

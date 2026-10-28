@@ -34,7 +34,12 @@ const { AGENT_VERSION } = require("../src/lib/readingAgent");
 const { SENTINEL_VERSION, writeRefusal } = require("../src/lib/sentinel");
 const { THRESHOLDS, EVAL_VERSION, scoreTurn, summarise, validateRow, parseJsonl, inputFor } = require("../src/lib/readerEvals");
 const { createRouter } = require("../src/lib/modelRouter");
-const { defaultsFor } = require("../src/lib/policyDefaults");
+/* Every policy this run reads: the baseline, or a proposed change laid over
+   it when started with `--policy <file>` (scripts/policy.js does that before
+   it writes the change). */
+const { readProposal, policyFor: policyUnder } = require("../src/lib/policyChange");
+const proposal = readProposal(process.argv);
+const policyFor = (name) => policyUnder(name, proposal);
 const { AUDIENCES } = require("../src/lib/audiences");
 const vertex = require("../src/lib/vertex");
 const { env } = require("../src/config/env");
@@ -67,8 +72,8 @@ const main = async () => {
   console.log("=".repeat(78));
   console.log(`READER EVALS · ${path.basename(datasetPath)} · ${queue.length} row(s)`);
   console.log(`  agent ${AGENT_VERSION} · sentinel ${SENTINEL_VERSION} · evals ${EVAL_VERSION}`);
-  const models = defaultsFor("models");
-  const policy = defaultsFor("reader");
+  const models = policyFor("models");
+  const policy = policyFor("reader");
   const calls = [];
   const router = createRouter({ models, deploymentModel: env.llm.model, call: traced("eval.reader.generateContent", (req) => vertex.generateContent(req)), embedCall: (req) => vertex.embed(req), onCall: (e) => calls.push(e) });
   console.log(`  agent ${models.routes["reader.agent"].primary} · sentinel ${models.routes["reader.sentinel"].primary} · guard ${models.routes["reader.guard"].primary} · embeddings ${models.embeddings.primary}`);
@@ -135,7 +140,7 @@ const main = async () => {
   console.log(summary.pass && !errored ? "\nPASS" : `\nFAIL: ${[...summary.failures, ...(errored ? [`${errored} row(s) errored`] : [])].join("; ")}`);
 
   if (jsonOut) {
-    fs.writeFileSync(path.resolve(jsonOut), JSON.stringify({ dataset: path.basename(datasetPath), agent: AGENT_VERSION, sentinel: SENTINEL_VERSION, evals: EVAL_VERSION, models: defaultsFor("models").routes, at: new Date().toISOString(), summary, results }, null, 2));
+    fs.writeFileSync(path.resolve(jsonOut), JSON.stringify({ dataset: path.basename(datasetPath), agent: AGENT_VERSION, sentinel: SENTINEL_VERSION, evals: EVAL_VERSION, models: policyFor("models").routes, at: new Date().toISOString(), summary, results }, null, 2));
     console.log(`wrote ${jsonOut}`);
   }
 

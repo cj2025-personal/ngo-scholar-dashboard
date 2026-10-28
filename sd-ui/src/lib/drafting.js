@@ -125,12 +125,27 @@ export async function proposeFromPaper({ origin, sourceId, audience }) {
  * it is for, plan, propose, replan, approve or discard. The page carries the
  * decision out.
  */
-export async function converseWithAgent({ messages, state }) {
+/**
+ * One turn with the studio agent. The conversation is kept by the API: the
+ * page sends the scholar's new words, the conversation they continue (none
+ * for a new one), and notes on what the page did since the last turn.
+ */
+export async function converseWithAgent({ conversationId = null, message, notes = [], state }) {
   return request("/api/drafting/converse", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, state }),
+    body: JSON.stringify({ conversationId, message, notes, state }),
   });
+}
+
+/** The scholar's newest open conversation with the studio agent, to pick up on a reload. */
+export async function latestConversation() {
+  return request("/api/drafting/converse/latest");
+}
+
+/** Close a conversation: a draft landed, or the scholar started another. */
+export async function endConversation(conversationId) {
+  return request(`/api/drafting/converse/${conversationId}/end`, { method: "POST" });
 }
 
 /** Ideas for the page the scholar is on, written by a model that has read it. */
@@ -288,6 +303,9 @@ export async function acceptAiTerms(version) {
  * with plain JSON instead gives the same result, with no steps on the way.
  */
 export async function askStoryAgent(storyId, instruction, { onProgress = () => {} } = {}) {
+  /* One key per ask: sent again — a double tap, a retried request — the API
+     answers with the turn it already made rather than making another. */
+  const requestKey = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   let response;
   try {
     response = await fetch(`${AUTH_API_URL}/api/editorial-stories/${encodeURIComponent(storyId)}/agent`, {
@@ -295,7 +313,7 @@ export async function askStoryAgent(storyId, instruction, { onProgress = () => {
       credentials: "include",
       cache: "no-store",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream, application/json" },
-      body: JSON.stringify({ instruction }),
+      body: JSON.stringify({ instruction, requestKey }),
     });
   } catch {
     return { ok: false, data: null, error: UNREACHABLE };

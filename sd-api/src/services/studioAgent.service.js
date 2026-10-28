@@ -5,6 +5,7 @@
  * when they talk to it, and what it could do next on their page.
  */
 
+const { ObjectId } = require("mongodb");
 const { getDb, COLLECTIONS } = require("../db/mongo");
 const { ApiError } = require("../lib/api-error");
 const converse = require("../lib/agents/studioConverse");
@@ -25,24 +26,73 @@ async function papersFor(profileId) {
   return { inventory: inv, papers: (inv.draftable || []).map((p) => ({ key: paperKey(p), title: p.title, year: p.year || null, words: p.words || p.wordCount || null })) };
 }
 
+/* ── the conversation, kept here ────────────────────────────────────────────
+   The thread the model reads lives in this service, not in the page. The
+   scholar's words and the agent's replies are appended as they are said, so
+   a browser cannot rewrite either before the next turn, a reload picks the
+   conversation up where it was, and the record of each decision sits beside
+   the words it was made from. The page adds only what it did — an outline
+   shown, approved, replaced — as notes in its own role, which the model
+   reads as the agent's side and the record keeps apart. */
+
+const LINE_CHARS = 2000;
+const cleanLine = (t) => String(t || "").replace(/\s+/g, " ").trim().slice(0, LINE_CHARS);
+const expiryFor = (policy, now) => new Date(now.getTime() + (Number(policy.converse.keepDays) || 14) * 24 * 60 * 60 * 1000);
+const viewConversation = (row) => ({ conversationId: String(row._id), lines: (row.lines || []).filter((l) => l.text).map((l) => ({ role: l.role, text: l.text, at: l.at })), state: row.state || {}, updatedAt: row.updated_at });
+
+/** The conversation the turn belongs to: the scholar's own, still open; or a new one. */
+async function conversationFor(db, { profileId, conversationId, policy, now }) {
+  const coll = db.collection(COLLECTIONS.studioConversations);
+  if (conversationId) {
+    if (!ObjectId.isValid(String(conversationId))) throw new ApiError(404, "No such conversation.");
+    const row = await coll.findOne({ _id: new ObjectId(String(conversationId)), profile_id: profileId });
+    if (!row) throw new ApiError(404, "No such conversation.");
+    if (row.ended_at) throw new ApiError(409, "That conversation has ended. Start another.");
+    return row;
+  }
+  const row = { _id: new ObjectId(), profile_id: profileId, lines: [], state: {}, created_at: now, updated_at: now, ended_at: null, expires_at: expiryFor(policy, now) };
+  await coll.insertOne(row);
+  return row;
+}
+
+/** The scholar's newest open conversation, to pick up on a reload; null when there is none. */
+async function latestConversation({ profileId }) {
+  const db = await getDb();
+  const row = await db.collection(COLLECTIONS.studioConversations).find({ profile_id: profileId, ended_at: null }).sort({ updated_at: -1 }).limit(1).next();
+  return { conversation: row ? viewConversation(row) : null };
+}
+
+/** Close a conversation: a draft landed, or the scholar started another. */
+async function endConversation({ profileId, conversationId }) {
+  const db = await getDb();
+  if (!ObjectId.isValid(String(conversationId))) throw new ApiError(404, "No such conversation.");
+  const r = await db.collection(COLLECTIONS.studioConversations).updateOne({ _id: new ObjectId(String(conversationId)), profile_id: profileId, ended_at: null }, { $set: { ended_at: new Date() } });
+  if (!r.matchedCount) throw new ApiError(404, "No such conversation.");
+  return { ended: true };
+}
+
 /**
  * What the scholar means by what they just said.
  *
  * @param {object} p
  * @param {string} p.profileId
  * @param {string} [p.scholarName]
- * @param {{role:string,text:string}[]} p.messages
- * @param {object} p.state
+ * @param {string|null} [p.conversationId]   the conversation to continue; a new one when absent
+ * @param {string} p.message                 what the scholar just said or tapped
+ * @param {string[]} [p.notes]               what the page did since the last turn, in the page's words
+ * @param {object} p.state                   what the page says is set
  */
-async function converseWith({ profileId, scholarName = null, messages, state = {} }) {
+async function converseWith({ profileId, scholarName = null, conversationId = null, message, notes = [], state = {} }) {
   if (!vertex.isConfigured()) throw new ApiError(503, `The studio agent is not available on this deployment. ${vertex.describeMissingConfig()}`);
   const db = await getDb();
   const policy = await getPolicy("studio", { db });
-  const clean = (Array.isArray(messages) ? messages : [])
-    .map((m) => ({ role: m?.role === "agent" ? "agent" : "scholar", text: String(m?.text || "").replace(/\s+/g, " ").trim().slice(0, 2000) }))
-    .filter((m) => m.text)
-    .slice(-policy.converse.historyMessages);
-  if (!clean.length || clean[clean.length - 1].role !== "scholar") throw new ApiError(400, "Say something to the agent.");
+  const spoken = cleanLine(message);
+  if (!spoken) throw new ApiError(400, "Say something to the agent.");
+  const now = new Date();
+  const conversation = await conversationFor(db, { profileId, conversationId, policy, now });
+  const noted = (Array.isArray(notes) ? notes : []).map(cleanLine).filter(Boolean).slice(0, Number(policy.converse.maxNotes) || 0).map((text) => ({ role: "page", text, at: now }));
+  const lines = [...(conversation.lines || []), ...noted, { role: "scholar", text: spoken, at: now }];
+  const clean = lines.filter((l) => l.text).map((l) => ({ role: l.role === "scholar" ? "scholar" : "agent", text: l.text })).slice(-policy.converse.historyMessages);
   const { papers } = await papersFor(profileId);
   /* What the page says is set, kept to values that exist for this scholar. */
   const s = state && typeof state === "object" ? state : {};
@@ -60,9 +110,15 @@ async function converseWith({ profileId, scholarName = null, messages, state = {
   const router = await routerFor({ db });
   const out = await converse.decide({ messages: clean, papers, audiences: AUDIENCE_LIST, voices: VOICES, state: said, scholarName, generate: router.bound("studio.converse") });
   if (!out.decision) throw new ApiError(502, "The agent could not make sense of that just now. Try saying it another way.");
-  void recordDecision({ agent: "studio.converse", subject: { kind: "scholar", id: profileId }, decision: { action: out.decision.action, paperKey: out.decision.paperKey, audience: out.decision.audience, voice: out.decision.voice, stage: said.stage }, rationale: out.decision.rationale, model: out.model, promptVersion: converse.CONVERSE_VERSION, usage: out.usage[0] || null }, { db });
+  void recordDecision({ agent: "studio.converse", subject: { kind: "scholar", id: profileId }, decision: { action: out.decision.action, paperKey: out.decision.paperKey, audience: out.decision.audience, voice: out.decision.voice, stage: said.stage, conversationId: String(conversation._id) }, rationale: out.decision.rationale, model: out.model, promptVersion: converse.CONVERSE_VERSION, usage: out.usage[0] || null }, { db });
   const { rationale, paperKnown, ...decision } = out.decision;
-  return { decision };
+  /* The reply joins the thread before the page sees it, with the action it
+     carried; an action with no words is still a line in the record. */
+  await db.collection(COLLECTIONS.studioConversations).updateOne(
+    { _id: conversation._id },
+    { $set: { lines: [...lines, { role: "agent", text: cleanLine(decision.reply), action: decision.action, at: now }], state: said, updated_at: now, expires_at: expiryFor(policy, now) } },
+  );
+  return { conversationId: String(conversation._id), decision };
 }
 
 /**
@@ -116,4 +172,4 @@ async function ideasFor({ profileId, scholarId, storyId = null, paperKey: chosen
   return { groups: made.groups, cached: false };
 }
 
-module.exports = { converseWith, ideasFor, VOICES, AUDIENCE_LIST };
+module.exports = { converseWith, latestConversation, endConversation, ideasFor, VOICES, AUDIENCE_LIST };

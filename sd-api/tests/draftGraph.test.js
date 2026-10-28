@@ -553,3 +553,29 @@ test("each section is reported as it lands, with its text, in order, before asse
   const order = events.map((e) => e.step);
   assert.ok(order.lastIndexOf("section_drafted") < order.indexOf("assemble"), "every section lands before assembly");
 });
+
+test("the fact-checking judges run on their own models, never the writer's", async () => {
+  const context = require("../src/lib/context");
+  const JUDGE_SCHEMAS = [fidelity.JUDGE_SCHEMA, reach.JUDGE_SCHEMA, context.JUDGE_SCHEMA];
+  const model = fakeModel();
+  const writer = async (req) => {
+    if (JUDGE_SCHEMAS.includes(req.responseSchema)) throw new Error("the writer was asked to mark its own draft");
+    return model.generate(req);
+  };
+  const seen = [];
+  const judgeOn = (name) => async (req) => { seen.push(name); return model.generate(req); };
+  const r = await runDraftGraph(input, { generate: writer, judges: { fidelity: judgeOn("fidelity"), reach: judgeOn("reach"), context: judgeOn("context") } });
+  assert.ok(r.bodyBlocks.some((b) => b.type === "paragraph"), "a draft came back");
+  assert.ok(seen.includes("fidelity"), `the fidelity judge was asked: ${seen.join(",")}`);
+
+  /* And policy gives each of them a model of its own: a judge route whose
+     primary is null would run on the deployment model, which is the writer's. */
+  const routes = defaultsFor("models").routes;
+  for (const name of ["drafting.fidelity", "drafting.reach", "drafting.context"]) {
+    const route = routes[name];
+    assert.ok(route, `${name} route`);
+    assert.equal(typeof route.primary, "string", `${name} names its own model rather than deferring to the deployment's`);
+    assert.ok(route.primary !== routes["studio.edit"].primary && route.primary !== routes.default.primary, `${name} is not the writer's model`);
+    assert.ok(Array.isArray(route.fallback) && route.fallback.length > 0, `${name} has a fallback`);
+  }
+});

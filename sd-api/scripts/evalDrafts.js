@@ -37,7 +37,12 @@ const vertex = require("../src/lib/vertex");
 const { traced, isTracingConfigured } = require("../src/lib/tracing");
 const { env } = require("../src/config/env");
 const { createRouter } = require("../src/lib/modelRouter");
-const { defaultsFor } = require("../src/lib/policyDefaults");
+/* Every policy this run reads: the baseline, or a proposed change laid over
+   it when started with `--policy <file>` (scripts/policy.js does that before
+   it writes the change). */
+const { readProposal, policyFor: policyUnder } = require("../src/lib/policyChange");
+const proposal = readProposal(process.argv);
+const policyFor = (name) => policyUnder(name, proposal);
 const voiceJudge = require("../src/lib/agents/voiceJudge");
 
 const args = process.argv.slice(2);
@@ -75,9 +80,12 @@ const main = async () => {
 
   const generate = traced("eval.generateContent", (req) => vertex.generateContent(req));
   /* The judges on their policy routes, as production runs them. */
-  const router = createRouter({ models: defaultsFor("models"), deploymentModel: env.llm.model, call: traced("eval.judge.generateContent", (req) => vertex.generateContent(req)) });
-  const judges = { voice: router.bound("drafting.voice"), band: router.bound("drafting.band"), review: router.bound("drafting.review") };
-  const limits = defaultsFor("drafting");
+  const router = createRouter({ models: policyFor("models"), deploymentModel: env.llm.model, call: traced("eval.judge.generateContent", (req) => vertex.generateContent(req)) });
+  const judges = {
+    voice: router.bound("drafting.voice"), band: router.bound("drafting.band"), review: router.bound("drafting.review"),
+    fidelity: router.bound("drafting.fidelity"), reach: router.bound("drafting.reach"), context: router.bound("drafting.context"),
+  };
+  const limits = policyFor("drafting");
   const plain = (html) => String(html || "").replace(/<[^>]+>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
   const results = [];
 

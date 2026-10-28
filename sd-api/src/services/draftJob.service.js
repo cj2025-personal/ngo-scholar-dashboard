@@ -41,6 +41,7 @@ const vertex = require("../lib/vertex");
 const { listDraftSources, loadSourceText } = require("./drafting.service");
 const { getPolicy } = require("./policy.service");
 const { routerFor } = require("./models.service");
+const { screenedPassages } = require("./sourceGuard.service");
 
 /**
  * The brief a proposal carries when the scholar has not written one.
@@ -119,6 +120,10 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
   if (prepared.words < 200) {
     throw new ApiError(409, "We hold this source's title but not enough of its text to draft from.");
   }
+  /* The source guard reads the paper before anything else does; what it
+     sets aside is kept on the job, so every run of it reads the same paper. */
+  const screening = await screenedPassages(db, { source, text: prepared.text });
+  if (!screening.passages.length) throw new ApiError(409, "Every passage of this paper addresses its reader rather than reporting work, so there is nothing to draft from.");
 
   const chosenAudience = composer.normaliseAudience(audience);
   const chosenVoice = composer.normaliseVoice(voice);
@@ -147,7 +152,7 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
        Appended only for proposals, so every key already issued for a draft
        stays exactly what it was and in-flight jobs are still reused. */
     promptVersion: `${composer.PROMPT_VERSION}:${chosenVoice}${kind === "proposal" ? ":proposal" : ""}`,
-    corpusHash: job.corpusHash(`${prepared.text} ${cleanBrief || ""} ${approveOutline ? "outline" : "full"} ${createStory ? "story" : "draft"} ${Array.isArray(levelsRequested) ? `levels:${levelsRequested.join(",")}` : levelsRequested ? "levels" : ""}`),
+    corpusHash: job.corpusHash(`${prepared.text}\u0000${cleanBrief || ""}\u0000${approveOutline ? "outline" : "full"}\u0000${createStory ? "story" : "draft"}\u0000${Array.isArray(levelsRequested) ? `levels:${levelsRequested.join(",")}` : levelsRequested ? "levels" : ""}`),
   });
 
   /* The same request twice is the same job — unless the first one failed, in
@@ -170,6 +175,7 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
     scholar_name: inventory.scholarName || null,
     source: { origin: source.origin, id: source.id, title: source.title, year: source.year ?? null, words: prepared.totalWords, truncated: prepared.truncated, prepared_words: prepared.words },
     source_text: prepared.text,
+    set_aside: screening.setAside,
     audience: chosenAudience,
     /* Whose account this is: the scholar's own by default, since the only
        papers this pipeline drafts from are theirs. See draftComposer.VOICE. */
@@ -295,7 +301,8 @@ async function approveOutline({ jobId, profileId, outline }) {
   if (!move.ok) throw new ApiError(409, `Can't approve the outline: ${move.reason}.`);
   if (!doc.outline) throw new ApiError(409, "This job has no outline to approve.");
 
-  const passages = plan.splitPassages(doc.source_text);
+  const gone = new Set((doc.set_aside || []).map((x) => x.id));
+  const passages = plan.splitPassages(doc.source_text).filter((p) => !gone.has(p.id));
   let approved;
   try {
     approved = normaliseApprovedOutline(doc.outline, outline || null, passages);
@@ -304,11 +311,18 @@ async function approveOutline({ jobId, profileId, outline }) {
   }
   const now = new Date();
   const event = job.nextEvent(doc.events, "outline_approved", { beats: approved.beats.length, edited: Boolean(outline) }, now);
-  await jobs.updateOne(
+  /* The reply is the state the approval produced, read in the same
+     operation: a worker polling every few hundred milliseconds can pick the
+     job up before a second read, and a scholar who approved an outline
+     should be told it was queued, not shown a job already running. */
+  const after = await jobs.findOneAndUpdate(
     { _id: doc._id, status: doc.status },
     { $set: { status: job.STATUS.QUEUED, outline_approved: approved, updated_at: now }, $push: { events: event } },
+    { returnDocument: "after" },
   );
-  return { job: view(await jobs.findOne({ _id: doc._id })) };
+  const row = after?.value ?? after;
+  if (!row || !row._id) throw new ApiError(409, "Can't approve the outline: the job changed while you were deciding. Reload to see where it is.");
+  return { job: view(row) };
 }
 
 /**
@@ -389,10 +403,15 @@ async function runClaimedJob(db, doc) {
   const generate = traced("draft.generateContent", (req) => vertex.generateContent(req), {
     metadata: { jobId: String(doc._id), profileId: doc.profile_id, promptVersion: doc.prompt_version },
   });
-  /* The voice and reading-level judges each run on their own route, with
-     its own model and fallback; the retries they may cause are policy. */
+  /* Every judge runs on its own route, with its own model and fallback; the
+     fact-checkers (fidelity, reach, context) on a model other than the
+     writer's, so no draft is marked by the model that wrote it. The retries
+     they may cause are policy. */
   const router = await routerFor({ db });
-  const judges = { voice: router.bound("drafting.voice"), band: router.bound("drafting.band"), review: router.bound("drafting.review") };
+  const judges = {
+    voice: router.bound("drafting.voice"), band: router.bound("drafting.band"), review: router.bound("drafting.review"),
+    fidelity: router.bound("drafting.fidelity"), reach: router.bound("drafting.reach"), context: router.bound("drafting.context"),
+  };
   const limits = await getPolicy("drafting", { db });
 
   let calls = [];
@@ -404,6 +423,7 @@ async function runClaimedJob(db, doc) {
     brief: doc.brief || null,
     outline: doc.outline_approved || null,
     prepared: { text: doc.source_text, words: doc.source.prepared_words, totalWords: doc.source.words, truncated: doc.source.truncated },
+    setAside: doc.set_aside || [],
   };
   const onProgress = ({ step, message, detail }) => appendEvent(db, doc._id, "progress", { step, message, ...(detail || {}) }, { step });
   const eventsNow = async () => (await jobs.findOne({ _id: doc._id }, { projection: { events: 1 } }))?.events || [];

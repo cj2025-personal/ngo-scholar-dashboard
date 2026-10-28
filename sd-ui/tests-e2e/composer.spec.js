@@ -12,7 +12,7 @@
 
 const { test, expect } = require("@playwright/test");
 
-const { openAgent } = require("./agent");
+const { openAgent, freshConversation } = require("./agent");
 const { readState } = require("./stack");
 
 let state;
@@ -28,6 +28,7 @@ test.beforeEach(async ({ context }) => {
     { name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" },
     { name: "sd_session", value: state.token, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" },
   ]);
+  await freshConversation(context);
 });
 
 test("from a paper to a published story, with the agent editing by instruction", async ({ page, browser }) => {

@@ -30,11 +30,21 @@ const { getDb } = require("../db/mongo");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
 const { describeError } = require("../middleware/error.middleware");
 const { wantsEventStream, openEventStream } = require("../lib/eventStream");
+const { getPolicy } = require("../services/policy.service");
 
 const router = express.Router();
 
 /* Each instruction is a tool-calling loop of several model calls. */
-const agentLimiter = rateLimit({ name: "story-agent", limit: 30, windowMs: 10 * 60 * 1000 });
+/* Each turn of the editing agent is a run of paid model calls. The burst
+   ceiling is the studio policy's, read on every request, and the budget is
+   the account's rather than the address's: it sits behind requireAuth. The
+   day's token budget is the service's, counted from the turns it stored. */
+const agentLimiter = rateLimit({
+  name: "story-agent",
+  limit: async () => (await getPolicy("studio")).rateLimit.edit.burst,
+  windowMs: async () => (await getPolicy("studio")).rateLimit.edit.windowSeconds * 1000,
+  key: (req) => (req.auth?.user?.profile_id ? String(req.auth.user.profile_id) : null),
+});
 
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
@@ -438,26 +448,46 @@ router.post(
     const instruction = typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
     if (!instruction) throw new ApiError(400, "Say what you'd like changed.");
     if (instruction.length > 2000) throw new ApiError(400, "Keep an instruction under 2,000 characters.");
+    /* The turn stops when the scholar goes or the deadline passes. The
+       response's close, not the request's: a POST's request stream closes
+       as soon as its body has been read. The deadline is the studio policy's,
+       so it can be changed without a release. */
+    const control = new AbortController();
+    res.on("close", () => { if (!control.signal.aborted) control.abort(new Error("the scholar left")); });
+    const deadlineMs = (await getPolicy("studio")).edit.turnDeadlineSeconds * 1000;
+    const deadline = setTimeout(() => { if (!control.signal.aborted) control.abort(new Error("the deadline passed")); }, deadlineMs);
+    /* A stopped turn is said as what it is, not as a fault on our side. */
+    const asSaid = (error) =>
+      error?.name === "AbortError"
+        ? new ApiError(504, "That took too long, so I stopped before changing anything. Ask again, perhaps for a smaller change.")
+        : error;
     const ask = {
       storyId: req.params.storyId,
       scholarId: req.auth.user.scholar_id,
       profileId: req.auth.user.profile_id,
       user: req.auth.user,
       instruction,
+      /* The page's key for this ask; the same key again gets the same turn. */
+      requestKey: typeof req.body?.requestKey === "string" && req.body.requestKey.trim() ? req.body.requestKey.trim().slice(0, 64) : null,
+      signal: control.signal,
     };
-    if (!wantsEventStream(req)) {
-      res.status(200).json(await askStoryAgent(ask));
-      return;
-    }
-    const stream = openEventStream(res);
     try {
-      const result = await askStoryAgent({ ...ask, onProgress: async (e) => stream.send("progress", e) });
-      stream.send("turn", result);
-    } catch (error) {
-      const { status, body } = describeError(error, req);
-      stream.send("error", { status, ...body });
+      if (!wantsEventStream(req)) {
+        res.status(200).json(await askStoryAgent(ask).catch((error) => { throw asSaid(error); }));
+        return;
+      }
+      const stream = openEventStream(res);
+      try {
+        const result = await askStoryAgent({ ...ask, onProgress: async (e) => stream.send("progress", e) });
+        stream.send("turn", result);
+      } catch (error) {
+        const { status, body } = describeError(asSaid(error), req);
+        stream.send("error", { status, ...body });
+      } finally {
+        stream.end();
+      }
     } finally {
-      stream.end();
+      clearTimeout(deadline);
     }
   }),
 );

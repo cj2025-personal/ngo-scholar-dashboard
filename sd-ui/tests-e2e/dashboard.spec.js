@@ -16,6 +16,7 @@ const path = require("path");
 const { test, expect } = require("@playwright/test");
 
 const { readState } = require("./stack");
+const { freshConversation } = require("./agent");
 
 const OUT = process.env.SCREENS_OUT || path.join(__dirname, "screens");
 
@@ -29,6 +30,7 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies([
     { name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" },
   ]);
+  await freshConversation(context);
 });
 
 async function api(page, route) {

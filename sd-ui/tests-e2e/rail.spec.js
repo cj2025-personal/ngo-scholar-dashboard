@@ -7,12 +7,13 @@
 
 const { test, expect } = require("@playwright/test");
 
-const { openAgent } = require("./agent");
+const { openAgent, freshConversation } = require("./agent");
 const { readState } = require("./stack");
 
 test.beforeEach(async ({ context }) => {
   const state = readState();
   await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
+  await freshConversation(context);
 });
 
 test("on a wide screen a new story opens beside Kivyn; closed, the pane leaves a strip, and that is remembered", async ({ page }) => {

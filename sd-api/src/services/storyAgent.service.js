@@ -102,13 +102,53 @@ function stepDetail(tool, result) {
 }
 
 /**
+ * What an account's edit turns have cost since midnight UTC: the usage each
+ * stored turn recorded, summed. Nothing is counted twice and nothing is kept
+ * apart from the turns themselves, so the figure is exactly what the record
+ * says was spent.
+ * @returns {Promise<{tokens: number, turns: number}>}
+ */
+async function spentToday(db, { profileId, now = new Date() }) {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const [row] = await db.collection(COLLECTIONS.storyTurns).aggregate([
+    { $match: { profile_id: profileId, created_at: { $gte: start } } },
+    { $group: { _id: null, input: { $sum: "$usage.input" }, output: { $sum: "$usage.output" }, turns: { $sum: 1 } } },
+  ]).toArray();
+  return { tokens: (row?.input || 0) + (row?.output || 0), turns: row?.turns || 0 };
+}
+
+/**
+ * The day's budget, from the studio policy, checked before the first model
+ * call: a turn that reaches the model costs what it costs. Near the budget,
+ * one log line per turn says so, which is what an alert reads.
+ */
+async function assertEditBudget(db, { profileId, studio, now = new Date() }) {
+  const budget = studio.budget?.edit;
+  if (!budget || !(budget.tokensPerDay > 0)) return;
+  const spent = await spentToday(db, { profileId, now });
+  if (spent.tokens >= budget.tokensPerDay) {
+    console.warn(`[studio-budget] profile ${profileId} over the day's edit budget: ${spent.tokens} of ${budget.tokensPerDay} tokens in ${spent.turns} turns`);
+    throw new ApiError(429, "Kivyn has used today's budget on your stories. It can take instructions again tomorrow; the draft and every proposal are kept.");
+  }
+  if (spent.tokens >= budget.tokensPerDay * (budget.warnAt || 1)) {
+    console.warn(`[studio-budget] profile ${profileId} near the day's edit budget: ${spent.tokens} of ${budget.tokensPerDay} tokens in ${spent.turns} turns`);
+  }
+}
+
+/**
  * @param {object} p
  * @param {(e:{step:string, message?:string, tool?:string, refused?:boolean, detail?:string})=>Promise<void>} [p.onProgress]
  *        the turn as it happens, each step said before it is done: reading,
  *        the agent's own tool calls and what each found, then the checks.
  */
-async function askStoryAgent({ storyId, scholarId, profileId, user, instruction, onProgress = async () => {} }) {
+async function askStoryAgent({ storyId, scholarId, profileId, user, instruction, requestKey = null, signal = null, onProgress = async () => {} }) {
   if (!vertex.isConfigured()) throw new ApiError(503, `The story agent is not available on this deployment. ${vertex.describeMissingConfig()}`);
+  /* The turn stops when the scholar goes or the route's deadline passes:
+     every model call carries the signal, and the loop and the checks look
+     at it between calls. Nothing is stored for a stopped turn, because a
+     proposal half-checked is not one the scholar can accept. */
+  const withSignal = (fn) => (signal ? (req) => fn({ ...req, signal }) : fn);
+  const stopped = () => { if (signal?.aborted) throw agent.abortError(signal); };
 
   const { db } = await getCollections();
   const storyDoc = await editorial.findOwnedStory({ storyId, scholarId, profileId });
@@ -117,7 +157,17 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction,
   const passages = await passagesFor(db, storyDoc);
   const turns = db.collection(COLLECTIONS.storyTurns);
 
+  /* The same ask again — a double tap, a request the page retried after the
+     stream dropped — is the turn already made, not a second run and a
+     second bill. The key is the page's, one per ask; the index below makes
+     two runs racing on one key end as one turn. */
+  if (requestKey) {
+    const made = await turns.findOne({ story_id: storyDoc._id, request_key: requestKey });
+    if (made) return { turn: viewTurn(made), repeated: true };
+  }
+
   const studio = await getPolicy("studio", { db });
+  await assertEditBudget(db, { profileId, studio });
   const prior = await turns.find({ story_id: storyDoc._id }).sort({ created_at: -1 }).limit(studio.edit.historyTurns).toArray();
   const history = prior.reverse().flatMap((t) => [{ role: "user", text: t.instruction }, { role: "model", text: t.summary || "" }]);
 
@@ -125,10 +175,10 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction,
   const isVerbatim = (text, id) => byId.has(id) && composer.isVerbatim(text, byId.get(id).text);
   const modelCalls = [];
   const router = await routerFor({ db, collect: modelCalls });
-  const generate = router.bound("studio.edit");
+  const generate = withSignal(router.bound("studio.edit"));
   const reader = await getPolicy("reader", { db });
   /* The paper, searchable by meaning, built once per story version. */
-  const search = searcherFor({ db, router, key: { story_id: storyDoc._id, story_version: mapped.version, audience: "workspace" }, blocks: [], passages, topK: studio.edit.searchTopK, cacheDays: reader.index.cacheDays });
+  const search = searcherFor({ db, router, key: { story_id: storyDoc._id, story_version: mapped.version, audience: "workspace" }, blocks: [], passages, topK: studio.edit.searchTopK, cacheDays: reader.index.cacheDays, signal });
   const audience = storyDoc.provenance?.audience || "general";
   const startedAt = new Date();
 
@@ -139,7 +189,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction,
   const author = await editorial.resolveStoryAuthor(db, storyDoc.profile_id);
   const result = await agent.runStoryAgent({
     state: stateBefore, passages, instruction, history, audience, voice, scholarName: author?.name || null, generate,
-    judgeVoice: router.bound("drafting.voice"), imagesAllowed: imageGen.isConfigured(), isVerbatim, search, limits: studio.edit,
+    judgeVoice: withSignal(router.bound("drafting.voice")), imagesAllowed: imageGen.isConfigured(), isVerbatim, search, limits: studio.edit, signal,
     onProgress: async (e) => {
       if (e.phase === "think") await onProgress({ step: "think", message: e.round === 1 ? "Deciding what to change" : "Deciding what to do next" });
       else if (e.phase === "start") await onProgress({ step: "tool", tool: e.tool, message: TOOL_STEPS[e.tool] || "Working" });
@@ -154,9 +204,10 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction,
   let judgeCall = null;
   let reachCall = null;
   if (changed.length && passages.length) {
+    stopped();
     await onProgress({ step: "check_changes", message: `Checking ${changed.length === 1 ? "the change" : `${changed.length} changed paragraphs`} against the passages` });
-    const judged = await fidelity.judgeSection({ blocks: changed.map(({ b }) => b), passages, generate });
-    const reached = await reach.judgeSection({ blocks: judged.blocks, passages, audience, generate });
+    const judged = await fidelity.judgeSection({ blocks: changed.map(({ b }) => b), passages, generate: withSignal(router.bound("drafting.fidelity")) });
+    const reached = await reach.judgeSection({ blocks: judged.blocks, passages, audience, generate: withSignal(router.bound("drafting.reach")) });
     reached.blocks.forEach((jb, k) => { result.state.blocks[changed[k].i] = { ...result.state.blocks[changed[k].i], fidelity: jb.fidelity || null, reach: jb.reach || null }; });
     judgeCall = judged.call;
     reachCall = reached.call;
@@ -171,6 +222,9 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction,
   const imageFailures = [];
   const failedImageIndexes = new Set();
   let imageIndex = 0;
+  /* Before any picture is drawn and uploaded: a stopped turn must leave no
+     asset that belongs to no proposal. */
+  stopped();
   if (result.state.blocks.some((b) => b.type === "image" && b.pending)) await onProgress({ step: "illustrate", message: "Drawing the illustration" });
   for (let i = 0; i < result.state.blocks.length; i += 1) {
     const b = result.state.blocks[i];
@@ -218,7 +272,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction,
   if (prose) {
     await onProgress({ step: "check_reading_level", message: "Reading it as its reader would" });
     const measured = assessDraftReadability({ text: prose, audience });
-    const ruling = await bandJudge.judgeBand({ text: prose, audience, measured, generate: router.bound("drafting.band") });
+    const ruling = await bandJudge.judgeBand({ text: prose, audience, measured, generate: withSignal(router.bound("drafting.band")) });
     readability = placeReadability(measured, ruling);
   }
 
@@ -275,6 +329,7 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction,
     _id: turnId,
     story_id: storyDoc._id,
     profile_id: profileId,
+    request_key: requestKey,
     story_updated_at: storyDoc.updatedAt || null,
     /* The version the proposal was computed against. Accepting checks it. */
     story_version: storyVersion.versionOf(storyDoc),
@@ -302,7 +357,17 @@ async function askStoryAgent({ storyId, scholarId, profileId, user, instruction,
     duration_ms: now - startedAt,
     resolved_at: null,
   };
-  await turns.insertOne(doc);
+  try {
+    await turns.insertOne(doc);
+  } catch (error) {
+    /* Two runs on one key: the other finished first, and its turn is the
+       one the scholar gets. Anything this run made — an illustration — is
+       left for the turn's own reject to discard, since it is not referenced. */
+    if (error?.code !== 11000 || !requestKey) throw error;
+    const made = await turns.findOne({ story_id: storyDoc._id, request_key: requestKey });
+    if (!made) throw error;
+    return { turn: viewTurn(made), repeated: true };
+  }
   return { turn: viewTurn(doc) };
 }
 

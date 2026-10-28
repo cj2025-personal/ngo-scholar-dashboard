@@ -16,7 +16,7 @@ const path = require("path");
 const { pathToFileURL } = require("url");
 const { test, expect } = require("@playwright/test");
 
-const { openAgent } = require("./agent");
+const { openAgent, freshConversation } = require("./agent");
 const { readState } = require("./stack");
 
 const UI = path.resolve(__dirname, "..");
@@ -58,6 +58,7 @@ test.describe("in the studio", () => {
   test.beforeEach(async ({ context }) => {
     const state = readState();
     await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
+    await freshConversation(context);
   });
 
   test("one name and one face: the pane, the strip, the nudge, and who it is", async ({ page }) => {

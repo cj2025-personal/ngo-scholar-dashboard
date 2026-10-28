@@ -35,7 +35,7 @@ const { routerFor } = require("./models.service");
  * @param {string} p.actor
  * @param {number|null} [p.baseVersion]
  * @param {Function} [p.generate]         a model call, for the worker to pass its traced one
- * @param {{voice?: Function, band?: Function}} [p.judges]   the voice and reading-level judges; their policy routes when not given
+ * @param {{voice?: Function, band?: Function, fidelity?: Function, reach?: Function}} [p.judges]   the voice, reading-level, fidelity and reach judges; their policy routes when not given
  * @param {Function} [p.onProgress]
  */
 async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, baseVersion = null, generate = null, judges = null, onProgress = async () => {} }) {
@@ -82,9 +82,11 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
   const made = {};
   const calls = [];
   const policy = await getPolicy("drafting", { db });
-  const router = judges?.voice && judges?.band ? null : await routerFor({ db });
+  const router = judges?.voice && judges?.band && judges?.fidelity && judges?.reach ? null : await routerFor({ db });
   const judgeVoice = judges?.voice || router.bound("drafting.voice");
   const judgeBand = judges?.band || router.bound("drafting.band");
+  const judgeFidelity = judges?.fidelity || router.bound("drafting.fidelity");
+  const judgeReach = judges?.reach || router.bound("drafting.reach");
 
   for (const audience of targets) {
     /* `detail` is what the job's event log keeps beside the step, so the
@@ -144,9 +146,9 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
     const judgeIndexes = [...rewrites.keys()];
     for (let start = 0; start < judgeIndexes.length; start += fidelity.JUDGE_BATCH) {
       const batch = judgeIndexes.slice(start, start + fidelity.JUDGE_BATCH);
-      const judgedF = await fidelity.judgeSection({ blocks: batch.map((i) => draft[i]), passages, generate: gen });
+      const judgedF = await fidelity.judgeSection({ blocks: batch.map((i) => draft[i]), passages, generate: judgeFidelity });
       if (judgedF.call) calls.push({ ...judgedF.call, audience });
-      const judgedR = await reach.judgeSection({ blocks: judgedF.blocks, passages, audience, generate: gen });
+      const judgedR = await reach.judgeSection({ blocks: judgedF.blocks, passages, audience, generate: judgeReach });
       if (judgedR.call) calls.push({ ...judgedR.call, audience });
       batch.forEach((i, k) => { draft[i] = judgedR.blocks[k]; });
     }

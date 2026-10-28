@@ -33,11 +33,18 @@
 
 const { AUDIENCES, normaliseAudience } = require("./audiences");
 const composer = require("./draftComposer");
-const AGENT_VERSION = "story-agent-2026.4";
+const AGENT_VERSION = "story-agent-2026.6";
 /* Step and tool budgets come from the studio policy (edit); the baseline is read when none is passed. */
 const { defaultsFor } = require("./policyDefaults");
 const voiceJudge = require("./agents/voiceJudge");
 const { introduce } = require("./agents/identity");
+
+/** The caller stopped the turn: the scholar left, or the deadline passed. */
+function abortError(signal) {
+  const e = new Error(signal?.reason instanceof Error ? signal.reason.message : String(signal?.reason || "The turn was stopped."));
+  e.name = "AbortError";
+  return e;
+}
 
 /* ── tools ───────────────────────────────────────────────────────────────── */
 
@@ -109,7 +116,7 @@ const TOOL_DECLARATIONS = [
   },
   {
     name: "finish",
-    description: "Stop, with a one- or two-sentence summary for the scholar of what changed and anything you could not do because the paper does not support it.",
+    description: "Stop, with a one- or two-sentence summary for the scholar of what changed and anything you could not do: because the paper does not support it, or because it is not yours to do (publishing, scheduling, sending, deleting).",
     parameters: { type: "OBJECT", properties: { summary: { type: "STRING" } }, required: ["summary"] },
   },
 ];
@@ -145,7 +152,14 @@ function buildSystem({ voice = composer.VOICE.ABOUT, scholarName = null } = {}) 
   "   matter wherever\"), never as a finding, and names no product, company, event, number or practice the",
   "   passages do not mention. A reviewer checks it claim by claim.",
   "7. Images are illustrations. Describe what to draw; never claim an image is from the paper.",
-  "8. Keep the reading level the scholar chose; prefer short sentences and plain words.",
+  "8. Keep the reading level the scholar chose; prefer short sentences and plain words. Plainer never means more:",
+  "   no picture, comparison, shape or detail the passages do not give, however young the reader.",
+  "9. A number the scholar gives — \"paragraph 3\", \"block 3\" — is the number in brackets before a block, whatever",
+  "   the block's type. Never count paragraphs yourself, and never put one block's content into another.",
+  "",
+  "You cannot publish, schedule, send or delete the article, or change the scholar's account. Asked to, change",
+  "nothing and say in `finish` that you cannot publish: the scholar runs the publish check and publishes from the",
+  "workspace themselves. Never say the article is ready, approved, or meets requirements; the publish check decides that.",
   "",
   "Work in small steps: call a tool, read the result, continue. Call `finish` when done.",
   ].join("\n");
@@ -182,13 +196,13 @@ function stateFromStory(story) {
 
 /** The draft as the model reads it. */
 function renderState(state) {
-  const lines = [`TITLE: ${state.title || "(none)"}`, `SUBTITLE: ${state.subtitle || "(none)"}`, `SUMMARY: ${state.excerpt || "(none)"}`, "", "BLOCKS:"];
+  const lines = [`TITLE: ${state.title || "(none)"}`, `SUBTITLE: ${state.subtitle || "(none)"}`, `SUMMARY: ${state.excerpt || "(none)"}`, "", "BLOCKS, numbered as the scholar numbers them — their \"paragraph 3\" is block [3], whatever its type:"];
   state.blocks.forEach((b, i) => {
     const n = i + 1;
-    if (b.type === "image") lines.push(`[${n}] (image) caption: ${b.caption || "(none)"}`);
+    if (b.type === "image") lines.push(`[${n}] block ${n} (image) caption: ${b.caption || "(none)"}`);
     else {
       const refs = b.sourceRefs?.length ? ` ${b.extension ? "builds on" : "cites"} ${b.sourceRefs.map((r) => r.passageId).join(",")}` : b.ownView ? " (scholar's own view)" : " (no citation)";
-      lines.push(`[${n}] (${b.type})${refs}: ${plain(b.html)}`);
+      lines.push(`[${n}] block ${n} (${b.type})${refs}: ${plain(b.html)}`);
     }
   });
   return lines.join("\n");
@@ -332,6 +346,7 @@ function diffStates(before, after) {
  * @param {(req:object)=>Promise<{text:string,functionCalls:object[],parts:object[],usage?:object}>} p.generate
  * @param {boolean} [p.imagesAllowed]
  * @param {(text:string, passageId:string)=>boolean} [p.isVerbatim]
+ * @param {AbortSignal} [p.signal]   stops the turn: the scholar left, or the deadline passed
  * @param {(e:{phase:"think"|"start"|"done", round?:number, tool?:string, result?:string})=>Promise<void>} [p.onProgress]
  *        what the loop is doing as it does it: about to ask the model what to
  *        do next ("think"), about to run a tool ("start"), and what the tool
@@ -374,9 +389,16 @@ async function voiceVerdict({ texts, voice, scholarName, judgeVoice }) {
   return { refusal: null, usage };
 }
 
-async function runStoryAgent({ state, passages, instruction, history = [], audience = "general", voice = composer.VOICE.ABOUT, scholarName = null, generate, judgeVoice = null, imagesAllowed = false, isVerbatim = () => true, search = null, limits = defaultsFor("studio").edit, onProgress = async () => {} }) {
+async function runStoryAgent({ state, passages, instruction, history = [], audience = "general", voice = composer.VOICE.ABOUT, scholarName = null, generate, judgeVoice = null, imagesAllowed = false, isVerbatim = () => true, search = null, limits = defaultsFor("studio").edit, signal = null, onProgress = async () => {} }) {
   let working = { ...state, blocks: state.blocks.map((b) => ({ ...b })) };
   let counter = 0;
+  /* The turn stops where it is told to: before the next model call and
+     before the next tool, and a call already in flight is cut by the same
+     signal. A turn with no deadline is a turn that can run for the step
+     cap times the model timeout, which no scholar waits for. */
+  const stopped = () => { if (signal?.aborted) throw abortError(signal); };
+  const gen = signal ? (req) => generate({ ...req, signal }) : generate;
+  const jv = judgeVoice && signal ? (req) => judgeVoice({ ...req, signal }) : judgeVoice;
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
   const ctx = { passages, imagesAllowed, isVerbatim, authorVoice, scholarName, nextKey: () => ++counter };
   const calls = [];
@@ -399,8 +421,9 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
   let summary = null;
 
   for (let step = 0; step < limits.maxSteps; step += 1) {
+    stopped();
     await onProgress({ phase: "think", round: step + 1 });
-    const r = await generate({ contents, systemInstruction: buildSystem({ voice, scholarName }), tools: [{ functionDeclarations: TOOL_DECLARATIONS }], toolConfig: { functionCallingConfig: { mode: "ANY" } }, temperature: 0.2, maxOutputTokens: 2048 });
+    const r = await gen({ contents, systemInstruction: buildSystem({ voice, scholarName }), tools: [{ functionDeclarations: TOOL_DECLARATIONS }], toolConfig: { functionCallingConfig: { mode: "ANY" } }, temperature: 0.2, maxOutputTokens: 2048 });
     if (r.usage) usage.push(r.usage);
     const fcs = r.functionCalls || [];
     if (!fcs.length) {
@@ -414,6 +437,7 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
     for (const fc of fcs) {
       if (calls.length >= limits.maxToolCalls) { responses.push({ functionResponse: { name: fc.name, response: { result: "refused: too many changes in one instruction; call finish" } } }); continue; }
       let out;
+      stopped();
       await onProgress({ phase: "start", tool: fc.name });
       if (fc.name === "search_passages" && search) {
         /* By meaning: the passages closest to what the agent described, with their similarity. */
@@ -423,8 +447,8 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
       } else {
         /* A write is read for its voice before it lands; a refusal tells the
            agent which text and why, so it can write it again. */
-        const texts = judgeVoice ? voiceTexts(working, fc) : [];
-        const judged = texts.length ? await voiceVerdict({ texts, voice: authorVoice ? composer.VOICE.AUTHOR : composer.VOICE.ABOUT, scholarName, judgeVoice }) : null;
+        const texts = jv ? voiceTexts(working, fc) : [];
+        const judged = texts.length ? await voiceVerdict({ texts, voice: authorVoice ? composer.VOICE.AUTHOR : composer.VOICE.ABOUT, scholarName, judgeVoice: jv }) : null;
         if (judged) usage.push(...judged.usage);
         out = judged?.refusal ? { state: working, result: judged.refusal } : applyTool(working, fc, ctx);
       }
@@ -444,4 +468,4 @@ async function runStoryAgent({ state, passages, instruction, history = [], audie
   return { state: working, changes, summary, calls, usage, agentVersion: AGENT_VERSION };
 }
 
-module.exports = { AGENT_VERSION, TOOL_DECLARATIONS, SYSTEM, buildSystem, stateFromStory, renderState, applyTool, voiceTexts, diffStates, runStoryAgent, plain };
+module.exports = { AGENT_VERSION, TOOL_DECLARATIONS, SYSTEM, buildSystem, stateFromStory, renderState, applyTool, voiceTexts, diffStates, runStoryAgent, abortError, plain };

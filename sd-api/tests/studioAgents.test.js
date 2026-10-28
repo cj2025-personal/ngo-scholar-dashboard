@@ -136,3 +136,11 @@ test("ideas for a draft read its flags and the paragraph in focus; for a new sto
   const n = await ideas.ideasForNewStory({ papers: PAPERS, chosen: PAPERS[0], count: 8, generate: viaFake });
   assert.deepEqual(n.groups[0].ideas, [{ text: "What could this paper become?", action: "propose" }]);
 });
+
+test("the edit turn has a deadline in policy, and the edit eval has floors a run can fail", () => {
+  const { defaultsFor } = require("../src/lib/policyDefaults");
+  const edit = defaultsFor("studio").edit;
+  assert.ok(Number.isFinite(edit.turnDeadlineSeconds) && edit.turnDeadlineSeconds > 0);
+  const floors = defaultsFor("evals").edit;
+  for (const k of ["finished", "scope", "asked", "supported"]) assert.ok(floors[k] > 0 && floors[k] <= 1, `${k} floor`);
+});

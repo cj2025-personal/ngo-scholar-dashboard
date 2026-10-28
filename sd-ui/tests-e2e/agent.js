@@ -36,4 +36,20 @@ async function openAgent(page) {
   }
 }
 
-module.exports = { openAgent };
+/**
+ * A new-story page picks up the scholar's open conversation with the studio
+ * agent from the API's record. A spec that wants the page as a first visit
+ * ends whatever the spec before it left open, the way "Start another" does.
+ */
+async function freshConversation(context) {
+  const { readState } = require("./stack");
+  const { apiUrl } = readState();
+  for (let i = 0; i < 10; i += 1) {
+    const latest = await context.request.get(`${apiUrl}/api/drafting/converse/latest`);
+    const open = latest.ok() ? (await latest.json()).conversation : null;
+    if (!open) return;
+    await context.request.post(`${apiUrl}/api/drafting/converse/${open.conversationId}/end`);
+  }
+}
+
+module.exports = { openAgent, freshConversation };

@@ -1,0 +1,31 @@
+{
+  "$comment": "Drafts the edit eval instructs Kivyn on. SYNTHETIC: the paper is the harness's antenna paper (see drafts.jsonl), the draft is a plausible article drawn from it with every paragraph cited. Block numbers in evals/edit.jsonl are 1-based, as the agent sees them.",
+
+  "antenna": {
+    "scholarName": "Test Scholar",
+    "voice": "about",
+    "audience": "adults",
+    "story": {
+      "title": "A small array against interference",
+      "subtitle": "What four antennas can and cannot cancel",
+      "excerpt": "A four-element adaptive array quietens one or two interferers well, and struggles beyond that.",
+      "bodyBlocks": [
+        { "type": "subheading", "html": "Steering a null", "sourceRefs": [] },
+        { "type": "paragraph", "html": "Four antenna elements working together can quieten an interfering signal without knowing in advance where it comes from. The array adjusts its weights step by step until a null in its pattern points at the interferer, while keeping its gain on the wanted signal.", "sourceRefs": [{ "passageId": "p1" }], "draftedText": "Four antenna elements working together can quieten an interfering signal without knowing in advance where it comes from. The array adjusts its weights step by step until a null in its pattern points at the interferer, while keeping its gain on the wanted signal." },
+        { "type": "paragraph", "html": "The test used four patch elements spaced half a wavelength apart, with weights updated every 2 milliseconds. One hundred and twenty trials covered one, two and four interferers, with the wanted signal always arriving from straight ahead.", "sourceRefs": [{ "passageId": "p2" }], "draftedText": "The test used four patch elements spaced half a wavelength apart, with weights updated every 2 milliseconds. One hundred and twenty trials covered one, two and four interferers, with the wanted signal always arriving from straight ahead." },
+        { "type": "paragraph", "html": "With a single interferer the signal-to-interference ratio improved by a median of 14.2 dB, and by 11.3 dB with two. With four interferers the improvement fell to 3.1 dB, and in some trials the array lost more than 2 dB on the wanted signal itself. The authors put this down to the array having only three degrees of freedom left for nulling once one is spent on the wanted direction.", "sourceRefs": [{ "passageId": "p3" }], "draftedText": "With a single interferer the signal-to-interference ratio improved by a median of 14.2 dB, and by 11.3 dB with two. With four interferers the improvement fell to 3.1 dB, and in some trials the array lost more than 2 dB on the wanted signal itself. The authors put this down to the array having only three degrees of freedom left for nulling once one is spent on the wanted direction." },
+        { "type": "subheading", "html": "What it does not show", "sourceRefs": [] },
+        { "type": "paragraph", "html": "Every trial ran in an anechoic chamber. A real building reflects signals, which would present the array with many more apparent sources than there are interferers, and the array was never tested with interferers that move.", "sourceRefs": [{ "passageId": "p5" }], "draftedText": "Every trial ran in an anechoic chamber. A real building reflects signals, which would present the array with many more apparent sources than there are interferers, and the array was never tested with interferers that move." },
+        { "type": "paragraph", "html": "A four-element array is enough for links with one or two fixed interferers, and not enough beyond that.", "sourceRefs": [{ "passageId": "p6" }], "draftedText": "A four-element array is enough for links with one or two fixed interferers, and not enough beyond that." }
+      ]
+    },
+    "passages": [
+      { "id": "p1", "text": "Abstract. We study whether a four-element adaptive array can suppress co-channel interference on a 2.4 GHz link without prior knowledge of interferer direction. Using a least-mean-squares (LMS) weight update, the array steers pattern nulls toward interferers while holding gain on the desired signal." },
+      { "id": "p2", "text": "Method. Four patch elements were spaced at half a wavelength. Weights were updated every 2 ms using the LMS rule with a step size of 0.01. We ran 120 trials across three interference geometries: one interferer at 30 degrees, two interferers at 30 and 110 degrees, and four interferers spread between 20 and 160 degrees. The desired signal arrived at broadside in every trial." },
+      { "id": "p3", "text": "Results. With one interferer the array improved the signal-to-interference ratio by a median of 14.2 dB. With two interferers the improvement was 11.3 dB. With four interferers the improvement fell to 3.1 dB, and in 17 of 40 trials the array converged to a weight vector that reduced desired-signal gain by more than 2 dB. We attribute this to the array having only three degrees of freedom available for nulling once one is spent on the desired direction." },
+      { "id": "p4", "text": "Convergence took between 40 and 300 updates depending on the step size and the initial weight vector. A larger step size converged faster but oscillated in the two-interferer geometry." },
+      { "id": "p5", "text": "Limitations. All trials were run in an anechoic chamber. Multipath in a real building would present the array with many more apparent sources than interferers, and we expect the four-interferer degradation to appear at lower interferer counts outdoors. The array was not tested with moving interferers." },
+      { "id": "p6", "text": "Conclusion. A four-element LMS array is sufficient for links with one or two fixed interferers and insufficient beyond that. Future work should test a six- or eight-element array under multipath and with moving sources." }
+    ]
+  }
+}
