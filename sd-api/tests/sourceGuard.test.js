@@ -8,6 +8,11 @@
  * remembered; the drafting graph never reads a passage set aside.
  */
 
+/* The service under test loads the database module, which insists on a URL
+   at load; nothing here connects to it. */
+process.env.MONGODB_URI ||= "mongodb://localhost:27017/source-guard-test";
+process.env.MONGODB_DB ||= "source-guard-test";
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

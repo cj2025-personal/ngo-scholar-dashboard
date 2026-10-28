@@ -152,6 +152,10 @@ test("a limit read from policy is read on every request, and a count the databas
 });
 
 test("a window is aligned to the clock, so two replicas agree on it", async () => {
+  /* The store loads the database module, which insists on a URL at load;
+     the collection it then uses is the fake below. */
+  process.env.MONGODB_URI ||= "mongodb://localhost:27017/rate-limit-test";
+  process.env.MONGODB_DB ||= "rate-limit-test";
   const { mongoStore } = require("../src/middleware/rate-limit.middleware");
   /* The store's arithmetic, against a fake collection: the row's window
      start is the same from any replica within the window. */
