@@ -122,20 +122,26 @@ export default function ReaderBody({ story }) {
           {alerts[0].noticeUrl ? <a href={alerts[0].noticeUrl} target="_blank" rel="noreferrer noopener">Read the notice</a> : null}
         </div>
       ) : null}
-      {levels.length ? (
-        <div className="reader-levels" role="tablist" aria-label="Reading age">
-          <span className="reader-levels-label">Read this for</span>
-          <button type="button" role="tab" aria-selected={!level} className={!level ? "reader-level on" : "reader-level"} onClick={() => { setLevel(null); setOpen(null); }}>{DRAFT_AUDIENCES.find((a) => a.value === own)?.label || "Adults"}</button>
-          {levels.map((l) => (
-            <button key={l.audience} type="button" role="tab" aria-selected={level === l.audience} className={level === l.audience ? "reader-level on" : "reader-level"} onClick={() => { setLevel(l.audience); setOpen(null); mark("level"); }}>{DRAFT_AUDIENCES.find((a) => a.value === l.audience)?.label || l.label}</button>
-          ))}
-        </div>
-      ) : null}
-      {drafted ? (
-        <div className="reader-tools">
-          <button type="button" className={showSources ? "reader-toggle on" : "reader-toggle"} aria-pressed={showSources} onClick={() => { setShowSources((v) => !v); setOpen(null); if (!showSources) mark("source"); }}>
-            <span className="reader-sw" aria-hidden /> Show sources
-          </button>
+      {/* The reading controls, in one row between rules: who it is read
+          for, and whether its sources show. */}
+      {levels.length || drafted ? (
+        <div className="reader-controls">
+          {levels.length ? (
+            <div className="reader-levels" role="tablist" aria-label="Reading age">
+              <span className="reader-levels-label">Read this for</span>
+              <button type="button" role="tab" aria-selected={!level} className={!level ? "reader-level on" : "reader-level"} onClick={() => { setLevel(null); setOpen(null); }}>{DRAFT_AUDIENCES.find((a) => a.value === own)?.label || "Adults"}</button>
+              {levels.map((l) => (
+                <button key={l.audience} type="button" role="tab" aria-selected={level === l.audience} className={level === l.audience ? "reader-level on" : "reader-level"} onClick={() => { setLevel(l.audience); setOpen(null); mark("level"); }}>{DRAFT_AUDIENCES.find((a) => a.value === l.audience)?.label || l.label}</button>
+              ))}
+            </div>
+          ) : null}
+          {drafted ? (
+            <div className="reader-tools">
+              <button type="button" className={showSources ? "reader-toggle on" : "reader-toggle"} aria-pressed={showSources} onClick={() => { setShowSources((v) => !v); setOpen(null); if (!showSources) mark("source"); }}>
+                <span className="reader-sw" aria-hidden /> Show sources
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <div className="public-story-body">

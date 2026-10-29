@@ -17,6 +17,7 @@ const { FIDELITY_VERSION } = require("../lib/fidelity");
 const { REACH_VERSION } = require("../lib/reach");
 const { AGENT_VERSION } = require("../lib/storyAgent");
 const checksLib = require("../lib/checks");
+const { isBriefOnly } = require("../lib/briefSource");
 const composer = require("../lib/draftComposer");
 const { caveatsFor, reviewFor } = require("./agentRulings.service");
 const { serializeMongoValue } = require("../lib/serialize");
@@ -90,7 +91,8 @@ async function buildEvidence(db, storyDoc, { withChecks = false } = {}) {
     limitations: checksLib.limitationsCoverage({ blocks: mapped.bodyBlocks, caveats }),
     worldClaims: checksLib.worldClaims({ blocks: mapped.bodyBlocks }),
     attribution: checksLib.attributionCues({ blocks: mapped.bodyBlocks }),
-    budget: checksLib.extensionBudget({ blocks: mapped.bodyBlocks, maxBeyondPerPaper: drafting.maxBeyondPerPaper }),
+    /* How much goes beyond the paper means nothing for an article from the brief alone. */
+    budget: isBriefOnly(storyDoc.provenance) ? { ok: null, sentence: null } : checksLib.extensionBudget({ blocks: mapped.bodyBlocks, maxBeyondPerPaper: drafting.maxBeyondPerPaper }),
     pronouns: checksLib.authorPronouns({ review }),
     headings: checksLib.headingFindings(review),
     repetition: checksLib.repetition({ blocks: mapped.bodyBlocks, review }),

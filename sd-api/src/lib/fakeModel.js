@@ -70,6 +70,27 @@ function answerOutline(prompt) {
   return JSON.stringify({ title: `What the paper found: ${title}`, deck: `A report on ${title}, drawn from its own text.`, beats, brief_map: briefMap, brief_coverage: briefed ? { met: "full", note: "" } : null });
 }
 
+/**
+ * An outline from the brief alone: three sections of the author's own
+ * account, citing nothing, titled from the brief.
+ */
+function answerBriefOutline(prompt) {
+  const briefLine = prompt.match(/^The scholar's brief for this article: "(.*)"$/m);
+  const words = (briefLine ? briefLine[1] : "the subject").split(/\s+/).filter(Boolean).slice(0, 6).join(" ");
+  const beats = [
+    { heading: "Where the question starts", goal: "The question the brief asks matters to anyone who meets it.", kind: "context", passage_ids: [] },
+    { heading: "What is usually done", goal: "The common approaches each trade one thing for another.", kind: "context", passage_ids: [] },
+    { heading: "What to watch for", goal: "A careful reader can tell a good answer from a poor one.", kind: "context", passage_ids: [] },
+  ];
+  return JSON.stringify({
+    title: `On ${words}`.slice(0, 80),
+    deck: "An account written from the author's brief, drawing on none of their papers.",
+    beats,
+    brief_map: [{ ask: words, answered_by: "context", section: beats[0].heading }],
+    brief_coverage: { met: "full", note: "" },
+  });
+}
+
 /** The one implication the fake ever draws: generic, so it follows from any passage. */
 const IMPLICATION = "This means the same problem would face anyone who meets what the paper describes.";
 
@@ -476,9 +497,13 @@ function answerConverse(prompt) {
     const b = end ? prompt.indexOf(end, a + start.length) : -1;
     return prompt.slice(a + start.length, b < 0 ? undefined : b);
   };
-  const papers = between("THEIR PAPERS (key — title):", "READER AGES").split("\n")
+  const offered = between("THEIR PAPERS (key — title):", "READER AGES").split("\n")
     .map((l) => l.trim().match(/^(\S+) — (.+?)(?: \(\d{4}\))?(?:, \d+ words)?$/)).filter(Boolean)
     .map((m) => ({ key: m[1], title: m[2] }));
+  /* Writing from the brief alone is offered beside the papers; it is chosen
+     only when asked for, or when there is no paper at all. */
+  const briefEntry = offered.find((p) => p.key === "brief:only") || null;
+  const papers = offered.filter((p) => p.key !== "brief:only");
   const labels = Object.fromEntries(between("READER AGES (value — label):", "VOICES").split("\n")
     .map((l) => l.trim().match(/^(\S+) — (.+)$/)).filter(Boolean).map((m) => [m[1], m[2]]));
   const said = between("THE SCHOLAR JUST SAID:", null).trim();
@@ -511,7 +536,14 @@ function answerConverse(prompt) {
     if (!scored.length || (scored.length > 1 && scored[0].hits === scored[1].hits)) return null;
     return scored[0].p;
   })();
-  const paper = papers.find((p) => p.key === setPaper) || named || (papers.length === 1 ? papers[0] : null);
+  const noPaper = /\b(?:no paper|without (?:a |any |my )?papers?|not from (?:a |any |my )?papers?|don'?t use my (?:papers?|work|research)|without (?:using )?my (?:work|research)|none of my (?:papers|work|research))\b/i;
+  const wantsNone = noPaper.test(said) || earlier.some((t) => noPaper.test(t));
+  const paper = (setPaper === "brief:only" ? briefEntry : papers.find((p) => p.key === setPaper))
+    || (wantsNone ? briefEntry : null)
+    || named
+    || (papers.length === 1 ? papers[0] : null)
+    || (papers.length === 0 ? briefEntry : null);
+  const fromBrief = paper && paper.key === "brief:only";
 
   const readerIn = (t) => {
     const s = String(t || "").toLowerCase();
@@ -524,7 +556,12 @@ function answerConverse(prompt) {
   const reader = readerIn(said) || setReader || readerIn(brief);
 
   if (/\b(what could (this|the|it)|ideas for|propose|suggest an angle)\b/i.test(said)) {
-    return paper ? out("propose", { paper_key: paper.key, reply: `I will read “${paper.title}” and propose what it could become.` }) : out("ask_paper", { reply: "Which paper should I read? Tap one, or name it." });
+    return paper && !fromBrief ? out("propose", { paper_key: paper.key, reply: `I will read “${paper.title}” and propose what it could become.` }) : out("ask_paper", { reply: "Which paper should I read? Tap one, or name it." });
+  }
+  if (fromBrief) {
+    if (!brief) return out("set_paper", { paper_key: paper.key, reply: "Writing from your brief alone, with none of your papers. Tell me what the article should be: the subject, what to cover, who it is for." });
+    if (!reader) return out("ask_audience", { paper_key: paper.key, brief, reply: "Writing from your brief alone. Who is this for? Tap an age, or tell me." });
+    return out("plan", { paper_key: paper.key, audience: reader, brief, reply: `Planning it from your brief alone, for ${(labels[reader] || reader).toLowerCase()}. None of your papers will be used, and every specific in it will be listed for you to verify.` });
   }
   if (!paper) {
     return out("ask_paper", { brief, reply: brief ? "Which of your papers should this come from? Tap one, or name it." : "Which of your papers should this come from? Tap one, or name it. Only papers we hold in full and may reproduce are listed." });
@@ -895,6 +932,7 @@ async function generateContent({ prompt, contents = null, tools = null, signal =
   else if (p.includes("PARAGRAPHS TO CHECK:")) text = answerJudge(p);
   else if (p.includes("=== PARAGRAPH TO REWRITE FOR ANOTHER READER ===")) text = answerLevel(p);
   else if (p.includes("=== PAPER, IN NUMBERED PASSAGES ===")) text = answerOutline(p);
+  else if (p.includes("=== THE BRIEF; NO PAPER ===")) text = answerBriefOutline(p);
   else if (p.includes("=== PASSAGES THIS SECTION MAY USE ===") || p.includes("=== PASSAGES THIS SECTION RELATES TO ===")) text = answerSection(p);
   else text = answerComposer(p);
   return { text, usage: usage(p, text), modelVersion: MODEL_VERSION, resourceName: model ? `fake/${model}` : "fake/model" };

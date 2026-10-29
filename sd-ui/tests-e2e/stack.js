@@ -40,6 +40,13 @@ async function start() {
   const mongod = await MongoMemoryServer.create();
   const client = await MongoClient.connect(mongod.getUri());
   const tokens = await seedScholar(client.db(DB_NAME));
+  /* One scholar drafts more in this suite than a person would in ten
+     minutes; the drafting limit is cost control for people, not the thing
+     under test here, so the stack raises it the way an operator would. */
+  await client.db(DB_NAME).collection("agent_policies").insertOne({
+    name: "studio", version: 1, active: true, value: { rateLimit: { drafting: { burst: 40, windowSeconds: 600 } } },
+    author: "e2e", note: "browser suite drafts more than a scholar would", created_at: new Date(),
+  });
   await client.close();
 
   const inherited = { ...process.env };

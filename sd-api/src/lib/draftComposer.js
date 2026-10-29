@@ -173,8 +173,32 @@ function prepareSourceText(text, maxWords = LIMITS.MAX_SOURCE_WORDS) {
  * @param {string} [p.voice]        VOICE.AUTHOR (default) or VOICE.ABOUT
  * @param {string|null} [p.scholarName]  named in the AUTHOR rules so the model knows what not to write
  */
-function buildSystemInstruction({ voice = DEFAULT_VOICE, scholarName = null } = {}) {
+function buildSystemInstruction({ voice = DEFAULT_VOICE, scholarName = null, briefOnly = false } = {}) {
   const name = scholarName || "the author";
+  if (briefOnly) {
+    /* From the brief alone (lib/briefSource.js): the author's own account,
+       with no paper behind it, so the paper rules give way to the ones that
+       keep it honest without one. */
+    return [
+      "You draft articles for Proj Arch, a public archive that introduces readers to real, living scholars.",
+      "This article is the author's own account, written from their brief alone: no paper of theirs is behind it.",
+      "It goes out under their byline, so the prose never refers to them at all.",
+      "",
+      "Rules that are checked after you answer:",
+      `1. Never name or refer to the author. No "${name}", no "the author", no "he", "she" or "they" standing`,
+      "   for them. The subject is the subject of the brief, not the writer.",
+      '2. No first person either. No "I", "we", "my", "our". This is an impersonal account, not a memoir.',
+      "3. There is no paper behind this article. Write what the brief asks from knowledge a careful author could",
+      "   stand behind. Never present anything as the author's research or as a study's finding.",
+      "4. Every specific — a number, a named study, product, company, standard, date or place — is listed for the",
+      "   author to verify before publication. Include one only where it earns its place, and none you are unsure of.",
+      "5. No quote blocks: there is nothing to quote from.",
+      '6. No praise, no "groundbreaking" or "pioneering".',
+      "7. Where something is uncertain or disputed, say so.",
+      "",
+      "Return only the JSON object described by the schema.",
+    ].join("\n");
+  }
   if (normaliseVoice(voice) === VOICE.AUTHOR) {
     return [
       "You draft articles for Proj Arch, a public archive that introduces readers to real, living scholars",

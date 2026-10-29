@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 
-import Topbar from "@/components/scholar/Topbar";
 import StoryWorkspace from "@/components/editorial/StoryWorkspace";
 import { getScholarProfile } from "@/lib/profile";
 import { paneClosedIn } from "@/lib/kivyn/pane";
@@ -30,7 +29,6 @@ export default async function NewEditorialStoryPage({ searchParams }) {
 
   return (
     <div className="sc-shell">
-      <Topbar activeHref="/editorial" me={me} />
       <div className="sc-editorial">
         <StoryWorkspace me={me} aiTerms={profile.aiTerms || null} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose} paneClosed={paneClosedIn(cookieStore)} />
       </div>

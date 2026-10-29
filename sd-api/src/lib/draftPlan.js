@@ -259,6 +259,80 @@ function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = f
 }
 
 /**
+ * An outline from the brief alone (lib/briefSource.js). There is no paper,
+ * so every section is the author's own account — a context beat — and cites
+ * nothing; what keeps it honest is the context judge and the list of
+ * specifics the author must verify before it is published.
+ */
+function buildBriefOutlinePrompt({ scholar = {}, audience, brief, voice = composer.DEFAULT_VOICE }) {
+  const aud = composer.AUDIENCES[composer.normaliseAudience(audience)];
+  const name = scholar.name || "the scholar";
+  const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
+  const briefText = String(brief || "").trim();
+  return [
+    `Plan an article that answers the scholar's brief below, for ${aud.brief}`,
+    "There is no paper behind it: the scholar chose to write it from their brief alone, drawing on none of their research.",
+    ...(authorVoice
+      ? ["", `The article is the author's own account, published under their byline. Nothing in it refers to them: no "${name}", no "the author", no "he" or "she".`]
+      : []),
+    "",
+    `The scholar's brief for this article: "${briefText}"`,
+    "",
+    'Every section is the author\'s own account: kind "context", with an empty passage_ids list. Plan what a careful',
+    "author could stand behind: durable, general knowledge rather than precise figures. Every specific the article brings",
+    "in — a number, a named study, product, company, standard, date or place — will be listed for the author to verify",
+    "before publication. Plan no section whose evidence is the author's research or a study's findings: there is none",
+    "behind this article.",
+    "",
+    "Return:",
+    "- title: under 12 words, specific to the article's answer, no colon-and-subtitle pattern.",
+    "- deck: one or two sentences saying what the article says.",
+    `- beats: ${OUTLINE.MIN_BEATS} to ${OUTLINE.MAX_BEATS} sections in reading order. Each has a short heading; a goal, which is the point the`,
+    '  section makes, stated as one sentence a reader could disagree with; kind "context"; and passage_ids: an empty list.',
+    '- brief_map: for each thing the brief asks for, the ask in a few words, answered_by "context", and the heading of',
+    "  the section that answers it.",
+    '- brief_coverage: met is "full" when the sections do what the brief asked, "part" when some of it is left out,',
+    '  "none" when none of it could be answered — a request unfit for the reader, or one no careful author could stand',
+    "  behind; note is one sentence naming what was left out and why, or an empty string when nothing was.",
+    "",
+    "=== THE BRIEF; NO PAPER ===",
+  ].join("\n");
+}
+
+/** The outline for a brief with no paper: every beat the author's own, citing nothing. */
+function parseBriefOutline(raw) {
+  let data;
+  try {
+    data = JSON.parse(stripFence(raw));
+  } catch {
+    throw new Error("The model did not return valid JSON for the outline.");
+  }
+  if (!data || !Array.isArray(data.beats) || data.beats.length === 0) {
+    throw new Error("The outline is missing its beats.");
+  }
+  const beats = data.beats
+    .slice(0, OUTLINE.MAX_BEATS)
+    .map((b) => ({ heading: clean(b?.heading), goal: clean(b?.goal) || "" }))
+    .filter((b) => b.heading || b.goal)
+    .map((b, i) => ({ index: i + 1, heading: b.heading || `Section ${i + 1}`, goal: b.goal, kind: BEAT_KIND.CONTEXT, passageIds: [] }));
+  if (beats.length < 2) throw new Error("The outline needs at least two sections.");
+  const c = data.brief_coverage;
+  const coverage = c && typeof c === "object" && Object.values(COVERAGE).includes(c.met) ? { met: c.met, note: clean(c.note).slice(0, 300) } : null;
+  const briefMap = (Array.isArray(data.brief_map) ? data.brief_map : [])
+    .map((m) => ({ ask: clean(m?.ask).slice(0, 160), kind: BEAT_KIND.CONTEXT, section: clean(m?.section).slice(0, 140) }))
+    .filter((m) => m.ask)
+    .slice(0, 8);
+  return {
+    title: composer.clampToSentence(clean(data.title), composer.LIMITS.MAX_TITLE_CHARS),
+    deck: composer.clampToSentence(clean(data.deck), composer.LIMITS.MAX_DECK_CHARS),
+    beats,
+    coverage,
+    briefMap: briefMap.length ? briefMap : null,
+    dropped: 0,
+  };
+}
+
+/**
  * @param {string} raw
  * @param {{id:string}[]} passages
  * @param {object} [opts]
@@ -401,7 +475,7 @@ function rhythmFor(aud) {
   ];
 }
 
-function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, brief = null, strictVoice = false, strictSelf = false, voiceNote = null, readabilityNote = null, fidelityNote = null, reachNote = null, contextNote = null, voice = composer.DEFAULT_VOICE, previously = null }) {
+function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, brief = null, strictVoice = false, strictSelf = false, voiceNote = null, readabilityNote = null, fidelityNote = null, reachNote = null, contextNote = null, voice = composer.DEFAULT_VOICE, previously = null, briefOnly = false }) {
   const aud = composer.AUDIENCES[composer.normaliseAudience(audience)];
   const name = scholar.name || "the scholar";
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
@@ -439,6 +513,22 @@ function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, b
       "  idea the passages state is fine.",
       ...(aud.young ? ["- The reader is a child: nothing frightening, and nothing that assumes a world beyond theirs."] : []),
       "Do not repeat the heading. Do not summarise the whole paper; write this section only.",
+    );
+  } else if (kind === BEAT_KIND.CONTEXT && briefOnly) {
+    lines.push(
+      "There is no paper behind this article: the author chose to write it from their brief alone. It is their own",
+      "account, under their byline.",
+      "Return 1 to 3 paragraphs, 60 to 180 words each. For every paragraph, passage_ids is an empty list. Quote: null.",
+      "Rules:",
+      "- Never present anything as the author's research or as a study's finding: there is none behind this article.",
+      '  No "research shows", "studies have found", "the evidence proves".',
+      "- Be concrete where you are confident: name the settings, systems and practices a reader would recognise.",
+      "  Prefer durable general facts to precise figures. Every specific — a number, a named study, product, company,",
+      "  standard, date or place — will be listed for the author to verify before publication, so include one only",
+      "  where it earns its place, and none you are unsure of.",
+      "- Keep to what serves the brief. No praise; the reader decides what anything is worth.",
+      ...(aud.young ? ["- The reader is a child: nothing frightening, and nothing that assumes a world beyond theirs."] : []),
+      "Do not repeat the heading. Write this section only.",
     );
   } else if (kind === BEAT_KIND.CONTEXT) {
     lines.push(
@@ -526,7 +616,7 @@ function buildSectionPrompt({ scholar = {}, beat, passages, outline, audience, b
     );
   }
 
-  lines.push("", kind === BEAT_KIND.CONTEXT ? "=== PASSAGES THIS SECTION RELATES TO ===" : "=== PASSAGES THIS SECTION MAY USE ===", renderPassages(cited), "=== END ===");
+  lines.push("", kind === BEAT_KIND.CONTEXT ? "=== PASSAGES THIS SECTION RELATES TO ===" : "=== PASSAGES THIS SECTION MAY USE ===", briefOnly ? "(none: there is no paper behind this article)" : renderPassages(cited), "=== END ===");
   return lines.join("\n");
 }
 
@@ -670,6 +760,8 @@ function unescapeHtml(value) {
 }
 
 module.exports = {
+  buildBriefOutlinePrompt,
+  parseBriefOutline,
   PASSAGE,
   OUTLINE,
   BEAT_KIND,

@@ -51,17 +51,17 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page).toHaveURL(/\/editorial\/new\?source=/);
   /* The agent works under terms agreed to once; the first time, they come up at once. */
   await openAgent(page);
-  await expect(page.getByLabel("Paper")).toHaveValue(/src-e2e-1$/);
+  await expect(page.getByLabel("Paper", { exact: true })).toHaveValue(/src-e2e-1$/);
   await expect(page.locator(".ch-msg.is-agent").first()).toContainText("What shall we write");
-  await page.locator(".ch-context-more > summary").click();
+  /* Who it is for is a picker above the composer, changed where it is shown. */
   await page.getByLabel("Reader age").selectOption("ages_15_18");
-  await page.locator(".ch-context-more > summary").click();
   await page.getByPlaceholder(/Describe the article you want/).fill("Keep it to what the boards did in the second drought.");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".ch-msg.is-user").first()).toContainText("second drought");
 
-  /* The agent answers with an outline: sections and the passages behind each. */
-  const outline1 = page.locator(".ch-msg.is-outline").first();
+  /* The agent answers with an outline: sections and the passages behind
+     each, on the page where the article will be. */
+  const outline1 = page.locator(".ws-outline-plan");
   await expect(outline1).toBeVisible({ timeout: 60_000 });
   await expect(outline1.locator(".ch-outline-title")).toHaveText(/^What the paper found/);
   const beatCount = await outline1.locator(".ch-beat").count();
@@ -69,18 +69,23 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(outline1.locator(".ch-beat").first().locator(".block-chip").first()).toHaveText(/^p\d+$/);
   await expect(page.locator(".ch-context.is-locked")).toContainText("Set for this draft");
 
-  /* A follow-up replans it; the first outline is superseded, the second is live. */
-  await page.getByPlaceholder(/Reply with what to change/).fill("Lead with the limitations.");
+  /* A follow-up replans it: the first outline goes back into the thread,
+     superseded, and the second takes the page. */
+  await page.getByPlaceholder(/what to change about the outline/).fill("Lead with the limitations.");
   await page.getByRole("button", { name: "Send" }).click();
-  const outline2 = page.locator(".ch-msg.is-outline").nth(1);
-  await expect(outline2).toBeVisible({ timeout: 60_000 });
-  await expect(outline1.locator(".ag-resolved")).toHaveText("Replaced by the outline below");
-  await expect(outline2.locator(".ch-text")).toContainText("replanned");
-  await expect(outline1.getByRole("button", { name: /Approve and draft/ })).toHaveCount(0);
+  const superseded = page.locator(".ws-agent-rail .ch-msg.is-outline").first();
+  await expect(superseded.locator(".ag-resolved")).toHaveText("Replaced by the outline below", { timeout: 60_000 });
+  await expect(superseded.getByRole("button", { name: /Approve and draft/ })).toHaveCount(0);
+  const outline2 = page.locator(".ws-outline-plan");
+  await expect(outline2.locator(".ws-outline-plan__note")).toContainText("Replanned");
 
   /* The scholar cuts the last section and approves. */
   await outline2.locator(".ch-beat").last().locator(".nsf-cut").click();
   await expect(outline2.locator(".ch-beat.is-cut")).toHaveCount(1);
+  /* What the scholar approves, read before approving: the plan gives the
+     page over to the draft being written the moment it is approved. */
+  const approvedHeadings = await outline2.locator(".ch-beat:not(.is-cut) .ch-beat-heading").allInnerTexts();
+  const approvedTitle = await outline2.locator(".ch-outline-title").innerText();
   await outline2.getByRole("button", { name: /Approve and draft/ }).click();
   await expect(page.locator(".ch-msg.is-user").last()).toContainText("Approved");
 
@@ -89,8 +94,6 @@ test("from a paper to a published story, with the agent editing by instruction",
      prose under each — then the page saves it and becomes the story. Asserted
      against the outline they approved, not against a fixture, because the
      thing that can silently break is the handover from rail to page. */
-  const approvedHeadings = await outline2.locator(".ch-beat:not(.is-cut) .ch-beat-heading").allInnerTexts();
-  const approvedTitle = await outline2.locator(".ch-outline-title").innerText();
   await expect(page.getByPlaceholder("Title", { exact: true })).toHaveValue(approvedTitle, { timeout: 120_000 });
   for (const heading of approvedHeadings) {
     await expect(page.locator(".block-row", { hasText: heading.replace(/Beyond the paper|Your own context/g, "").trim() }).first()).toBeVisible();
@@ -104,11 +107,9 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* The review workspace: status, provenance, the outline the scholar approved. */
   await expect(page.locator(".sc-write-status")).toHaveText("Machine draft · in review");
-  /* Which paper it came from lives in "This draft" in the rail now, not in
-     the bar: a paper title is long enough to push the buttons off the edge. */
-  await page.locator(".ws-sect__head", { hasText: "This draft" }).click();
-  await expect(page.locator(".ws-facts")).toContainText("Adaptive nulling in small antenna arrays");
-  await expect(page.locator(".ws-facts")).toContainText("Written for");
+  /* Who it is written for is in the bar, under Reading ages; which paper it
+     came from is in the Sources tab, over the passages. */
+  await expect(page.locator(".sc-write-levels__btn")).toContainText("Ages 15–18");
   await expect(page.locator(".ws-outline-item")).toHaveCount(beatCount - 1);
   await expect(page.getByPlaceholder("Title", { exact: true })).toHaveValue(/^What the paper found/);
   const chips = page.locator(".block-row .block-chip");
@@ -126,15 +127,18 @@ test("from a paper to a published story, with the agent editing by instruction",
   await page.getByRole("button", { name: "This paragraph", exact: true }).click();
   await expect(page.locator(".sr-passage").first()).toBeVisible();
   await expect(page.locator(".sr-passage mark").first()).toBeVisible();
+  await expect(page.locator(".sr-paper")).toContainText("Adaptive nulling in small antenna arrays");
 
   /* Checks rail: nothing needs the scholar yet. */
-  await page.getByRole("tab", { name: "Checks" }).click();
-  await expect(page.locator(".ck-item").first()).toBeVisible();
-  await expect(page.locator(".sc-write-attention")).toHaveCount(0);
+  await page.getByRole("tab", { name: /Checks/ }).click();
+  /* Everything that passed folds under Clear, counted; the reading level is a line of its own. */
+  await expect(page.locator(".ck-fold.is-clear > summary")).toContainText(/Clear · \d+ checks?/);
+  await expect(page.locator(".ck-level-row")).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Checks/ }).locator(".ws-tab-badge")).toHaveCount(0);
 
   /* Inline editing: the scholar types straight into the article, the draft
      saves itself, and the agent will not act until it has. */
-  /* At rest, a saved story says so; its version is in "This draft". */
+  /* At rest, a saved story says so; its versions are in its history, behind Kivyn's face. */
   await expect(page.locator(".sc-write-saved")).toHaveText("Saved");
   await firstParagraph.locator(".block-editor-surface").click();
   await page.keyboard.press("End");
@@ -156,7 +160,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   await page.getByPlaceholder("What should change?").fill("Shorten paragraph 2 to one sentence");
   await page.getByRole("button", { name: "Send" }).click();
   const proposal = page.locator(".ag-proposal").first();
-  await expect(proposal.locator(".ag-change.is-changed")).toContainText("block 2", { timeout: 60_000 });
+  await expect(proposal.locator(".ag-change.is-changed")).toContainText("paragraph 2", { timeout: 60_000 });
   const proposed = (await proposal.locator(".ag-after").innerText()).trim();
   expect(proposed.length).toBeGreaterThan(0);
   expect(proposed.length).toBeLessThan(secondBefore.length);
@@ -164,7 +168,9 @@ test("from a paper to a published story, with the agent editing by instruction",
   const reviewKivyn = page.locator(".ws-right .ws-agent-head svg.kv");
   await expect(reviewKivyn).toHaveAttribute("data-pose", "done");
   await expect(reviewKivyn).toHaveAttribute("data-pose", "neutral", { timeout: 10_000 });
-  await expect(proposal.locator(".ag-checks .block-chip").first()).toHaveText("1 of 1 written paragraph supported by the paper");
+  await expect(proposal.locator(".ag-checks li").first()).toContainText("1 of 1 written paragraph supported by the paper");
+  /* The paragraph it would change is marked in the article. */
+  await expect(page.locator(".block-row.is-proposed .block-proposed")).toHaveText(/Change proposed/);
   await expect(page.getByPlaceholder("Accept or reject the proposal above first")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Publish check" })).toBeDisabled();
   expect((await secondBlock.innerText()).trim()).toBe(secondBefore);
@@ -193,7 +199,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   await page.getByRole("button", { name: "Send" }).click();
   const second = page.locator(".ag-proposal").nth(1);
   await expect(second.locator(".ag-change.is-added")).toContainText("image", { timeout: 60_000 });
-  await expect(second.locator(".ag-checks .block-chip", { hasText: "illustration generated" })).toBeVisible();
+  await expect(second.locator(".ag-checks li", { hasText: "illustration generated" })).toBeVisible();
   await second.getByRole("button", { name: "Reject" }).click();
   await expect(second.locator(".ag-resolved")).toHaveText("Rejected");
   await expect(page.locator(".block-row")).toHaveCount(rowsBefore);
@@ -215,10 +221,11 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.locator(".ev-wrap")).toContainText("When you publish");
 
   /* Every reading age from one approval: write them, read one, approve it.
-     The bar is folded until a level exists, so it is opened the way a scholar
-     opens it — the controls above the article are the last job, not the first. */
-  await expect(page.locator(".lv-bar")).toHaveCount(0, "folded before any level is written");
-  await page.locator(".lv-fold").click();
+     They are under Reading ages in the bar — the last job on a draft, so
+     they no longer sit above its title. */
+  const ages = page.locator(".sc-write-levels__btn");
+  await expect(page.locator(".lv-bar")).toHaveCount(0, "closed until asked for");
+  await ages.click();
   await page.locator(".lv-bar").getByRole("button", { name: "Write for every age" }).click();
   await expect(page.locator(".lv-status.is-ready")).toHaveCount(3, { timeout: 60_000 });
   await page.locator(".lv-pill", { hasText: "Ages 12–14" }).click();
@@ -227,8 +234,10 @@ test("from a paper to a published story, with the agent editing by instruction",
   const articleBlocks = await page.locator(".ws-outline-item").count();
   expect(await page.locator(".lv-block").count()).toBeGreaterThanOrEqual(articleBlocks);
   await page.locator(".lv-preview").getByRole("button", { name: "Approve for readers" }).click();
+  await ages.click();
   await expect(page.locator(".lv-status.is-live")).toHaveCount(1, { timeout: 20_000 });
-  await page.locator(".lv-pill", { hasText: "Your article" }).click();
+  await page.keyboard.press("Escape");
+  await page.locator(".lv-preview").getByRole("button", { name: /Back to your article/ }).click();
   await expect(page.locator(".lv-preview")).toHaveCount(0);
   await expect(page.locator(".block-row").first()).toBeVisible();
 
@@ -254,7 +263,8 @@ test("from a paper to a published story, with the agent editing by instruction",
   await page.getByRole("button", { name: "Publish check" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "Publish check" })).toBeVisible();
-  await expect(dialog.locator(".pc-item").first()).toContainText("Every drafted paragraph is supported, or is yours");
+  /* What passed folds away under Clear, said by name; a tick only for what was checked. */
+  await expect(dialog.locator(".pc-clear .pc-item", { hasText: "Every drafted paragraph is supported, or is yours" })).toHaveCount(1);
   await expect(dialog.locator(".pc-prov")).toContainText("Drawn from the author's research");
   await dialog.getByRole("button", { name: "Publish now" }).click();
   /* Wait for whatever the workspace says, not only for the happy one.
@@ -278,6 +288,7 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(live).toBeVisible();
   const publicPath = await live.getAttribute("href");
   expect(publicPath).toMatch(/^\/stories\//);
+  const editPath = new URL(page.url()).pathname;
 
   /* Read it as the public, with no session, and open the passage behind a paragraph. */
   const anonymous = await browser.newContext();
@@ -321,21 +332,24 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* Delete it from the list: gone for the scholar, and the public link dies. */
   await page.goto("/editorial");
-  /* Located by its own public link rather than by title. The fake model gives
+  /* Located by its own link rather than by title. The fake model gives
      every draft from a given paper the same headline, so any other spec that
      drafts leaves a row this filter would also match — and "the title is gone
      from the list" then fails for a story this spec never created. */
-  const row = page.locator(".dash-stories .dash-tr").filter({ has: page.locator(`a[href="${publicPath}"]`) });
+  const row = page.locator(".dash-stories .dash-tr").filter({ has: page.locator(`a.dash-story-title[href="${editPath}"]`) });
   await expect(row).toBeVisible();
-  /* Edit, View live and Delete are in plain sight on the row, named for it. */
-  await expect(row.getByRole("link", { name: /as readers see it/ })).toHaveAttribute("href", publicPath);
-  await row.getByRole("button", { name: "Delete story" }).click();
+  /* The row leads with what the story needs next: two reading levels are
+     still waiting for approval. Edit, View live and Delete are in its menu. */
+  await expect(row.locator(".stories-next")).toHaveText("Approve 2 levels");
+  await row.getByRole("button", { name: /^More for / }).click();
+  await expect(row.getByRole("menuitem", { name: /View live/ })).toHaveAttribute("href", publicPath);
+  await row.getByRole("button", { name: "Delete" }).click();
   /* The confirmation is a modal dialog in the top layer, so it is the page's,
      not the row's. */
   const confirm = page.getByRole("alertdialog");
   await expect(confirm).toContainText("gone for good");
   await confirm.getByRole("button", { name: "Delete" }).click();
-  await expect(page.locator(".dash-stories .dash-tr").filter({ has: page.locator(`a[href="${publicPath}"]`) })).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.locator(".dash-stories .dash-tr").filter({ has: page.locator(`a.dash-story-title[href="${editPath}"]`) })).toHaveCount(0, { timeout: 20_000 });
   const dead = await reader.goto(publicPath);
   expect(dead.status()).toBe(404);
   await anonymous.close();

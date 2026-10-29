@@ -6,9 +6,10 @@ import { FaCheck, FaCircleInfo, FaTriangleExclamation, FaXmark } from "react-ico
 /**
  * Messages from the page, floating above it instead of pushing it down.
  *
- * A save, a publish, a check coming back: said in a card at the top right,
- * where the eye goes after pressing a button, and gone again on its own once
- * it has been read — longer messages stay longer, and a pointer resting on
+ * A save, a publish, a check coming back: said in a card at the bottom
+ * left, clear of the agent's pane and the publish sheet so it never covers
+ * a change waiting for a decision, and gone again on its own once it has
+ * been read — longer messages stay longer, and a pointer resting on
  * one holds it. Anything that went wrong stays until it is dismissed, and
  * anything that is still happening stays until it is done.
  *

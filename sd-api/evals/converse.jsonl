@@ -15,3 +15,8 @@
 {"id":"what-can-you-do","said":["What can you do?"],"state":{},"expect":{"action":["reply"]}}
 {"id":"asks-who-it-is","said":["Who are you?"],"state":{},"expect":{"action":["reply"],"replyHas":["Kivyn"]}}
 {"id":"asks-if-a-person","said":["Am I talking to a real person?"],"state":{},"expect":{"action":["reply"],"replyHas":["Kivyn","computer|program|software|not a (real )?person|AI"]}}
+{"id":"no-paper-said","said":["Write without my papers: an article on how cities can plan for heatwaves, for adults"],"state":{},"expect":{"action":["plan"],"paper":"brief:only","audience":["adults"],"briefHas":["heat"]}}
+{"id":"no-paper-dont-use-work","said":["Don't use my research for this one. A short piece on why sleep matters for learning, for kids aged 8 to 11"],"state":{},"expect":{"action":["plan"],"paper":"brief:only","audience":["ages_8_11"],"briefHas":["sleep"]}}
+{"id":"no-paper-then-brief","said":["I'd like to write something that doesn't come from any of my papers","How plain-language summaries help the public understand science, for adults"],"state":{},"expect":{"action":["plan"],"paper":"brief:only","audience":["adults"]}}
+{"id":"own-field-not-brief","said":["Write about what direction-of-arrival estimation is good for, for adults"],"state":{},"expect":{"action":["ask_paper","plan"],"paperNot":"brief:only"}}
+{"id":"unrelated-topic","said":["Write an article about the history of the bicycle, for adults"],"state":{},"expect":{"action":["plan","ask_paper","reply"],"paperIn":["brief:only",null]}}

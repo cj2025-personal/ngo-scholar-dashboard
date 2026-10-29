@@ -21,8 +21,9 @@
 const { AUDIENCES } = require("../audiences");
 const { VOICE } = require("../draftComposer");
 const { introduce } = require("./identity");
+const { BRIEF_KEY } = require("../briefSource");
 
-const CONVERSE_VERSION = "studio-converse-2026.4";
+const CONVERSE_VERSION = "studio-converse-2026.5";
 
 /* The words the scholar sees for each voice and reader, as the composer shows them. */
 const VOICES = [
@@ -37,15 +38,18 @@ const MARKER = "THE SCHOLAR JUST SAID:";
 
 const SYSTEM = [
   introduce("the studio agent"),
-  "You help a scholar turn their own research paper into an article for readers, under the scholar's own name.",
+  "You help a scholar write an article for readers, under the scholar's own name: usually from one of their own",
+  `research papers, or — when they choose — from their brief alone, drawing on none of their work (the key ${BRIEF_KEY}).`,
   "You read what the scholar says and decide what they want, then say it back briefly.",
   "",
   "Decide one action:",
   "- plan: start planning the article. Only when you know which paper (named, chosen earlier, or the only one there",
-  "  is) AND what the article should be. Put what they want in `brief`, in their words, including what to focus on,",
+  `  is) — or that it is to come from no paper (${BRIEF_KEY}) — AND what the article should be. Put what they want in`,
+  "  `brief`, in their words, including what to focus on,",
   "  what to leave out and any instruction about the reader. Set `audience` when they said or clearly implied who it",
   "  is for; otherwise ask first.",
-  "- ask_paper: they want to write from a paper but you cannot tell which, and there is more than one.",
+  "- ask_paper: you cannot tell which paper the article should come from, or whether from none, and there is more",
+  "  than one choice. Which paper comes before who it is for: ask this first.",
   "- set_paper: they chose or named a paper but have not said what to write; ask what the article should be.",
   "- ask_audience: the paper and the article are clear, but not who it is for, and they have not left it to you.",
   "  (If they say it does not matter, or for general readers, use adults and plan.)",
@@ -55,11 +59,18 @@ const SYSTEM = [
   "- discard: they want to drop the outline or the draft in progress.",
   "- reply: anything else — a question about what you can do, small talk, something you cannot do. Answer honestly.",
   "",
+  `Writing from no paper (${BRIEF_KEY}) is the scholar's choice, not yours to make for them. Choose it when they say so`,
+  "— no paper, not from my work, don't use my research, just write about … — or when what they ask for is plainly about",
+  "none of their papers. The article is then their own account from their brief: every specific in it (a number, a",
+  "named study, a date, a place) is listed for them to verify before it can be published, and readers are told it is",
+  "not drawn from their research. Say that in your reply when you plan it. A brief about one of their papers comes",
+  "from that paper.",
+  "",
   "A reader shown as set was chosen — by a tap, or on the page they came from — so do not ask for it again; plan with",
   "it unless they now name another. Lines like `Use “<title>”.` or `For ages 12–14.` are the scholar's taps on cards",
   "you showed them; read them together with what they said before.",
   "",
-  "How it goes after you: you plan an outline from the paper; the scholar approves it, cuts sections or asks for",
+  "How it goes after you: you plan an outline from the paper, or from the brief alone; the scholar approves it, cuts sections or asks for",
   "changes; the approved outline is drafted into the page beside you, under their name; they read it, edit it, run the",
   "publish check and publish it on Proj Arch themselves, or schedule it. You cannot publish, schedule, send or delete",
   "anything, or change their account. When asked to, say so plainly and tell them the step that does it.",
@@ -172,10 +183,16 @@ async function decide({ messages, papers, audiences, voices, state, scholarName,
     if (!d) { correction = "It was not legible JSON."; continue; }
     const paper = d.paperKey || state.paperKey || null;
     if (!d.paperKnown) { correction = `It named the paper "${d.paperKey}", which is not in the scholar's list.`; continue; }
-    if (d.action === "plan" && !paper && keys.length !== 1) { correction = "It planned without knowing which paper."; continue; }
+    /* What a plan with nothing chosen may bind to: the only paper there is,
+       or — with no papers at all — the brief alone. Never the brief when a
+       paper exists: writing without the scholar's work is said, not assumed. */
+    const papersOnly = keys.filter((k) => k !== BRIEF_KEY);
+    const only = papersOnly.length === 1 ? papersOnly[0] : papersOnly.length === 0 && keys.includes(BRIEF_KEY) ? BRIEF_KEY : null;
+    if (d.action === "plan" && !paper && !only) { correction = "It planned without knowing which paper, or whether from none."; continue; }
     if (d.action === "plan" && !d.brief) { correction = "It planned without a brief."; continue; }
+    if (d.action === "propose" && paper === BRIEF_KEY) { correction = `It proposed an angle with no paper (${BRIEF_KEY}); an angle is read from a paper. Ask what to write instead.`; continue; }
     if (["replan", "approve"].includes(d.action) && state.stage !== "outline_waiting") { correction = "There is no outline waiting."; continue; }
-    if (d.action === "plan" && !paper && keys.length === 1) d.paperKey = keys[0];
+    if (d.action === "plan" && !paper && only) d.paperKey = only;
     return { decision: d, usage, model: last.model };
   }
   /* Still not something the page can do: say so in the model's words, and act on nothing. */

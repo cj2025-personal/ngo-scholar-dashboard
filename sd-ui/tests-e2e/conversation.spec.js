@@ -26,17 +26,18 @@ test("asking to write from a paper brings the papers as cards; a reader named in
   await openAgent(page);
   const box = page.getByPlaceholder(/Describe the article you want/);
   await expect(page.locator(".ch-msg.is-agent").first()).toContainText("What shall we write");
-  await expect(page.locator(".ch-context")).toHaveCount(0);
+  /* The pickers are there from the start, with no paper chosen yet. */
+  await expect(page.getByLabel("Paper", { exact: true })).toHaveValue("");
 
   await box.fill("I want to write from one of my papers");
   await page.getByRole("button", { name: "Send" }).click();
-  const cards = page.locator(".ch-msg.is-papers .ch-paper");
+  const cards = page.locator(".ch-msg.is-papers .ch-paper:not(.is-brief)");
   await expect(cards).toHaveCount(3);
   await cards.filter({ hasText: "Adaptive nulling" }).click();
   await expect(page.locator(".ch-msg.is-user").last()).toContainText("Use “Adaptive nulling");
   await expect(page.locator(".ch-msg.is-agent").last()).toContainText("Working from");
-  await expect(page.locator(".ch-context")).toContainText("Adaptive nulling");
-  await expect(page.locator(".ch-context")).toContainText("for adults");
+  await expect(page.getByLabel("Paper", { exact: true }).locator("option:checked")).toContainText("Adaptive nulling");
+  await expect(page.getByLabel("Reader age")).toHaveValue("adults");
 
   /* The brief names the reader; no question is asked. */
   await box.fill("Focus on what the field trials showed, written for teenagers");
@@ -53,7 +54,7 @@ test("a brief said first is kept; the agent asks which paper, then who it is for
   const box = page.getByPlaceholder(/Describe the article you want/);
   await box.fill("Explain how the experiment was actually done, step by step, and be honest about its limits");
   await box.press("Enter");
-  await expect(page.locator(".ch-msg.is-papers .ch-paper")).toHaveCount(3);
+  await expect(page.locator(".ch-msg.is-papers .ch-paper:not(.is-brief)")).toHaveCount(3);
   await page.locator(".ch-msg.is-papers .ch-paper").filter({ hasText: "Second paper" }).click();
 
   /* One question left, with the answer one tap away. */

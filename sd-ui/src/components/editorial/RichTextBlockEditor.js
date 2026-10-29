@@ -103,18 +103,27 @@ function normalizeBlock(block, id) {
   return text;
 }
 
-/** Chip under a drafted block. Renders nothing for a hand-written one. */
+/**
+ * A drafted block's mark, in the margin beside it: the passages it came
+ * from, coloured by what the judge said, with the whole of it on hover. One
+ * mark per paragraph, beside it rather than under it, so the article reads
+ * as an article and its trail is still there to follow. Renders nothing for
+ * a block written by hand.
+ */
 function ProvenanceChip({ block, sourceLabel }) {
   const chip = chipFor(block, sourceLabel);
   if (!chip) return null;
+  const toVerify = chip.context ? (block.context?.toVerify || []).filter((v) => !v.verified).length : 0;
+  const short = chip.context ? (toVerify ? `yours · ${toVerify}` : "yours") : chip.ownView ? "yours" : chip.traceable ? chip.label : "edited";
+  const reach = block.extension && chip.traceable && !chip.ownView;
   return (
     <div className="block-chip-row">
       <span
-        className={chip.context ? "block-chip is-context" : chip.ownView ? "block-chip is-own" : chip.traceable ? (chip.partial ? "block-chip is-partial" : "block-chip") : "block-chip is-lost"}
-        title={chip.title}
+        className={chip.context ? "block-chip is-context" : chip.ownView ? "block-chip is-own" : chip.traceable ? (chip.partial ? "block-chip is-partial" : reach ? "block-chip is-reach" : "block-chip") : "block-chip is-lost"}
+        title={`${chip.label}${chip.partial ? " · partly supported" : ""}. ${chip.title}`}
       >
-        {chip.label}
-        {chip.partial ? " · partly supported" : ""}
+        {short}
+        <span className="sr-only">{chip.partial ? " · partly supported" : ""}</span>
       </span>
       {chip.partial && chip.unsupportedClaims.length ? (
         <span className="block-chip-note" title={chip.unsupportedClaims.join(" — ")}>
@@ -442,6 +451,9 @@ export default function RichTextBlockEditor({
   onActiveBlockChange,
   /** Short label for provenance chips, e.g. "Gupta 2011". */
   sourceLabel = "",
+  /** Blocks a change waiting for a decision would touch, counted from 1, and what opening it does. */
+  proposedAt = [],
+  onProposed = null,
 }) {
   const shellRef = useRef(null);
   /* Which block's gutter menu is open. Null is the resting state, which is
@@ -700,9 +712,7 @@ export default function RichTextBlockEditor({
         {blocks.map((block, index) => (
           <div
             key={block.id}
-            className={
-              activeBlockId === block.id ? "block-row is-active" : "block-row"
-            }
+            className={`block-row${activeBlockId === block.id ? " is-active" : ""}${proposedAt.includes(index + 1) ? " is-proposed" : ""}`}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
@@ -794,6 +804,10 @@ export default function RichTextBlockEditor({
               </div>
             ) : null}
 
+            {/* A change waiting on the scholar, marked where it would land. */}
+            {proposedAt.includes(index + 1) && onProposed ? (
+              <button type="button" className="block-proposed" onClick={onProposed}>Change proposed <span aria-hidden>→</span></button>
+            ) : null}
             <div className="block-body">
               {block.type === "image" ? (
                 <ImageBlockCard

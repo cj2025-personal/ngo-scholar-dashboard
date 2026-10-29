@@ -40,7 +40,7 @@ async function api(page, route) {
 }
 
 const n = (value) => Number(value).toLocaleString("en-US");
-const tile = (page, label) => page.locator(".dash-tile").filter({ has: page.locator(".dash-tile__label", { hasText: label }) });
+const tile = (page, label) => page.locator(".dash-stat").filter({ has: page.locator(".dash-stat__label", { hasText: label }) });
 
 test("every number on the Studio is the API's", async ({ page }) => {
   const [{ stories }, { jobs }, sources] = await Promise.all([
@@ -55,11 +55,11 @@ test("every number on the Studio is the API's", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
-  await expect(tile(page, "Papers ready").locator(".dash-tile__value")).toHaveText(n(sources.counts.draftable));
-  await expect(tile(page, "Published").locator(".dash-tile__value")).toHaveText(n(published));
+  await expect(tile(page, "Papers ready").locator(".dash-stat__value")).toHaveText(n(sources.counts.draftable));
+  await expect(tile(page, "Published").locator(".dash-stat__value")).toHaveText(n(published));
   await expect(tile(page, "Published")).toContainText(`${scheduled} scheduled`);
-  await expect(tile(page, "Reads").locator(".dash-tile__value")).toHaveText(n(reads));
-  await expect(tile(page, "Legacy").locator(".dash-tile__value")).toHaveText(`${sources.standing.met} / ${sources.standing.total}`);
+  await expect(tile(page, "Reads").locator(".dash-stat__value")).toHaveText(n(reads));
+  await expect(tile(page, "Legacy").locator(".dash-stat__value")).toHaveText(`${sources.standing.met} / ${sources.standing.total}`);
 
   /* The side column: Legacy mark by mark, and the papers by what they may be used for. */
   const legacy = page.locator(".st-rail .st-card", { hasText: "Legacy" }).first();
@@ -76,11 +76,11 @@ test("every number on the Studio is the API's", async ({ page }) => {
     return;
   }
 
-  /* Needs you: the tile, the heading and the queue are one count. */
-  const needs = await tile(page, "Needs you").locator(".dash-tile__value").innerText();
+  /* Needs you: the number in the strip and the queue are one count. */
+  const needs = await tile(page, "Needs you").locator(".dash-stat__value").innerText();
   await expect(page.locator("#st-queue .dash-count")).toHaveText(needs);
-  /* The tile says what is waiting, by kind, never "N other". */
-  await expect(tile(page, "Needs you").locator(".dash-tile__sub")).not.toContainText("other");
+  /* The strip says what is waiting, by kind, never "N other". */
+  await expect(tile(page, "Needs you").locator(".dash-stat__sub")).not.toContainText("other");
 
   /* The pipeline counts the same work the queue lists, stage by stage. */
   const stage = (label) => page.locator(".dash-stage").filter({ hasText: label }).locator(".dash-stage__count");
@@ -91,7 +91,7 @@ test("every number on the Studio is the API's", async ({ page }) => {
   await expect(stage("In review")).toHaveText(n(inReview));
   /* Published means published, on the stage as on the tile; what is scheduled is said beside it. */
   await expect(stage("Published")).toHaveText(n(published));
-  await expect(tile(page, "Published").locator(".dash-tile__value")).toHaveText(n(published));
+  await expect(tile(page, "Published").locator(".dash-stat__value")).toHaveText(n(published));
 
   /* Your stories: six at most, and a status chip narrows them to that status. */
   const table = page.locator(".dash-stories");
@@ -168,13 +168,25 @@ test("writing has one door: the nudge on the Studio, the bar on Stories, and now
   await expect(page.locator(".nb-write")).toBeVisible();
   await expect(page.getByRole("link", { name: /Write a story with Kivyn/ })).toHaveCount(1);
 
-  /* Already writing, starting from a paper's own row, or not about writing at all. */
-  const elsewhere = ["/editorial/new", "/papers", "/podcasts", "/profile", "/content", "/standing"];
-  if (stories.length) elsewhere.push(`/editorial/${stories[0].id}`);
-  for (const route of elsewhere) {
+  /* Starting from a paper's own row, or not about writing at all. */
+  for (const route of ["/papers", "/podcasts", "/profile", "/content", "/standing"]) {
     await page.goto(route);
     await expect(page.locator(".nb-bar"), route).toBeVisible();
     await expect(page.getByRole("link", { name: /Write a story with Kivyn/ }), route).toHaveCount(0);
+  }
+  /* Already writing: on a story the site's bar and the story's are one row,
+     and every place is under the logo. */
+  const writing = ["/editorial/new"];
+  if (stories.length) writing.push(`/editorial/${stories[0].id}`);
+  for (const route of writing) {
+    await page.goto(route);
+    await expect(page.locator(".nb-bar"), route).toHaveCount(0);
+    await expect(page.locator(".sc-write-bar"), route).toBeVisible();
+    await expect(page.getByRole("link", { name: /Write a story with Kivyn/ }), route).toHaveCount(0);
+    await page.locator(".nb-sections__btn").click();
+    await expect(page.locator(".nb-sections__menu").getByRole("menuitem"), route).toHaveText(["Studio", "Papers", "Stories", "Podcasts", "Profile"]);
+    await expect(page.locator(".nb-sections__menu").getByRole("menuitem", { name: "Stories" }), route).toHaveAttribute("aria-current", "page");
+    await page.keyboard.press("Escape");
   }
 });
 
@@ -209,7 +221,7 @@ test("the bar's places are the work; who you are is the account menu", async ({ 
 test("the search opens below the bar, never over its places", async ({ page }) => {
   for (const [width, height] of [[1366, 607], [390, 844]]) {
     await page.setViewportSize({ width, height });
-    for (const route of ["/editorial/new", "/editorial"]) {
+    for (const route of ["/papers", "/editorial"]) {
       await page.goto(route);
       await page.locator(".nb-search__trigger").click();
       await expect(page.locator(".nb-search__pop input")).toBeFocused();

@@ -66,7 +66,13 @@ function needsWriting(level) {
   return !level || level.stale;
 }
 
-export default function ReadingLevels({ story, viewLevel, onView, onChanged, dirty }) {
+/**
+ * @param {object} p
+ * @param {"controls"|"preview"|undefined} [p.part]   the controls alone (opened
+ *        from the story's bar), the level being read alone (in the editor's
+ *        place), or both stacked
+ */
+export default function ReadingLevels({ story, viewLevel, onView, onChanged, dirty, part = undefined }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const own = normaliseAudience(story.provenance?.audience);
@@ -120,7 +126,8 @@ export default function ReadingLevels({ story, viewLevel, onView, onChanged, dir
      ninety pixels of a laptop screen spent on the last job, at the moment
      they opened the draft to read it. Folded until it has something to say. */
   const nothingWritten = bands.every((a) => !byAudience.get(a.value));
-  if (nothingWritten && !open) {
+  /* Opened from the bar it is already the scholar asking, so it opens whole. */
+  if (nothingWritten && !open && part !== "controls" && part !== "preview") {
     return (
       <div className="lv-wrap is-folded">
         <button type="button" className="lv-fold" onClick={() => setOpen(true)} aria-expanded="false">
@@ -134,6 +141,48 @@ export default function ReadingLevels({ story, viewLevel, onView, onChanged, dir
       </div>
     );
   }
+
+  const ownLabel = DRAFT_AUDIENCES.find((a) => a.value === own)?.label || "Article";
+  const preview = current ? (
+    <div className="lv-preview">
+      <div className="lv-head">
+        <div>
+          {part === "preview" ? (
+            <button type="button" className="st-link lv-back" onClick={() => onView(null)}>← Back to your article ({ownLabel.toLowerCase()})</button>
+          ) : null}
+          <span className="sc-kicker">{DRAFT_AUDIENCES.find((a) => a.value === current.audience)?.label || current.label} · target grade {current.grade}</span>
+          <div className="st-todo-detail">
+            Reads at grade {current.readability?.fkGrade ?? "?"} · {current.fidelity?.supported ?? 0} of {current.fidelity?.paragraphs ?? 0} rewritten paragraphs{" "}
+            {current.grounding === "self" ? "kept to what you wrote" : "supported by the paper"}
+            {current.reach?.paragraphs ? ` · ${current.reach.follows} of ${current.reach.paragraphs} beyond the paper follow${current.reach.follows === 1 ? "s" : ""} from it` : ""}
+            {current.stale ? ` · out of date: ${current.staleReason}` : current.approved ? ` · live since ${current.approvedAt ? new Date(current.approvedAt).toLocaleDateString() : "now"}` : " · not yet shown to readers"}
+          </div>
+        </div>
+        <div className="lv-actions">
+          <button type="button" className="sc-write-secondary st-btn" disabled={busy !== "" || dirty} onClick={() => write([current.audience])}><FaRotate size={10} aria-hidden /> {busy === current.audience ? "Rewriting…" : "Rewrite this level"}</button>
+          {!current.approved && !current.stale ? (
+            <button type="button" className="sc-write-publish st-btn-primary" disabled={busy !== "" || dirty} onClick={() => approve([current.audience])}><FaCheck size={11} aria-hidden /> {busy === "approve" ? "Approving…" : "Approve for readers"}</button>
+          ) : null}
+          {/* Written, and not wanted. Without this a level could only be
+              rewritten or approved, so an unwanted one asked forever. */}
+          <DiscardLevelsButton
+            storyId={story.id}
+            audiences={[current.audience]}
+            count={1}
+            live={Boolean(current.approved)}
+            label="Discard this level"
+            onDone={(data) => { onView?.(null); onChanged?.(data.story, `The ${(DRAFT_AUDIENCES.find((a) => a.value === current.audience)?.label || "reading").toLowerCase()} level is gone.${current.approved ? " Readers no longer see it." : ""} You can write it again whenever you like.`); }}
+          />
+        </div>
+      </div>
+      {error && part === "preview" ? <p className="sc-write-msg is-error">{error}</p> : null}
+      {current.stale ? <p className="sc-write-msg is-error">This level was written from an earlier version of the article, so readers are not shown it. Rewrite it to bring it up to date.</p> : null}
+      <LevelBlocks blocks={current.blocks || []} />
+      <p className="st-muted">Every rewritten paragraph rests on the same passages as the paragraph it replaces, and was checked claim by claim; a paragraph that goes beyond the paper keeps its implications and is checked to still follow from it. Headings, quotes and your own words are carried as they are.</p>
+    </div>
+  ) : null;
+
+  if (part === "preview") return <div className="lv-wrap is-preview">{preview}</div>;
 
   return (
     <div className="lv-wrap">
@@ -171,40 +220,7 @@ export default function ReadingLevels({ story, viewLevel, onView, onChanged, dir
       {error ? <p className="sc-write-msg is-error">{error}</p> : null}
       {dirty && selected.length ? <p className="st-muted">Save your edits before writing other levels, so they are written from the current text.</p> : null}
 
-      {current ? (
-        <div className="lv-preview">
-          <div className="lv-head">
-            <div>
-              <span className="sc-kicker">{DRAFT_AUDIENCES.find((a) => a.value === current.audience)?.label || current.label} · target grade {current.grade}</span>
-              <div className="st-todo-detail">
-                Reads at grade {current.readability?.fkGrade ?? "?"} · {current.fidelity?.supported ?? 0} of {current.fidelity?.paragraphs ?? 0} rewritten paragraphs{" "}
-                {current.grounding === "self" ? "kept to what you wrote" : "supported by the paper"}
-                {current.reach?.paragraphs ? ` · ${current.reach.follows} of ${current.reach.paragraphs} beyond the paper follow${current.reach.follows === 1 ? "s" : ""} from it` : ""}
-                {current.stale ? ` · out of date: ${current.staleReason}` : current.approved ? ` · live since ${current.approvedAt ? new Date(current.approvedAt).toLocaleDateString() : "now"}` : " · not yet shown to readers"}
-              </div>
-            </div>
-            <div className="lv-actions">
-              <button type="button" className="sc-write-secondary st-btn" disabled={busy !== "" || dirty} onClick={() => write([current.audience])}><FaRotate size={10} aria-hidden /> {busy === current.audience ? "Rewriting…" : "Rewrite this level"}</button>
-              {!current.approved && !current.stale ? (
-                <button type="button" className="sc-write-publish st-btn-primary" disabled={busy !== "" || dirty} onClick={() => approve([current.audience])}><FaCheck size={11} aria-hidden /> {busy === "approve" ? "Approving…" : "Approve for readers"}</button>
-              ) : null}
-              {/* Written, and not wanted. Without this a level could only be
-                  rewritten or approved, so an unwanted one asked forever. */}
-              <DiscardLevelsButton
-                storyId={story.id}
-                audiences={[current.audience]}
-                count={1}
-                live={Boolean(current.approved)}
-                label="Discard this level"
-                onDone={(data) => { onView?.(null); onChanged?.(data.story, `The ${(DRAFT_AUDIENCES.find((a) => a.value === current.audience)?.label || "reading").toLowerCase()} level is gone.${current.approved ? " Readers no longer see it." : ""} You can write it again whenever you like.`); }}
-              />
-            </div>
-          </div>
-          {current.stale ? <p className="sc-write-msg is-error">This level was written from an earlier version of the article, so readers are not shown it. Rewrite it to bring it up to date.</p> : null}
-          <LevelBlocks blocks={current.blocks || []} />
-          <p className="st-muted">Every rewritten paragraph rests on the same passages as the paragraph it replaces, and was checked claim by claim; a paragraph that goes beyond the paper keeps its implications and is checked to still follow from it. Headings, quotes and your own words are carried as they are.</p>
-        </div>
-      ) : null}
+      {part === "controls" ? null : preview}
     </div>
   );
 }

@@ -1,4 +1,3 @@
-import Topbar from "@/components/scholar/Topbar";
 import StoryWorkspace from "@/components/editorial/StoryWorkspace";
 import { getEditorialStory } from "@/lib/editorial";
 import { getScholarProfile } from "@/lib/profile";
@@ -27,7 +26,6 @@ export default async function EditorialStoryPage({ params }) {
 
   return (
     <div className="sc-shell">
-      <Topbar activeHref="/editorial" me={me} />
       <div className="sc-editorial">
         <StoryWorkspace initialStory={storyResult.story} me={me} aiTerms={profile.aiTerms || null} paneClosed={paneClosedIn(cookieStore)} />
       </div>

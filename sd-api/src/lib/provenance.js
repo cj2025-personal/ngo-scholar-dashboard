@@ -24,6 +24,8 @@
  * scholar can predict; an edit distance penalises a reordering it should not.
  */
 
+const { isBriefOnly } = require("./briefSource");
+
 const TRACE_THRESHOLD = 0.6;
 const PROVENANCE_VERSION = "provenance-2026.1";
 
@@ -249,7 +251,9 @@ function storyProvenanceFromJob(job) {
   return {
     job_id: job._id,
     origin: job.source.origin,
-    source_id: job.source.id,
+    /* From the brief alone there is no source: no passages to read, no
+       record to watch, nothing to recheck against. */
+    source_id: isBriefOnly(job.source) ? null : job.source.id,
     source_title: job.source.title || null,
     source_year: job.source.year ?? null,
     /* Who the draft was written for; the story agent keeps editing for them. */

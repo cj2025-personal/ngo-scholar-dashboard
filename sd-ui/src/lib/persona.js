@@ -12,7 +12,8 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
  * Two agents (the reader's companion, the scholar's agent) each have a key.
  */
 
-export const FACES = ["?", "✦", "★", "☼", "❋", "◆", "A"];
+/* "mark" is the companion's own drawn mark (AgentFace draws it); the rest are glyphs. */
+export const FACES = ["mark", "✦", "★", "☼", "❋", "◆", "A", "?"];
 export const TONES = ["navy", "teal", "plum", "amber"];
 
 const listeners = new Map(); // key -> Set<cb>

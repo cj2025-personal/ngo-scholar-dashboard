@@ -5,6 +5,7 @@ import { FaCheck, FaPaperPlane, FaXmark } from "react-icons/fa6";
 
 import Kivyn from "@/components/kivyn/Kivyn";
 import KivynButton from "@/components/kivyn/KivynButton";
+import TypedText, { TypingDots } from "@/components/kivyn/TypedText";
 import { useKivynMoment } from "@/components/kivyn/useKivynMoment";
 import { askStoryAgent, listStoryTurns, resolveStoryTurn } from "@/lib/drafting";
 import { AGENT_NAME, poseForStep } from "@/lib/kivyn/pose.mjs";
@@ -65,16 +66,28 @@ function Steps({ calls }) {
   );
 }
 
+/**
+ * One change, said as an edit: what goes struck through, what comes in
+ * marked. A heading field reads the same way; a move says where from.
+ */
 function ChangeRow({ change }) {
   const label = { added: "Added", changed: "Changed", removed: "Removed", moved: "Moved", field: "Changed" }[change.kind] || change.kind;
-  const where = change.kind === "field" ? change.field : `block ${change.index}${change.kind === "moved" ? ` (was ${change.from})` : ""}`;
+  const where = change.kind === "field" ? change.field : `${change.type === "paragraph" || !change.type ? "paragraph" : change.type} ${change.index}${change.kind === "moved" ? ` (was ${change.from})` : ""}`;
   return (
     <div className={`ag-change is-${change.kind}`}>
-      <div className="ag-change-head"><b>{label}</b> · {where}{change.type ? ` · ${change.type}` : ""}</div>
-      {change.before ? <div className="ag-before">{change.before}</div> : null}
-      {change.text ? <div className="ag-after">{change.text}</div> : null}
+      <div className="ag-change-head"><span className="sr-only">{label} · </span>{label === "Changed" ? "Proposed" : label} · {where}</div>
+      <p className="ag-diff">
+        {change.before ? <del className="ag-before">{change.before}</del> : null}
+        {change.before && change.text ? " " : null}
+        {change.text ? <ins className="ag-after">{change.text}</ins> : null}
+      </p>
     </div>
   );
+}
+
+/** A check on the change, said as a tick or a warning, one line each. */
+function CheckLine({ ok, warn = false, children }) {
+  return <li className={ok ? "is-ok" : warn ? "is-warn" : "is-bad"}><span aria-hidden>{ok ? "✓" : "!"}</span> {children}</li>;
 }
 
 function Proposal({ turn, onAccept, onReject, busy, blocked = false }) {
@@ -88,21 +101,21 @@ function Proposal({ turn, onAccept, onReject, busy, blocked = false }) {
       </div>
       {turn.changes.length ? <div className="ag-changes">{turn.changes.map((ch, i) => <ChangeRow key={i} change={ch} />)}</div> : <p className="st-muted">The draft is unchanged.</p>}
       {turn.changes.length ? (
-        <div className="ag-checks">
+        <ul className="ag-checks">
           {c.paragraphsChanged ? (
-            <span className={c.unsupported ? "block-chip is-lost" : c.partial ? "block-chip is-partial" : "block-chip"}>
+            <CheckLine ok={!c.unsupported && !c.partial} warn={Boolean(c.partial) && !c.unsupported}>
               {c.supported} of {c.paragraphsChanged} written paragraph{c.paragraphsChanged === 1 ? "" : "s"} supported by the paper
-            </span>
+            </CheckLine>
           ) : null}
           {c.extensionsChanged ? (
-            <span className={c.overreach ? "block-chip is-lost" : c.reachPartial ? "block-chip is-partial" : "block-chip is-reach"}>
+            <CheckLine ok={!c.overreach && !c.reachPartial} warn={Boolean(c.reachPartial) && !c.overreach}>
               {c.follows} of {c.extensionsChanged} paragraph{c.extensionsChanged === 1 ? "" : "s"} beyond the paper follow{c.follows === 1 ? "s" : ""} from it
-            </span>
+            </CheckLine>
           ) : null}
-          {c.readability ? <span className={`block-chip ${c.readability.verdict === "pass" ? "" : c.readability.verdict === "warn" ? "is-partial" : "is-lost"}`}>reads at grade {c.readability.fkGrade} · target {c.readability.targetGrade}</span> : null}
-          {c.imagesGenerated ? <span className="block-chip">{c.imagesGenerated} illustration{c.imagesGenerated === 1 ? "" : "s"} generated</span> : null}
-          {c.refused ? <span className="block-chip is-lost">{c.refused} step{c.refused === 1 ? "" : "s"} refused by the rules</span> : null}
-        </div>
+          {c.readability ? <CheckLine ok={c.readability.verdict === "pass"} warn={c.readability.verdict === "warn"}>reads at grade {c.readability.fkGrade}, target {c.readability.targetGrade}</CheckLine> : null}
+          {c.imagesGenerated ? <CheckLine ok>{c.imagesGenerated} illustration{c.imagesGenerated === 1 ? "" : "s"} generated</CheckLine> : null}
+          {c.refused ? <CheckLine ok={false}>{c.refused} step{c.refused === 1 ? "" : "s"} refused by the rules</CheckLine> : null}
+        </ul>
       ) : null}
       {turn.warnings?.length ? <ul className="ag-warnings">{turn.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul> : null}
       {pending ? (
@@ -131,9 +144,9 @@ function Working({ activity }) {
   const done = activity.done.filter((c) => c.name !== "finish");
   return (
     <div className="ag-working has-kv" role="status" aria-live="polite">
-      <KivynButton pose={activity.pose} busy size={60} />
+      <KivynButton pose={activity.pose} busy size={48} />
       <div className="ag-working-body">
-        <div className="ag-working-line">{activity.message}… <span className="ag-elapsed">{seconds}s</span></div>
+        <div className="ag-working-line">{activity.message} <TypingDots label="working" /> <span className="ag-elapsed">{seconds}s</span></div>
         {done.length ? <Steps calls={done} /> : null}
       </div>
     </div>
@@ -142,7 +155,7 @@ function Working({ activity }) {
 
 const STARTING = { pose: "reading", message: "Sending your instruction", done: [] };
 
-export default function AgentPanel({ storyId, context = null, dirty = false, prefill = "", onPrefillTaken, onStoryChanged, onProposalPending, onStatus }) {
+export default function AgentPanel({ storyId, context = null, dirty = false, prefill = "", onPrefillTaken, onStoryChanged, onProposalPending, onProposalAt = null, onStatus }) {
   const [turns, setTurns] = useState([]);
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
@@ -150,6 +163,10 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
   const [moment, showMoment] = useKivynMoment();
   const [error, setError] = useState("");
   const [useContext, setUseContext] = useState(true);
+  /* Turns that arrived while the scholar watched: their summaries are typed in. */
+  const [freshIds, setFreshIds] = useState(() => new Set());
+  /* A proposal's card shows once its summary has been said, as a reply would. */
+  const [saidIds, setSaidIds] = useState(() => new Set());
   const threadRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -160,20 +177,27 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
   }, [storyId]);
 
   /* A conversation reads from its latest turn; an empty one from its heading,
-     which a short screen used to scroll out of sight above the examples. */
+     which a short screen used to scroll out of sight above the examples. A
+     proposal appears once its summary is typed, and the thread follows it
+     down so Accept is in view. */
   useEffect(() => {
     const el = threadRef.current;
     if (el) el.scrollTop = turns.length || busy ? el.scrollHeight : 0;
-  }, [turns.length, busy]);
+  }, [turns.length, busy, saidIds]);
 
   const pending = turns.find((t) => t.status === "proposed" && t.changes?.length);
   useEffect(() => { onProposalPending?.(Boolean(pending)); }, [pending, onProposalPending]);
+  /* Where the waiting change lands, so the article can mark those paragraphs: block numbers, counted from 1. */
+  useEffect(() => {
+    onProposalAt?.(pending ? pending.changes.filter((c) => c.kind === "changed" || c.kind === "removed" || c.kind === "moved").map((c) => Number(c.index)).filter((n) => n > 0) : []);
+  }, [pending, onProposalAt]);
   /* The line under Kivyn's name, in the pane's head, and what it is drawn doing. */
   useEffect(() => {
     onStatus?.({
       text: busy ? activity.message : pending ? "A change is waiting for your decision" : turns.length ? `${turns.length} change${turns.length === 1 ? "" : "s"} discussed` : "Ready to edit what you ask",
       busy,
       pose: busy ? activity.pose : moment || "neutral",
+      tone: !busy && pending ? "warn" : null,
     });
   }, [busy, activity, moment, pending, turns.length, onStatus]);
 
@@ -223,7 +247,8 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
     });
     setBusy(false);
     if (!r.ok) { setError(r.error); setInstruction(text ?? ask); return; }
-    setTurns((cur) => [...cur, r.data.turn]);
+    setFreshIds((cur) => new Set(cur).add(r.data.turn.id));
+    setTurns((cur) => (cur.some((t) => t.id === r.data.turn.id) ? cur : [...cur, r.data.turn]));
     /* Done when there is a change to read; open hands when there is nothing it could change. */
     showMoment(r.data.turn?.changes?.length ? "done" : "cant-answer");
   }
@@ -252,19 +277,25 @@ export default function AgentPanel({ storyId, context = null, dirty = false, pre
             </div>
           </div>
         ) : null}
-        {turns.map((t) => (
-          <div key={t.id} className="ag-turn">
-            <div className="ag-ask">{t.instruction}</div>
-            <div className="ag-reply">
-              <Face />
-              <div className="ag-reply-body">
-                <Steps calls={t.calls} />
-                {t.summary ? <div className="ag-summary">{t.summary}</div> : null}
-                <Proposal turn={t} busy={busy} blocked={blocked} onAccept={() => resolve(t, "accept")} onReject={() => resolve(t, "reject")} />
+        {turns.map((t) => {
+          const fresh = freshIds.has(t.id);
+          /* A reply that just arrived is said first, then its card appears,
+             the way a chat model's answer comes before its sources. */
+          const said = !fresh || !t.summary || saidIds.has(t.id);
+          return (
+            <div key={t.id} className="ag-turn">
+              <div className="ag-ask">{t.instruction}</div>
+              <div className="ag-reply">
+                <Face />
+                <div className="ag-reply-body">
+                  <Steps calls={t.calls} />
+                  {t.summary ? <TypedText as="div" className="ag-summary" animate={fresh} text={t.summary} onDone={() => setSaidIds((cur) => (cur.has(t.id) ? cur : new Set(cur).add(t.id)))} /> : null}
+                  {said ? <Proposal turn={t} busy={busy} blocked={blocked} onAccept={() => resolve(t, "accept")} onReject={() => resolve(t, "reject")} /> : null}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {busy ? <Working activity={activity} /> : null}
         {error ? <p className="sc-write-msg is-error">{error}</p> : null}
       </div>

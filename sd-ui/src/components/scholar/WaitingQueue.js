@@ -23,7 +23,8 @@ import DiscardLevelsButton from "@/components/editorial/DiscardLevelsButton";
 import ProposeButton from "@/components/scholar/ProposeButton";
 
 /**
- * Needs you: what is waiting on the scholar, as rows to act on.
+ * Pick up where you left off: what is waiting on the scholar, as rows to act
+ * on, and under them the papers a new story could start from.
  *
  * ── What it keeps from the list it replaced ────────────────────────────────
  * The ranking (the record moving under a claim first, an upload being
@@ -37,6 +38,19 @@ import ProposeButton from "@/components/scholar/ProposeButton";
  * paragraph; and when the queue holds more than one kind of thing, chips
  * narrow it to one. The first three rows fit above the fold on a laptop.
  */
+
+/** "Or start from a paper": the next story, one click from the papers it could be built on. */
+function StartFrom({ papers }) {
+  if (!papers?.length) return null;
+  return (
+    <p className="dash-startfrom">
+      <span>Or start from a paper:</span>
+      {papers.map((p) => (
+        <Link key={`${p.origin}:${p.id}`} href={`/editorial/new?source=${encodeURIComponent(`${p.origin}:${p.id}`)}`} title={p.title}>{p.title}</Link>
+      ))}
+    </p>
+  );
+}
 
 /** The way out of a row: discard the job, delete the story, throw away the levels. */
 function RemoveAction({ remove }) {
@@ -85,7 +99,7 @@ function KindIcon({ t }) {
   );
 }
 
-export default function WaitingQueue({ todos }) {
+export default function WaitingQueue({ todos, papers = [] }) {
   const [open, setOpen] = useState(false);
   const [openFolds, setOpenFolds] = useState({});
   const [chip, setChip] = useState("All");
@@ -123,7 +137,7 @@ export default function WaitingQueue({ todos }) {
     <section className="st-card dash-card dash-queue" id="st-queue" aria-labelledby="st-queue-title">
       <div className="dash-card__head">
         <div className="dash-card__title">
-          <h2 id="st-queue-title" className="dash-h2">Needs you</h2>
+          <h2 id="st-queue-title" className="dash-h2">Pick up where you left off</h2>
           {/* The count of things, not of rows: four lines may stand for nine obligations. */}
           <span className="dash-count" aria-label={`${todos.length} item${todos.length === 1 ? "" : "s"}`}>{todos.length}</span>
         </div>
@@ -159,26 +173,28 @@ export default function WaitingQueue({ todos }) {
         )}
       </div>
 
-      {/* The end of a queue that fits: said, so the space under a short list reads as "that is all", not as missing rows. */}
-      {hidden === 0 ? (
-        <p className="dash-queue__end"><HiOutlineCheckCircle size={15} aria-hidden /> That&rsquo;s everything waiting on you.</p>
-      ) : null}
-
       {hidden > 0 ? (
         <button type="button" className="st-more dash-more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
           {open ? <>Show fewer <HiChevronUp size={14} aria-hidden /></> : <>Show {hidden} more <HiChevronDown size={14} aria-hidden /></>}
         </button>
+      ) : null}
+
+      {/* The end of a queue that fits: said, so the space under a short list
+          reads as "that is all", not as missing rows; and the way to the next
+          story, when there are papers to start one from. */}
+      {papers.length ? <StartFrom papers={papers} /> : hidden === 0 ? (
+        <p className="dash-queue__end"><HiOutlineCheckCircle size={15} aria-hidden /> That&rsquo;s everything waiting on you.</p>
       ) : null}
     </section>
   );
 }
 
 /** Nothing waiting: said plainly, with the way to start. */
-export function QueueClear({ draftable }) {
+export function QueueClear({ draftable, papers = [] }) {
   return (
     <section className="st-card dash-card dash-queue is-clear" id="st-queue" aria-labelledby="st-queue-title">
       <div className="dash-card__head">
-        <div className="dash-card__title"><h2 id="st-queue-title" className="dash-h2">Needs you</h2><span className="dash-count is-zero">0</span></div>
+        <div className="dash-card__title"><h2 id="st-queue-title" className="dash-h2">Pick up where you left off</h2><span className="dash-count is-zero">0</span></div>
       </div>
       <div className="dash-clear">
         <span className="dash-clear__icon" aria-hidden><HiOutlineCheckCircle size={26} /></span>
@@ -190,6 +206,7 @@ export function QueueClear({ draftable }) {
         </div>
         <Link href={draftable > 0 ? "/editorial/new" : "/papers"} className="dash-btn is-primary">{draftable > 0 ? "Start a story" : "See your papers"}</Link>
       </div>
+      <StartFrom papers={papers} />
     </section>
   );
 }

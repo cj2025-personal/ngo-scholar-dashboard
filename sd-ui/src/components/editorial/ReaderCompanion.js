@@ -2,34 +2,35 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FaPaperPlane, FaXmark } from "react-icons/fa6";
+import { HiOutlineBookOpen, HiOutlineChatBubbleLeftRight } from "react-icons/hi2";
 
+import TypedText from "@/components/kivyn/TypedText";
 import { getPublicStoryPassages, publicEvidenceUrl } from "@/lib/drafting";
 import { FACES, TONES, usePersona } from "@/lib/persona";
 import { askCompanion, forgetMe, getCompanionThread, getMyCompanionTurns, getSuggestions } from "@/lib/reader";
-import AgentFace from "./AgentFace";
+import AgentFace, { CompanionMark } from "./AgentFace";
 
 /**
  * The reading companion: a personal helper beside the article, shaped like
  * a messaging app rather than a dashboard.
  *
  * ── The shape ───────────────────────────────────────────────────────────────
- * One pane, four tabs along its foot, the way a messaging app is laid out:
+ * One pane, docked the height of the window, with two tabs along its top:
  *
  *   Chat       the conversation. The reader's question takes its place at
- *              once; the work arrives step by step under it; the answer comes
- *              once the Sentinel has read it back, labelled with where it
- *              came from and with citations that point back at the page.
- *   Ask        things worth asking about THIS story, written by a model that
- *              has read it at the reader's level, and the paragraph in focus.
- *   Progress   a reading checklist: paragraphs read, paragraphs asked about,
- *              a quiz taken, a source opened, another reading age tried.
- *              Kept in this browser only.
+ *              once; the work arrives step by step under it; the answer is
+ *              typed in once the Sentinel has read it back, labelled with
+ *              where it came from and with citations that point back at the
+ *              page. Things worth asking about THIS story, written by a
+ *              model that has read it at the reader's level, open the
+ *              conversation; each answer offers what to ask next.
  *   Sources    the passages of the paper the article rests on, with the ones
  *              the companion has cited marked, and the signed record to verify.
  *
- * The companion has a name and a face the reader chooses, and a line under
- * its name that says what it is doing right now. Tapping it opens what it
- * did, what it may and may not do, and the way to be forgotten.
+ * The companion has a name and a face the reader chooses (its own mark until
+ * they do), and a line under its name that says what it is doing right now.
+ * Tapping it opens what it did, the reader's checklist for this story, what
+ * it may and may not do, and the way to be forgotten.
  *
  * ── What it is not ──────────────────────────────────────────────────────────
  * It does not remember the reader between devices, run tasks while they are
@@ -40,13 +41,11 @@ import AgentFace from "./AgentFace";
  */
 
 const TABS = [
-  { key: "chat", label: "Chat", icon: "💬" },
-  { key: "ask", label: "Ask", icon: "✦" },
-  { key: "progress", label: "Progress", icon: "◎" },
-  { key: "sources", label: "Sources", icon: "§" },
+  { key: "chat", label: "Chat", icon: <HiOutlineChatBubbleLeftRight size={16} /> },
+  { key: "sources", label: "Sources", icon: <HiOutlineBookOpen size={16} /> },
 ];
 
-const DEFAULT_PERSONA = { name: "Reading companion", face: "?", tone: "navy" };
+const DEFAULT_PERSONA = { name: "Reading companion", face: "mark", tone: "navy" };
 
 const GROUNDING_LABEL = {
   story: { text: "From the story", cls: "is-story" },
@@ -110,7 +109,10 @@ function Steps({ steps }) {
   );
 }
 
-function Answer({ turn, onCite, onAsk, disabled }) {
+function Answer({ turn, onCite, onAsk, disabled, fresh = false }) {
+  /* An answer that just arrived is typed in; where it came from and what to
+     ask next follow once it is all on screen. */
+  const [said, setSaid] = useState(!fresh);
   const g = turn?.outcome === "refused" ? { text: "Couldn't answer safely", cls: "is-refused" }
     : turn?.outcome === "failed" ? { text: "Ran out of time", cls: "is-refused" }
     : GROUNDING_LABEL[turn?.answer?.grounding] || GROUNDING_LABEL.story;
@@ -119,7 +121,9 @@ function Answer({ turn, onCite, onAsk, disabled }) {
   const cites = [...blockIds, ...passageIds];
   return (
     <div className="rc-answer">
-      <p className="rc-answer-text">{turn.text}</p>
+      <TypedText as="p" className="rc-answer-text" text={turn.text} animate={fresh} onDone={() => setSaid(true)} />
+      {said ? (
+      <>
       <div className="rc-answer-foot">
         <span className={`rc-grounding ${g.cls}`}>{g.text}{turn?.answer?.term ? ` · “${turn.answer.term}”` : ""}</span>
         {cites.length ? (
@@ -138,6 +142,8 @@ function Answer({ turn, onCite, onAsk, disabled }) {
           {turn.answer.followUps.map((f) => <button key={f} type="button" className="rc-followup" disabled={disabled} onClick={() => onAsk(f)}>{f}</button>)}
         </div>
       ) : null}
+      </>
+      ) : null}
     </div>
   );
 }
@@ -151,7 +157,7 @@ function Elapsed() {
   return <span className="ag-elapsed">{seconds}s</span>;
 }
 
-function Turn({ turn, persona, onCite, onAsk, disabled, latest = false }) {
+function Turn({ turn, persona, onCite, onAsk, disabled, latest = false, fresh = false }) {
   return (
     <div className={`ag-turn rc-turn${turn.pending ? " is-pending" : ""}`}>
       <div className="ag-ask">{turn.question}</div>
@@ -166,7 +172,7 @@ function Turn({ turn, persona, onCite, onAsk, disabled, latest = false }) {
           ) : (
             <>
               <Steps steps={turn.steps} />
-              <Answer turn={turn} onCite={onCite} onAsk={latest ? onAsk : null} disabled={disabled} />
+              <Answer turn={turn} onCite={onCite} onAsk={latest ? onAsk : null} disabled={disabled} fresh={fresh} />
             </>
           )}
         </div>
@@ -175,8 +181,8 @@ function Turn({ turn, persona, onCite, onAsk, disabled, latest = false }) {
   );
 }
 
+/** The opening: who it is, and things worth asking about this story, grouped as the model wrote them. */
 function Intro({ persona, suggestions, onExample, disabled }) {
-  const first = (suggestions || []).flatMap((g) => g.questions).slice(0, 3);
   return (
     <div className="ag-reply rc-intro">
       <Face persona={persona} />
@@ -184,37 +190,24 @@ function Intro({ persona, suggestions, onExample, disabled }) {
         <p className="rc-intro-text">
           Hello, I&apos;m {persona.name}. I&apos;m here to help you read this story. Ask me about any part of it and I&apos;ll look it up in the article and the paper behind it, show you what I read, and tell you plainly if the story doesn&apos;t say. I never ask about you.
         </p>
-        <p className="rc-intro-hint">Tap a paragraph to ask about that one, or start with:</p>
-        {first.length ? <div className="ag-examples rc-examples">{first.map((e) => <button key={e} type="button" className="ag-example" disabled={disabled} onClick={() => onExample(e)}>{e}</button>)}</div> : null}
+        <p className="rc-intro-hint">Tap a paragraph to ask about that one, or start with one of these:</p>
+        {suggestions === null ? <p className="st-muted">Reading the story for questions…</p> : null}
+        {(suggestions || []).map((g) => (
+          <div key={g.title} className="rc-ask-group">
+            <p className="rc-ask-group-title">{g.title}</p>
+            <div className="ag-examples rc-examples">
+              {g.questions.slice(0, 3).map((q) => <button key={q} type="button" className="ag-example" disabled={disabled} onClick={() => onExample(q)}>{q}</button>)}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-/* ── Ask: things worth asking about this story ───────────────────────────── */
+/* ── The reader's checklist, behind the face ─────────────────────────────── */
 
-function AskTab({ suggestions, loading, onAsk, disabled }) {
-  return (
-    <div className="rc-tab rc-ask">
-      <p className="rc-tab-title">Things worth asking</p>
-      <p className="st-muted rc-tab-note">Written for you from this story, and the paragraph you tapped. Tap one and I&apos;ll look it up.</p>
-      {loading ? <p className="st-muted">Reading the story for questions…</p> : null}
-      {!loading && !(suggestions || []).length ? <p className="st-muted">Nothing to suggest just now. Ask me anything about the story.</p> : null}
-      {(suggestions || []).map((g) => (
-        <div key={g.title} className="rc-ask-group">
-          <p className="rc-ask-group-title">{g.title}</p>
-          <div className="ag-examples rc-examples">
-            {g.questions.map((q) => <button key={q} type="button" className="ag-example" disabled={disabled} onClick={() => onAsk(q)}>{q}</button>)}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── Progress: a reading checklist ───────────────────────────────────────── */
-
-function ProgressTab({ blocks, readSet, turns, marks, levelsAvailable }) {
+function ReadingChecklist({ blocks, readSet, turns, marks, levelsAvailable }) {
   const paragraphs = (blocks || []).filter((b) => b.type === "paragraph");
   const readCount = paragraphs.filter((p) => readSet.has(p.index)).length;
   const asked = new Set((turns || []).flatMap((t) => t.answer?.blockIds || []).map((id) => Number(id.slice(1))));
@@ -230,7 +223,7 @@ function ProgressTab({ blocks, readSet, turns, marks, levelsAvailable }) {
   ];
   const done = items.filter((i) => i.done).length;
   return (
-    <div className="rc-tab rc-progress">
+    <div className="rc-about-section rc-progress">
       <p className="rc-tab-title">Your reading, on this story</p>
       <p className="st-muted rc-tab-note">Kept in this browser only. Nobody else sees it.</p>
       <div className="rc-progress-bar" role="progressbar" aria-valuenow={done} aria-valuemin={0} aria-valuemax={items.length} aria-label="Reading checklist">
@@ -289,7 +282,7 @@ function SourcesTab({ slug, blocks, turns, onCite }) {
 
 /* ── behind the avatar: who it is, what it did, what it may do ───────────── */
 
-function AboutSheet({ persona, onPersona, onClose, onForgotten }) {
+function AboutSheet({ persona, onPersona, onClose, onForgotten, reading }) {
   const [state, setState] = useState({ loading: true, turns: [], keepDays: 30, error: "" });
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -321,12 +314,14 @@ function AboutSheet({ persona, onPersona, onClose, onForgotten }) {
       </div>
       <div className="rc-about-row">
         <span className="rc-about-label">Face</span>
-        <div className="rc-faces">{FACES.map((f) => <button key={f} type="button" className={`rc-face-pick${persona.face === f ? " on" : ""}`} aria-pressed={persona.face === f} onClick={() => onPersona({ ...persona, face: f })}>{f}</button>)}</div>
+        <div className="rc-faces">{FACES.map((f) => <button key={f} type="button" className={`rc-face-pick${persona.face === f ? " on" : ""}`} aria-pressed={persona.face === f} aria-label={f === "mark" ? "The companion's own mark" : undefined} onClick={() => onPersona({ ...persona, face: f })}>{f === "mark" ? <CompanionMark size={16} /> : f}</button>)}</div>
       </div>
       <div className="rc-about-row">
         <span className="rc-about-label">Colour</span>
         <div className="rc-tones">{TONES.map((t) => <button key={t} type="button" className={`rc-tone-pick is-${t}${persona.tone === t ? " on" : ""}`} aria-pressed={persona.tone === t} aria-label={t} onClick={() => onPersona({ ...persona, tone: t })} />)}</div>
       </div>
+
+      {reading}
 
       <div className="rc-about-section">
         <p className="rc-tab-title">What {persona.name} may do</p>
@@ -396,6 +391,8 @@ export default function ReaderCompanion({ slug, level = null, levelsAvailable = 
   const [question, setQuestion] = useState("");
   const [error, setError] = useState("");
   const [useFocus, setUseFocus] = useState(true);
+  /* The answers that arrived while the reader watched: these are typed in. */
+  const [freshIds, setFreshIds] = useState(() => new Set());
   const threadRef = useRef(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
@@ -463,11 +460,12 @@ export default function ReaderCompanion({ slug, level = null, levelsAvailable = 
     setPending(null);
     if (r.aborted) return;
     if (!r.ok) {
-      if (r.turn) setTurns((cur) => [...(cur || []), r.turn]);
+      if (r.turn) { setFreshIds((cur) => new Set(cur).add(r.turn.id)); setTurns((cur) => [...(cur || []), r.turn]); }
       else setError(r.error);
       if (r.status !== 429) setQuestion(ask);
       return;
     }
+    setFreshIds((cur) => new Set(cur).add(r.data.turn.id));
     setTurns((cur) => [...(cur || []), r.data.turn]);
     if (r.data.remaining !== null) setRemaining(r.data.remaining);
     inputRef.current?.focus();
@@ -501,15 +499,30 @@ export default function ReaderCompanion({ slug, level = null, levelsAvailable = 
         </div>
 
         {about ? (
-          <AboutSheet persona={persona} onPersona={setPersona} onClose={() => setAbout(false)} onForgotten={() => { setTurns([]); setRemaining(null); }} />
+          <AboutSheet
+            persona={persona}
+            onPersona={setPersona}
+            onClose={() => setAbout(false)}
+            onForgotten={() => { setTurns([]); setRemaining(null); }}
+            reading={<ReadingChecklist blocks={blocks} readSet={readSet} turns={turns || []} marks={marks} levelsAvailable={levelsAvailable} />}
+          />
         ) : (
           <>
+            {/* The sections along the top, as in the studio's pane. */}
+            <div className="ws-tabs ws-tabs-top rc-tabs" role="tablist" aria-label="Companion sections">
+              {TABS.map((t) => (
+                <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`ws-tab rc-tab-btn${tab === t.key ? " on" : ""}`} onClick={() => setTab(t.key)}>
+                  <span className="ws-tab-ic" aria-hidden>{t.icon}</span>
+                  <span>{t.label}</span>
+                </button>
+              ))}
+            </div>
             {tab === "chat" ? (
               <>
                 <div className="ag-thread rc-thread" ref={threadRef}>
                   {turns === null ? <p className="st-muted">Loading…</p> : null}
-                  {turns !== null && turns.length === 0 ? <Intro persona={persona} suggestions={suggestions.groups} onExample={send} disabled={busy || capped} /> : null}
-                  {(turns || []).map((t, i) => <Turn key={t.id} turn={t} persona={persona} onCite={onCite} onAsk={send} disabled={busy || capped} latest={i === turns.length - 1 && !pending} />)}
+                  {turns !== null && turns.length === 0 ? <Intro persona={persona} suggestions={suggestions.key === suggestKey ? suggestions.groups : null} onExample={send} disabled={busy || capped} /> : null}
+                  {(turns || []).map((t, i) => <Turn key={t.id} turn={t} persona={persona} onCite={onCite} onAsk={send} disabled={busy || capped} latest={i === turns.length - 1 && !pending} fresh={freshIds.has(t.id)} />)}
                   {pending ? <Turn turn={pending} persona={persona} /> : null}
                   {error ? <p className="sc-write-msg is-error">{error}</p> : null}
                 </div>
@@ -528,24 +541,12 @@ export default function ReaderCompanion({ slug, level = null, levelsAvailable = 
                     <button type="submit" className="sc-write-publish ag-send" disabled={busy || capped || !question.trim()} aria-label="Send"><FaPaperPlane size={12} aria-hidden /></button>
                   </div>
                   <div className="ag-hint">
-                    <span>Answers come from this story and its paper, checked before you see them.</span>
-                    {remaining !== null ? <span>{remaining} left today</span> : null}
+                    <span>Answers come from this story and its paper, checked before you see them{remaining !== null ? ` · ${remaining} question${remaining === 1 ? "" : "s"} left today` : ""}.</span>
                   </div>
                 </form>
               </>
             ) : null}
-            {tab === "ask" ? <AskTab suggestions={suggestions.key === suggestKey ? suggestions.groups : null} loading={suggestions.key !== suggestKey} onAsk={send} disabled={busy || capped} /> : null}
-            {tab === "progress" ? <ProgressTab blocks={blocks} readSet={readSet} turns={turns || []} marks={marks} levelsAvailable={levelsAvailable} /> : null}
             {tab === "sources" ? <SourcesTab slug={slug} blocks={blocks} turns={turns || []} onCite={onCite} /> : null}
-
-            <nav className="rc-tabs" aria-label="Companion sections">
-              {TABS.map((t) => (
-                <button key={t.key} type="button" className={`rc-tab-btn${tab === t.key ? " on" : ""}`} aria-current={tab === t.key ? "page" : undefined} onClick={() => setTab(t.key)}>
-                  <span className="rc-tab-ic" aria-hidden>{t.icon}</span>
-                  <span>{t.label}</span>
-                </button>
-              ))}
-            </nav>
           </>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { Inter } from "next/font/google";
 import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
+import "./redesign.css";
 
 /*
  * Proj Arch type system: Inter, for every surface of the product.

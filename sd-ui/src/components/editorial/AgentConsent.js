@@ -30,11 +30,12 @@ export default function AgentConsent({ version, busy = false, error = "", onAgre
     <div className="pc-scrim" role="dialog" aria-modal="true" aria-labelledby="ac-title">
       <div className="pc-modal ac-modal">
         <span className="sc-kicker">Before {AGENT_NAME} writes with you</span>
-        <h2 id="ac-title" className="ac-title">It drafts from your papers, under your name. Here is what that means.</h2>
+        <h2 id="ac-title" className="ac-title">It drafts with you, under your name. Here is what that means.</h2>
         <ol className="ac-terms">
-          <li><b>It writes from your paper, and only that.</b> Every paragraph is checked against the passages it cites. Anything that goes beyond the paper is marked as such and checked to follow from it.</li>
+          <li><b>From one of your papers, it writes from that paper.</b> Every paragraph is checked against the passages it cites. Anything that goes beyond the paper is marked as such and checked to follow from it.</li>
+          <li><b>Or from your brief alone, if you choose.</b> Then none of your papers is used: the article is your own account, every specific it names is listed for you to verify before it can be published, and readers are told it is not drawn from your research.</li>
           <li><b>It publishes nothing.</b> Outlines, drafts and edits wait for you. What goes out is your decision, under your byline, and your responsibility as its author.</li>
-          <li><b>Your paper&rsquo;s text and your instructions go to the model provider</b> to write with, and are kept as the record behind the story &mdash; the evidence a reader can open.</li>
+          <li><b>Your paper&rsquo;s text, if any, and your instructions go to the model provider</b> to write with, and are kept as the record behind the story &mdash; the evidence a reader can open.</li>
           <li><b>It can be wrong.</b> Read every line before you publish, as you would a co-author&rsquo;s draft. Illustrations it generates are marked as generated.</li>
         </ol>
         {error ? <p className="sc-write-msg is-error">{error}</p> : null}

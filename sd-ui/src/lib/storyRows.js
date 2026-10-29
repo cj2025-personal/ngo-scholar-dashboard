@@ -50,6 +50,22 @@ function timeAgo(value, now) {
 }
 
 /**
+ * What a story needs next, as the one action its row leads with. The record
+ * moving under it comes first; then levels waiting for approval; then what
+ * its status asks for.
+ */
+function nextFor(s, group) {
+  const href = `/editorial/${s.id}`;
+  if (s.record?.alerts && !s.record?.acknowledgedAt) return { label: "Deal with it", href, tone: "grave", needsYou: true };
+  const waiting = s.levels?.waiting || 0;
+  if (waiting > 0) return { label: `Approve ${waiting} level${waiting === 1 ? "" : "s"}`, href, tone: "primary", needsYou: true };
+  if (group === "review") return { label: "Review the draft", href, tone: "primary", needsYou: true };
+  if (group === "draft") return { label: "Keep writing", href, tone: "" };
+  if (group === "published" && s.slug) return { label: "Read it live", href: `/stories/${s.slug}`, tone: "", live: true };
+  return { label: "Open", href, tone: "" };
+}
+
+/**
  * @param {object[]} stories  the API's story summaries
  * @param {{ now?: number }} [opts]
  */
@@ -67,6 +83,8 @@ export function buildStoryRows(stories, { now = Date.now() } = {}) {
       liveHref: group === "published" && s.slug ? `/stories/${s.slug}` : null,
       title: s.title || "Untitled story",
       from: s.provenance?.title || null,
+      /* Written from the scholar's brief alone, with no paper behind it. */
+      fromBrief: s.provenance?.origin === "brief",
       minutes: s.wordCount > 0 ? s.readingTimeMinutes || null : null,
       cover: s.coverImage?.url ? `${IMG_BASE}${s.coverImage.url}` : null,
       group,
@@ -76,9 +94,13 @@ export function buildStoryRows(stories, { now = Date.now() } = {}) {
       audience: DRAFT_AUDIENCES.find((a) => a.value === s.provenance?.audience)?.label || null,
       levelsWritten: s.levels?.written || 0,
       levelsWaiting: s.levels?.waiting || 0,
+      /* Each other reading age, live or waiting on the scholar. */
+      levelBands: (s.levels?.bands || []).map((b) => ({ audience: b.audience, label: DRAFT_AUDIENCES.find((a) => a.value === b.audience)?.label || b.label || b.audience, approved: Boolean(b.approved), stale: Boolean(b.stale) })),
       reads: s.reads || null,
       questions: s.questions || null,
       updated,
+      /* What it needs next, in the scholar's words: the row's one main action. */
+      next: nextFor(s, group),
       /* Raw values for sorting in the browser. */
       updatedTs: new Date(s.updatedAt || s.createdAt || 0).getTime() || 0,
     };

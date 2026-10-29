@@ -125,7 +125,7 @@ function buildJudgePrompt({ paragraphs, passages, audience = null }) {
   return [
     ...(aud && aud.young ? [`THE READER: ${aud.readers}. Judge suitability for a child as well.`, ""] : []),
     "PASSAGES FROM THE PAPER:",
-    ...passages.map((p) => `[${p.id}] ${p.text}`),
+    ...(passages.length ? passages.map((p) => `[${p.id}] ${p.text}`) : ["(none: there is no paper behind this article; the author wrote it from their brief alone)"]),
     "",
     "PARAGRAPHS OF THE AUTHOR'S OWN CONTEXT:",
     ...paragraphs.map((p) => `(${p.index}) ${p.text}`),

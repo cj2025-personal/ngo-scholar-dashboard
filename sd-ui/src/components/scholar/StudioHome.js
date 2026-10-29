@@ -4,7 +4,6 @@ import { HiOutlineArrowRight, HiOutlineArrowUpTray, HiOutlineCheck } from "react
 import Kivyn from "@/components/kivyn/Kivyn";
 import WriteWithKivyn from "@/components/kivyn/WriteWithKivyn";
 import StoriesTable from "@/components/scholar/StoriesTable";
-import Tile from "@/components/scholar/Tile";
 import WaitingQueue, { QueueClear } from "@/components/scholar/WaitingQueue";
 import { buildStoryRows } from "@/lib/storyRows";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
@@ -13,16 +12,16 @@ import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
  * Studio: the scholar's dashboard.
  *
  * ── What is on it, in the order the eye takes it ───────────────────────────
- *   1. Five numbers, each with a picture of itself: what needs you, papers
- *      you can draft from, what is published, reads, and Legacy.
- *   2. Needs you — the ranked queue, as rows to act on — beside reads over
- *      time. On a laptop these two are what shows without scrolling.
- *   3. The pipeline: every piece of work, from a paper to a published story,
- *      counted at the stage it is in.
- *   4. Your stories as a table, beside Legacy and your papers.
+ *   1. Five numbers in one slim strip: what needs you, papers you can draft
+ *      from, what is published, reads, and Legacy. The space goes to the work.
+ *   2. Pick up where you left off — the ranked queue, as rows to act on, with
+ *      the papers you could start from under it — beside your papers and
+ *      Legacy, each in a few lines. On a laptop this is what shows without
+ *      scrolling.
+ *   3. The pipeline beside reads over time, then your stories as a table.
  *
  * Writing starts from one door, "Write a story with Kivyn". Here it is a
- * nudge at the head of the page, over the Legacy number, and the bar leaves
+ * nudge at the head of the page, beside the greeting, and the bar leaves
  * its own copy out; on every other page it is in the bar. Who you are is the
  * bar's account menu and Profile, so this page does not repeat that either.
  *
@@ -110,7 +109,7 @@ function buildTodos({ jobs, all, draftable, episodes, standing, inventory }) {
      and the list of obligations is not somewhere to sample from. The display
      cap in the queue keeps the card short and hides nothing permanently. */
   for (const s of all.filter((st) => st.status === "draft" && st.provenance)) {
-    todos.push({ tone: "warn", kind: "Draft", group: "review", lead: "A draft is waiting for your review", title: shortTitle(s.title, 64), meta: `Drafted from ${s.provenance?.title ? `“${shortTitle(s.provenance.title, 44)}”` : "your paper"} · ${timeAgo(s.updatedAt)}`, detail: `“${shortTitle(s.title)}” · drafted from ${s.provenance?.title ? `“${shortTitle(s.provenance.title, 50)}”` : "your paper"} · ${timeAgo(s.updatedAt)}`, href: `/editorial/${s.id}`, cta: "Review", remove: { kind: "story", storyId: s.id, title: s.title } });
+    todos.push({ tone: "warn", kind: "Draft", group: "review", lead: "A draft is waiting for your review", title: shortTitle(s.title, 64), meta: `Drafted from ${s.provenance?.title ? `“${shortTitle(s.provenance.title, 44)}”` : s.provenance?.origin === "brief" ? "your brief" : "your paper"} · ${timeAgo(s.updatedAt)}`, detail: `“${shortTitle(s.title)}” · drafted from ${s.provenance?.title ? `“${shortTitle(s.provenance.title, 50)}”` : s.provenance?.origin === "brief" ? "your brief, no paper" : "your paper"} · ${timeAgo(s.updatedAt)}`, href: `/editorial/${s.id}`, cta: "Review", remove: { kind: "story", storyId: s.id, title: s.title } });
   }
   /* One paper not yet drafted, as an invitation rather than an obligation. */
   for (const p of draftable.filter((d) => !all.some((s) => s.provenance?.sourceId === d.id)).slice(0, 1)) {
@@ -301,38 +300,32 @@ function LegacyCard({ standing }) {
   if (!standing) return null;
   const held = standing.standing === "legacy";
   return (
-    <section className="st-card dash-card dash-side-card" aria-labelledby="dash-legacy-title">
-      <div className="dash-card__head">
-        <h3 id="dash-legacy-title" className="dash-h3">Legacy</h3>
-        <span className={`dash-pill ${held ? "is-ok" : standing.nextStep ? "is-warn" : "is-info"}`}>{held ? (standing.grandfathered ? "Held" : "Met") : standing.nextStep ? "One mark left" : "In progress"}</span>
+    <section className="st-card dash-card dash-side-card dash-legacy" aria-labelledby="dash-legacy-title">
+      <Ring part={standing.met} whole={standing.total} size={44} />
+      <div className="dash-legacy__body">
+        <h3 id="dash-legacy-title" className="dash-h3">Legacy · {standing.met} of {standing.total} marks met</h3>
+        <p className="dash-muted">
+          {held
+            ? standing.grandfathered
+              ? "Held either way: you were named to Legacy before these marks existed."
+              : "Every mark met. Drafting from your research is open."
+            : standing.nextStep
+              ? `One mark left: ${standing.nextStep.title}.`
+              : "Legacy opens drafting from your own research."}
+        </p>
+        {standing.gates?.length ? (
+          <ul className="dash-gates">
+            {standing.gates.map((g) => (
+              <li key={g.key} className={g.met ? "is-met" : ""} title={g.title}>
+                <span className="dash-gate__mark" aria-hidden>{g.met ? <HiOutlineCheck size={11} /> : null}</span>
+                <span>{g.title}</span>
+                <span className="sr-only">{g.met ? "met" : "not met"}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <Link href="/standing" className="dash-link">Where you stand <HiOutlineArrowRight size={12} aria-hidden /></Link>
       </div>
-      <div className="dash-legacy-sum">
-        <Ring part={standing.met} whole={standing.total} size={44} />
-        <div>
-          <p className="dash-legacy-count">{standing.met} of {standing.total} marks met</p>
-          <p className="dash-muted">
-            {held
-              ? standing.grandfathered
-                ? "You were named to Legacy before these marks existed, and you keep it either way. They are what Legacy asks of a scholar now."
-                : "You have met every mark. Drafting from your research is open."
-              : standing.nextStep
-                ? `One mark left: ${standing.nextStep.title}.`
-                : "Legacy opens drafting from your own research."}
-          </p>
-        </div>
-      </div>
-      {standing.gates?.length ? (
-        <ul className="dash-gates">
-          {standing.gates.map((g) => (
-            <li key={g.key} className={g.met ? "is-met" : ""}>
-              <span className="dash-gate__mark" aria-hidden>{g.met ? <HiOutlineCheck size={12} /> : null}</span>
-              <span>{g.title}</span>
-              <span className="sr-only">{g.met ? "met" : "not met"}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <Link href="/standing" className="dash-link">Where you stand <HiOutlineArrowRight size={12} aria-hidden /></Link>
     </section>
   );
 }
@@ -345,7 +338,7 @@ function PapersCard({ counts, inventory }) {
   ];
   const sum = parts.reduce((a, p) => a + p.n, 0);
   return (
-    <section className="st-card dash-card dash-side-card" aria-labelledby="dash-papers-title">
+    <section className="st-card dash-card dash-side-card dash-papers" aria-labelledby="dash-papers-title">
       <div className="dash-card__head">
         <h3 id="dash-papers-title" className="dash-h3">Your papers</h3>
         <span className="dash-faint">{plural(sum, "paper")}</span>
@@ -353,19 +346,31 @@ function PapersCard({ counts, inventory }) {
       <div className="dash-split" aria-hidden>
         {parts.filter((p) => p.n > 0).map((p) => <i key={p.key} className={`is-${p.key}`} style={{ flexGrow: p.n }} />)}
       </div>
+      {/* Only what there is: "0 being checked" is not a thing to read. */}
       <ul className="dash-legend">
-        {parts.map((p) => <li key={p.key}><i className={`is-${p.key}`} aria-hidden /><b>{p.n}</b> {p.label}</li>)}
+        {parts.filter((p) => p.n > 0 || p.key === "ready").map((p) => <li key={p.key}><i className={`is-${p.key}`} aria-hidden /><b>{p.n}</b> {p.label}</li>)}
       </ul>
-      {counts.citable > 0 && counts.draftable > 0 ? (
-        <p className="dash-muted">Adding a version you hold the rights to lets {AGENT_NAME} build on a quotable paper.</p>
-      ) : inventory?.nudge ? (
-        <p className="dash-muted">{inventory.nudge}</p>
-      ) : null}
+      {counts.citable > 0 && counts.draftable > 0 ? null : inventory?.nudge ? <p className="dash-muted">{inventory.nudge}</p> : null}
       <div className="dash-links">
         <Link href="/papers" className="dash-link">All papers <HiOutlineArrowRight size={12} aria-hidden /></Link>
         <a href={DOCS_PORTAL_URL} target="_blank" rel="noreferrer" className="dash-link"><HiOutlineArrowUpTray size={12} aria-hidden /> Add a paper</a>
       </div>
     </section>
+  );
+}
+
+/* ── The numbers, in one strip ───────────────────────────────────────────── */
+
+/** One number: what is counted, the count, and what it means. The whole of it links to where it comes from. */
+function Stat({ label, value, unit = null, sub = "", href, tone = "" }) {
+  return (
+    <Link href={href} className={`dash-stat${tone ? ` is-${tone}` : ""}`}>
+      <span className="dash-stat__label">{label}</span>
+      <span className="dash-stat__row">
+        <span className="dash-stat__value">{value}{unit ? <small>{unit}</small> : null}</span>
+        {sub ? <span className="dash-stat__sub">{sub}</span> : null}
+      </span>
+    </Link>
   );
 }
 
@@ -442,6 +447,9 @@ export default function StudioHome({ me, sources, jobs, stories, episodes, reads
   ];
 
   const rows = buildStoryRows(all);
+  /* The papers a story could start from, under the queue: the ones not yet written up first. */
+  const written = (p) => Number(all.some((s) => s.provenance?.sourceId === p.id));
+  const startable = [...draftable].sort((a, b) => written(a) - written(b)).slice(0, 3);
 
   return (
     <div className="dash">
@@ -453,27 +461,12 @@ export default function StudioHome({ me, sources, jobs, stories, episodes, reads
         <WriteWithKivyn variant="nudge" />
       </header>
 
-      <section className="dash-kpis" aria-label="At a glance">
-        <Tile label="Needs you" value={todos.length.toLocaleString()} sub={needsSub} href="#st-queue" className={todos.length ? "" : "is-calm"}>
-          {byTone.length ? (
-            <span className="dash-tonebar" aria-hidden>{byTone.map((x) => <i key={x.tone} className={`is-${x.tone}`} style={{ flexGrow: x.n }} />)}</span>
-          ) : null}
-        </Tile>
-        <Tile label="Papers ready" value={(counts.draftable || 0).toLocaleString()} sub={counts.pending ? `to draft from · ${counts.pending.toLocaleString()} being checked` : counts.citable ? `to draft from · ${counts.citable.toLocaleString()} quotable only` : "to draft from"} href="/papers">
-          <span className="dash-blocks" aria-hidden>
-            {Array.from({ length: Math.min(6, counts.draftable || 0) }).map((_, i) => <i key={`d${i}`} />)}
-            {Array.from({ length: Math.min(3, counts.pending || 0) }).map((_, i) => <i key={`p${i}`} className="is-pending" />)}
-          </span>
-        </Tile>
-        <Tile label="Published" value={published.length.toLocaleString()} sub={published.length === 1 ? "story live for readers" : "stories live for readers"} href="/editorial">
-          <span className="dash-pill is-info">{scheduled.length} scheduled</span>
-        </Tile>
-        <Tile label="Reads" value={readsTotal.toLocaleString()} sub={readsTotal ? `${readsRecent.toLocaleString()} this week` : published.length ? "not read yet" : "once a story is published"} href="#dash-reads">
-          {reads?.series?.length ? <Spark series={reads.series} /> : null}
-        </Tile>
-        <Tile label="Legacy" value={standing ? standing.met : "—"} unit={standing ? ` / ${standing.total}` : null} sub={!standing ? "standing unavailable" : standing.standing === "legacy" ? "marks met · Legacy held" : standing.nextStep ? "marks met · one left" : "marks met"} href="/standing">
-          {standing ? <Ring part={standing.met} whole={standing.total} /> : null}
-        </Tile>
+      <section className="st-card dash-stats" aria-label="At a glance">
+        <Stat label="Needs you" value={todos.length.toLocaleString()} sub={needsSub} href="#st-queue" tone={todos.some((t) => t.tone === "grave") ? "grave" : todos.length ? "warn" : ""} />
+        <Stat label="Papers ready" value={(counts.draftable || 0).toLocaleString()} sub={counts.pending ? `${counts.pending.toLocaleString()} being checked` : counts.citable ? `${counts.citable.toLocaleString()} quotable only` : "to draft from"} href="/papers" />
+        <Stat label="Published" value={published.length.toLocaleString()} sub={`${scheduled.length} scheduled`} href="/editorial?tab=published" />
+        <Stat label="Reads" value={readsTotal.toLocaleString()} sub={readsTotal ? `${readsRecent.toLocaleString()} this week` : published.length ? "not read yet" : "once a story is out"} href="#dash-reads" />
+        <Stat label="Legacy" value={standing ? standing.met : "—"} unit={standing ? ` / ${standing.total}` : null} sub={!standing ? "unavailable" : standing.standing === "legacy" ? "marks met · held" : standing.nextStep ? "marks met · one left" : "marks met"} href="/standing" />
       </section>
 
       {firstVisit ? (
@@ -487,19 +480,19 @@ export default function StudioHome({ me, sources, jobs, stories, episodes, reads
       ) : (
         <>
           <section className="dash-grid is-top">
-            <div className="dash-col-main">{todos.length ? <WaitingQueue todos={todos} /> : <QueueClear draftable={counts.draftable || 0} />}</div>
+            <div className="dash-col-main">{todos.length ? <WaitingQueue todos={todos} papers={startable} /> : <QueueClear draftable={counts.draftable || 0} papers={startable} />}</div>
+            <aside className="dash-col-side st-rail">
+              <PapersCard counts={counts} inventory={inventory} />
+              <LegacyCard standing={standing} />
+            </aside>
+          </section>
+
+          <section className="dash-grid">
+            <div className="dash-col-main"><Pipeline stages={stages} /></div>
             <div className="dash-col-side"><ReadsCard reads={reads} range={range} ranges={ranges} publishedCount={published.length + scheduled.length} /></div>
           </section>
 
-          <Pipeline stages={stages} />
-
-          <section className="dash-grid">
-            <div className="dash-col-main"><StoriesTable rows={rows} total={all.length} /></div>
-            <aside className="dash-col-side st-rail">
-              <LegacyCard standing={standing} />
-              <PapersCard counts={counts} inventory={inventory} />
-            </aside>
-          </section>
+          <StoriesTable rows={rows} total={all.length} />
         </>
       )}
     </div>

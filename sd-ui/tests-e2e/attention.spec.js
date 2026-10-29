@@ -108,7 +108,9 @@ test("a flagged paragraph can be taken on as the author's own or rewritten and j
 
   await page.reload();
   await expect(page.locator(".block-row").first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".sc-write-attention")).toContainText("2 paragraphs");
+  /* What needs the scholar is counted on the Checks tab, beside the paragraph it is about. */
+  const checksBadge = page.getByRole("tab", { name: /Checks/ }).locator(".ws-tab-badge");
+  await expect(checksBadge).toHaveText("2");
 
   /* The publish check holds the story and sends the scholar to the paragraph. */
   const publishCheck = page.getByRole("button", { name: "Publish check" });
@@ -117,11 +119,10 @@ test("a flagged paragraph can be taken on as the author's own or rewritten and j
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("still need a look");
   await expect(dialog.getByRole("button", { name: "Publish now" })).toBeDisabled();
-  /* One "Go to it" per flagged paragraph, so this is two buttons while two
-     are flagged and one after the first is resolved. Taking the first is
+  /* "Go to paragraph N" for what holds publishing. Taking the first is
      what a scholar does; naming it keeps the locator unambiguous either
      way rather than passing only while the count happens to be one. */
-  await dialog.getByRole("button", { name: "Go to it" }).first().click();
+  await dialog.getByRole("button", { name: /^Go to paragraph \d+$/ }).first().click();
 
   /* One: the author takes it on. It stops being a claim about the paper. */
   const resolve = page.locator(".sr-resolve");
@@ -130,7 +131,7 @@ test("a flagged paragraph can be taken on as the author's own or rewritten and j
   await expect(resolve.getByRole("button", { name: "Mark as my own view" })).toBeVisible();
   await resolve.getByRole("button", { name: "Mark as my own view" }).click();
   await expect(page.locator(".block-row .block-chip.is-own")).toHaveCount(1);
-  await expect(page.locator(".sc-write-attention")).toContainText("1 paragraph");
+  await expect(checksBadge).toHaveText("1");
   /* "Saved" is the moment; a version number is that moment settled. Either
      means the edit reached the server, and asserting only the first races
      the indicator — the same tolerant form the first wait uses. */
@@ -139,11 +140,10 @@ test("a flagged paragraph can be taken on as the author's own or rewritten and j
   /* One is still flagged, so the gate is still shut. */
   await publishCheck.click();
   await expect(dialog.getByRole("button", { name: "Publish now" })).toBeDisabled();
-  /* One "Go to it" per flagged paragraph, so this is two buttons while two
-     are flagged and one after the first is resolved. Taking the first is
+  /* "Go to paragraph N" for what holds publishing. Taking the first is
      what a scholar does; naming it keeps the locator unambiguous either
      way rather than passing only while the count happens to be one. */
-  await dialog.getByRole("button", { name: "Go to it" }).first().click();
+  await dialog.getByRole("button", { name: /^Go to paragraph \d+$/ }).first().click();
 
   /* Two: the author puts the paragraph right and asks for a fresh verdict.
      The stored verdict is about the old words; this is what earns a new one. */
@@ -161,7 +161,7 @@ test("a flagged paragraph can be taken on as the author's own or rewritten and j
   await expect(page.locator(".sc-write-msg")).toContainText("Checked again", { timeout: 60_000 });
 
   /* Both dealt with: nothing needs attention and the gate opens. */
-  await expect(page.locator(".sc-write-attention")).toHaveCount(0, { timeout: 20_000 });
+  await expect(checksBadge).toHaveCount(0, { timeout: 20_000 });
   await expect(publishCheck).toBeEnabled({ timeout: 20_000 });
   await publishCheck.click();
   await expect(dialog).toContainText("marked as your view");

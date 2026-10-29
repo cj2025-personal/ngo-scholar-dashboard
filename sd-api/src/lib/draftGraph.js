@@ -51,6 +51,7 @@ const { StateGraph, Annotation, START, END } = require("@langchain/langgraph");
 
 const composer = require("./draftComposer");
 const plan = require("./draftPlan");
+const { isBriefOnly } = require("./briefSource");
 const fidelity = require("./fidelity");
 const reach = require("./reach");
 const context = require("./context");
@@ -124,12 +125,17 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
   const progress = (step, message, detail) => Promise.resolve(onProgress({ step, message, detail }));
   /* The system instruction depends on whose account this is, so it is built
      per run rather than once per process. */
-  const systemFor = (s) => composer.buildSystemInstruction({ voice: s.voice, scholarName: s.scholar?.name || null });
+  const systemFor = (s) => composer.buildSystemInstruction({ voice: s.voice, scholarName: s.scholar?.name || null, briefOnly: isBriefOnly(s.source) });
   const authorVoiceOf = (s) => composer.normaliseVoice(s.voice) === composer.VOICE.AUTHOR;
 
   async function pick_source(s) {
     if (!s.source || s.source.use !== USE.DRAFTABLE) {
       throw new Error(`This source can't be drafted from: ${s.source?.reason || "not draftable"}.`);
+    }
+    /* From the brief alone: no paper, so nothing to read and nothing set aside. */
+    if (isBriefOnly(s.source)) {
+      await progress("pick_source", "Working from your brief alone — none of your papers.", { passages: 0, truncated: false, setAside: 0 });
+      return { passages: [], warnings: [] };
     }
     /* The split is the paper's; the source guard's verdicts, taken before
        the job was queued, say which passages no model may read. Their ids
@@ -155,14 +161,17 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
       return { outline: s.outline };
     }
     await progress("plan_outline", "Planning the article's sections…");
-    const prompt = plan.buildOutlinePrompt({
-      scholar: s.scholar, source: s.source, passages: s.passages, truncated: s.prepared.truncated, audience: s.audience, brief: s.brief || null, voice: s.voice,
-    });
+    const briefOnly = isBriefOnly(s.source);
+    const prompt = briefOnly
+      ? plan.buildBriefOutlinePrompt({ scholar: s.scholar, audience: s.audience, brief: s.brief || "", voice: s.voice })
+      : plan.buildOutlinePrompt({
+        scholar: s.scholar, source: s.source, passages: s.passages, truncated: s.prepared.truncated, audience: s.audience, brief: s.brief || null, voice: s.voice,
+      });
     const r = await generate({ prompt, systemInstruction: systemFor(s), responseSchema: plan.OUTLINE_SCHEMA, temperature: 0.3, maxOutputTokens: 2048 });
-    const { dropped, ...outline } = plan.parseOutline(r.text, s.passages, { allowExtension: Boolean(s.brief) });
+    const { dropped, ...outline } = briefOnly ? plan.parseBriefOutline(r.text) : plan.parseOutline(r.text, s.passages, { allowExtension: Boolean(s.brief) });
     const extensions = outline.beats.filter((b) => b.kind === plan.BEAT_KIND.EXTENSION).length;
     const contexts = outline.beats.filter((b) => b.kind === plan.BEAT_KIND.CONTEXT).length;
-    await progress("plan_outline", `Outlined ${outline.beats.length} sections: ${outline.beats.map((b) => b.heading).join(" · ")}` + (extensions ? ` (${extensions} beyond the paper)` : "") + (contexts ? ` (${contexts} of your own context)` : ""), {
+    await progress("plan_outline", `Outlined ${outline.beats.length} sections: ${outline.beats.map((b) => b.heading).join(" · ")}` + (extensions ? ` (${extensions} beyond the paper)` : "") + (contexts && !briefOnly ? ` (${contexts} of your own context)` : ""), {
       beats: outline.beats.length,
       extensions,
       contexts,
@@ -174,7 +183,9 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
     if (outline.coverage && outline.coverage.met !== plan.COVERAGE.FULL) {
       warnings.push(
         outline.coverage.met === plan.COVERAGE.NONE
-          ? `The paper cannot carry what the brief asked for${outline.coverage.note ? `: ${outline.coverage.note}` : "."} This plan reports the paper instead.`
+          ? briefOnly
+            ? `What the brief asked for could not be planned${outline.coverage.note ? `: ${outline.coverage.note}` : "."}`
+            : `The paper cannot carry what the brief asked for${outline.coverage.note ? `: ${outline.coverage.note}` : "."} This plan reports the paper instead.`
           : `Part of the brief was left out${outline.coverage.note ? `: ${outline.coverage.note}` : "."}`,
       );
     }
@@ -190,7 +201,8 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
     for (const beat of s.outline.beats) {
       const extension = beat.kind === plan.BEAT_KIND.EXTENSION;
       const contextBeat = beat.kind === plan.BEAT_KIND.CONTEXT;
-      await progress("draft_blocks", `Drafting section ${beat.index} of ${total}: ${beat.heading}` + (extension ? " (beyond the paper)" : contextBeat ? " (your own context)" : ""), { index: beat.index, total, kind: beat.kind || plan.BEAT_KIND.PAPER });
+      const briefOnly = isBriefOnly(s.source);
+      await progress("draft_blocks", `Drafting section ${beat.index} of ${total}: ${beat.heading}` + (extension ? " (beyond the paper)" : contextBeat && !briefOnly ? " (your own context)" : ""), { index: beat.index, total, kind: beat.kind || plan.BEAT_KIND.PAPER });
       let fidelityNote = null;
       let reachNote = null;
       let contextNote = null;
@@ -231,7 +243,7 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
           const prompt = plan.buildSectionPrompt({
             scholar: s.scholar, beat, passages: s.passages, outline: s.outline, audience: s.audience, voice: s.voice,
             brief: s.brief || null, strictVoice, strictSelf, voiceNote, readabilityNote: s.readabilityNote || null, fidelityNote, reachNote, contextNote,
-            previously,
+            previously, briefOnly,
           });
           const r = await generate({ prompt, systemInstruction: systemFor(s), responseSchema: plan.SECTION_SCHEMA, temperature: strictVoice || strictSelf ? 0.2 : 0.4, maxOutputTokens: 2048 });
           calls.push({ step: "draft_blocks", beat: beat.index, usage: r.usage || null, model: r.modelVersion || null, strictVoice, strictSelf, round });
@@ -283,7 +295,7 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
 
         /* Judge: the paper's paragraphs for fidelity, the extension paragraphs
            for reach. Each judge sees only its own kind. */
-        await progress("judge_fidelity", `Checking section ${beat.index} of ${total} against the paper…`, { index: beat.index, total, round });
+        if (!briefOnly) await progress("judge_fidelity", `Checking section ${beat.index} of ${total} against the paper…`, { index: beat.index, total, round });
         const judgedF = await fidelity.judgeSection({ blocks: result.blocks, passages: s.passages, generate: judgeFidelity });
         if (judgedF.call) calls.push({ ...judgedF.call, beat: beat.index, round });
         let blocks = judgedF.blocks;
@@ -300,7 +312,7 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
         if (contextBeat) {
           /* The author's own context: judged for what it claims of the paper,
              and its specifics listed for the author to verify. */
-          await progress("judge_context", `Checking section ${beat.index} of ${total} for what it claims of the paper…`, { index: beat.index, total, round });
+          await progress("judge_context", briefOnly ? `Checking section ${beat.index} of ${total} for what you will need to verify…` : `Checking section ${beat.index} of ${total} for what it claims of the paper…`, { index: beat.index, total, round });
           const judgedC = await context.judgeSection({ blocks, passages: s.passages, audience: s.audience, generate: judgeContext });
           if (judgedC.call) calls.push({ ...judgedC.call, beat: beat.index, round });
           blocks = judgedC.blocks;
@@ -600,7 +612,8 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
         `${worldClaims.hits.map((h) => `"${h.sentence}" (block ${h.block})`).join("; ")}. Say what follows, not what is done.`,
       );
     }
-    const budget = checks.extensionBudget({ blocks: s.draft.bodyBlocks, maxBeyondPerPaper: L.maxBeyondPerPaper });
+    /* How much goes beyond the paper means nothing when there is no paper. */
+    const budget = isBriefOnly(s.source) ? { version: null, extension: 0, context: 0, paper: 0, ok: null, sentence: null } : checks.extensionBudget({ blocks: s.draft.bodyBlocks, maxBeyondPerPaper: L.maxBeyondPerPaper });
     if (budget.ok === false) warnings.push(budget.sentence);
 
     /* The author's own context: the claims the context judge found wearing
@@ -615,7 +628,9 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
     }
     const verifyItems = checks.verifyList({ blocks: s.draft.bodyBlocks });
     if (verifyItems.unverified) {
-      warnings.push(`${verifyItems.unverified} specific${verifyItems.unverified === 1 ? "" : "s"} in your own context ${verifyItems.unverified === 1 ? "is" : "are"} listed for you to verify in Checks before this can be published: ${verifyItems.items.filter((i) => !i.verified).slice(0, 6).map((i) => i.text).join(", ")}${verifyItems.unverified > 6 ? ", …" : ""}.`);
+      /* Named once each: the same term found in two paragraphs is one thing to check. */
+      const named = [...new Set(verifyItems.items.filter((i) => !i.verified).map((i) => i.text))];
+      warnings.push(`${verifyItems.unverified} specific${verifyItems.unverified === 1 ? "" : "s"} ${isBriefOnly(s.source) ? "in this article" : "in your own context"} ${verifyItems.unverified === 1 ? "is" : "are"} listed for you to verify in Checks before this can be published: ${named.slice(0, 6).join(", ")}${named.length > 6 ? ", …" : ""}.`);
     }
 
     /* Sections are drafted by separate calls, so nothing but this stops them
@@ -699,8 +714,28 @@ async function runOutlineOnly(input, deps) {
  * A kind is trusted from the client only as far as the proposal allowed it:
  * a section can be cut, not promoted to go beyond the paper.
  */
-function normaliseApprovedOutline(proposed, approved, passages) {
+function normaliseApprovedOutline(proposed, approved, passages, { briefOnly = false } = {}) {
   const known = new Set(passages.map((p) => p.id));
+  /* From the brief alone every section is the author's own and cites nothing. */
+  if (briefOnly) {
+    const beats = (Array.isArray(approved?.beats) ? approved.beats : proposed.beats)
+      .map((b, i) => ({
+        index: i + 1,
+        heading: composer.clampToSentence(b.heading, 140) || `Section ${i + 1}`,
+        goal: String(b.goal || "").replace(/\s+/g, " ").trim().slice(0, 300),
+        kind: plan.BEAT_KIND.CONTEXT,
+        headingEdited: !(proposed.beats || []).some((p) => p.heading === String(b.heading || "").replace(/\s+/g, " ").trim()),
+        passageIds: [],
+      }));
+    if (beats.length < 1) throw new Error("An approved outline needs at least one section.");
+    return {
+      title: composer.clampToSentence(approved?.title || proposed.title, composer.LIMITS.MAX_TITLE_CHARS),
+      deck: composer.clampToSentence(approved?.deck || proposed.deck, composer.LIMITS.MAX_DECK_CHARS),
+      beats,
+      coverage: proposed.coverage || null,
+      briefMap: proposed.briefMap || null,
+    };
+  }
   /* The kinds beyond the paper the proposal offered, by heading. */
   const proposedKind = new Map((proposed.beats || []).filter((b) => b.kind && b.kind !== plan.BEAT_KIND.PAPER).map((b) => [b.heading, b.kind]));
   /* Headings the machine proposed. Anything else in the approved outline is

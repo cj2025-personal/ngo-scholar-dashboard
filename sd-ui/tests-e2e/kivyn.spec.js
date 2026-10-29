@@ -118,12 +118,12 @@ test.describe("in the studio", () => {
     await expect(headKivyn).toHaveAttribute("data-pose", "neutral");
     await page.unroute("**/api/drafting/converse");
 
-    /* An outline is work done: a moment, then rest. While it waits the plan is the page and the pane has no head, so the moment is on the outline's own face. */
+    /* An outline is work done: a moment, then rest. While it waits the plan is the page, and the moment is on the face of the note that says so in the thread. */
     await page.locator(".ch-msg.is-papers .ch-paper").filter({ hasText: "Adaptive nulling" }).click();
     await box.fill("Walk through how the array was tried in the field, written for teenagers");
     await box.press("Enter");
     await expect(page.locator(".ch-msg.is-outline").first()).toBeVisible({ timeout: 60_000 });
-    const outlineFace = page.locator(".ch-msg.is-outline > svg.kv").first();
+    const outlineFace = page.locator(".ch-msg.is-outline-note > svg.kv").first();
     await expect(outlineFace).toHaveAttribute("data-pose", /^(done|cant-answer)$/);
     await expect(outlineFace).toHaveAttribute("data-pose", "neutral", { timeout: 10_000 });
     await expect(outlineFace).not.toHaveClass(/kv-live/);

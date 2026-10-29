@@ -22,7 +22,7 @@ const mongo = () => require("../db/mongo");
  * it (see db/ownership.js). One row per scholar, with the history of every
  * agreement, since the terms will change.
  */
-const AI_TERMS_VERSION = "2026-09-15";
+const AI_TERMS_VERSION = "2026-10-28";
 
 /** What the profile carries about the terms. Pure. */
 function aiTermsView(record) {

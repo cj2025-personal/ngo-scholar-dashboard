@@ -84,14 +84,10 @@ test("capture the companion", async ({ page }) => {
   await expect(sheet.locator(".rc-turn").nth(3).locator(".rc-answer-text")).toBeVisible({ timeout: 60_000 });
   await shot("rc-05-thread");
 
-  await sheet.getByRole("button", { name: "Ask", exact: true }).click();
-  await shot("rc-06-ask");
-  await sheet.getByRole("button", { name: "Progress", exact: true }).click();
-  await shot("rc-07-progress");
-  await sheet.getByRole("button", { name: "Sources", exact: true }).click();
+  await sheet.getByRole("tab", { name: "Sources" }).click();
   await expect(sheet.locator(".rc-passage").first()).toBeVisible();
   await shot("rc-08-sources");
-  await sheet.getByRole("button", { name: "Chat", exact: true }).click();
+  await sheet.getByRole("tab", { name: "Chat" }).click();
   await sheet.locator(".rc-identity").click();
   await expect(sheet.locator(".rc-activity-item").first()).toBeVisible();
   await shot("rc-09-about");

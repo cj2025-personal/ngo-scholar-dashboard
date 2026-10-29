@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   HiOutlineArrowRight,
   HiOutlineArrowTopRightOnSquare,
   HiOutlineDocumentText,
+  HiOutlineEllipsisHorizontal,
   HiOutlineExclamationTriangle,
   HiOutlineMagnifyingGlass,
   HiOutlinePencilSquare,
@@ -14,6 +15,43 @@ import {
 
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
 import { STORY_GROUPS } from "@/lib/storyRows";
+
+/**
+ * The row's other actions, in one menu: edit, read it live, delete. The
+ * action the story needs next is beside it, in the open.
+ */
+function RowMenu({ row }) {
+  const ref = useRef(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    /* The delete confirmation is a dialog portalled to the page; a click in it
+       is not a click away, or closing the menu would take the confirmation
+       (and the delete) down with it. */
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target) && !e.target.closest?.("dialog")) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (
+    <div className="stories-menu" ref={ref}>
+      <button type="button" className="stories-act" aria-haspopup="menu" aria-expanded={open} aria-label={`More for ${row.title}`} title="More" onClick={() => setOpen((v) => !v)}>
+        <HiOutlineEllipsisHorizontal size={18} aria-hidden />
+      </button>
+      {open ? (
+        <div className="nb-menu stories-menu__list" role="menu">
+          <Link href={row.href} role="menuitem" className="nb-menu__item" onClick={() => setOpen(false)}><HiOutlinePencilSquare size={15} aria-hidden /> Edit</Link>
+          {row.liveHref ? (
+            <Link href={row.liveHref} role="menuitem" className="nb-menu__item" target="_blank" rel="noreferrer" onClick={() => setOpen(false)}><HiOutlineArrowTopRightOnSquare size={15} aria-hidden /> View live</Link>
+          ) : null}
+          <div className="nb-menu__rule" />
+          <DeleteStoryButton storyId={row.id} title={row.title} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * Stories, as a table: what each is, where it stands, who it is for, and
@@ -44,15 +82,17 @@ const COMPACT_ROWS = 6;
 
 export default function StoriesTable({ rows, total = rows.length, variant = "compact", initialTab = "all" }) {
   const full = variant === "full";
-  const counts = Object.fromEntries([["all", rows.length], ...STORY_GROUPS.map((g) => [g.key, rows.filter((r) => r.group === g.key).length])]);
-  const tabs = [{ key: "all", label: "All" }, ...STORY_GROUPS.filter((g) => counts[g.key] > 0)];
+  const counts = Object.fromEntries([["all", rows.length], ["needs", rows.filter((r) => r.next?.needsYou).length], ...STORY_GROUPS.map((g) => [g.key, rows.filter((r) => r.group === g.key).length])]);
+  /* "Needs you" first among the filters on the Stories page: the rows waiting on a decision. */
+  const tabs = [{ key: "all", label: "All" }, ...(full && counts.needs > 0 ? [{ key: "needs", label: "Needs you" }] : []), ...STORY_GROUPS.filter((g) => counts[g.key] > 0)];
   const [tab, setTab] = useState(tabs.some((t) => t.key === initialTab) ? initialTab : "all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("updated");
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const filtered = rows.filter((r) => (tab === "all" || r.group === tab) && (!q || `${r.title} ${r.from || ""}`.toLowerCase().includes(q)));
+    const inTab = (r) => tab === "all" || (tab === "needs" ? r.next?.needsYou : r.group === tab);
+    const filtered = rows.filter((r) => inTab(r) && (!q || `${r.title} ${r.from || ""}`.toLowerCase().includes(q)));
     const ordered = full ? [...filtered].sort(SORTS.find((s) => s.key === sort).by) : filtered;
     return full ? ordered : ordered.slice(0, COMPACT_ROWS);
   }, [rows, tab, query, sort, full]);
@@ -111,7 +151,7 @@ export default function StoriesTable({ rows, total = rows.length, variant = "com
             <span role="columnheader">Reads</span>
             <span role="columnheader">Questions</span>
             <span role="columnheader">{full && sort === "updated" ? "Changed" : "Updated"}</span>
-            <span role="columnheader"><span className="sr-only">Actions</span></span>
+            <span role="columnheader">{full ? "Next" : <span className="sr-only">Actions</span>}</span>
           </div>
           {list.map((r) => (
             <div key={r.id} className="dash-tr" role="row">
@@ -125,7 +165,7 @@ export default function StoriesTable({ rows, total = rows.length, variant = "com
                 <span className="dash-td-story__text">
                   <Link href={r.href} className="dash-story-title" title={r.title}>{r.title}</Link>
                   <span className="dash-story-from" title={r.from || undefined}>
-                    {r.from ? `From “${r.from}”` : "Written by hand"}
+                    {r.from ? `From “${r.from}”` : r.fromBrief ? "From your brief, no paper" : "Written by hand"}
                     {full && r.minutes ? ` · ${r.minutes} min read` : ""}
                   </span>
                 </span>
@@ -139,9 +179,23 @@ export default function StoriesTable({ rows, total = rows.length, variant = "com
                 ) : null}
               </span>
               <span role="cell" className="dash-td-ages">
-                {r.audience ? <span>{r.audience}</span> : <span className="dash-faint">—</span>}
-                {r.levelsWritten > 0 ? <span className="dash-faint"> + {r.levelsWritten}</span> : null}
-                {r.levelsWaiting > 0 ? <span className="dash-pill is-warn" title={`${r.levelsWaiting} waiting for your approval`}>{r.levelsWaiting} to approve</span> : null}
+                {full ? (
+                  /* Each reading age as a chip: green once readers see it, dashed while it waits on you. */
+                  <>
+                    {r.audience ? <span className={`age-chip${r.group === "published" ? " is-live" : ""}`}>{r.audience}</span> : <span className="dash-faint">Not set</span>}
+                    {r.levelBands.map((b) => (
+                      <span key={b.audience} className={`age-chip ${b.stale ? "is-stale" : b.approved ? "is-live" : "is-waiting"}`} title={b.stale ? "Out of date: the article changed after it was written" : b.approved ? "Approved: readers can switch to it" : "Waiting for your approval"}>
+                        {b.label.replace(/^Ages /, "")}{b.stale ? " · out of date" : b.approved ? "" : " to approve"}
+                      </span>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    {r.audience ? <span>{r.audience}</span> : <span className="dash-faint">—</span>}
+                    {r.levelsWritten > 0 ? <span className="dash-faint"> + {r.levelsWritten}</span> : null}
+                    {r.levelsWaiting > 0 ? <span className="dash-pill is-warn" title={`${r.levelsWaiting} waiting for your approval`}>{r.levelsWaiting} to approve</span> : null}
+                  </>
+                )}
               </span>
               <span role="cell" className="dash-td-num">
                 {r.reads ? (
@@ -164,13 +218,16 @@ export default function StoriesTable({ rows, total = rows.length, variant = "com
               <span role="cell" className="dash-td-act">
                 {full ? (
                   <>
-                    <Link href={r.href} className="stories-act" aria-label={`Edit ${r.title}`} title="Edit"><HiOutlinePencilSquare size={16} aria-hidden /></Link>
-                    {r.liveHref ? (
-                      <Link href={r.liveHref} className="stories-act" target="_blank" rel="noreferrer" aria-label={`View ${r.title} as readers see it`} title="View live"><HiOutlineArrowTopRightOnSquare size={16} aria-hidden /></Link>
-                    ) : <span className="stories-act is-none" aria-hidden />}
+                    <Link
+                      href={r.next.href}
+                      className={`dash-btn stories-next${r.next.tone === "primary" ? " is-primary" : r.next.tone === "grave" ? " is-grave" : ""}`}
+                      {...(r.next.live ? { target: "_blank", rel: "noreferrer" } : {})}
+                    >
+                      {r.next.label}{r.next.live ? <HiOutlineArrowTopRightOnSquare size={13} aria-hidden /> : null}
+                    </Link>
+                    <RowMenu row={r} />
                   </>
-                ) : null}
-                <DeleteStoryButton storyId={r.id} title={r.title} compact />
+                ) : <DeleteStoryButton storyId={r.id} title={r.title} compact />}
               </span>
             </div>
           ))}

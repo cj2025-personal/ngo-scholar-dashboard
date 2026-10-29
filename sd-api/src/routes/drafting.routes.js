@@ -2,6 +2,7 @@ const express = require("express");
 
 const { asyncHandler } = require("../lib/async-handler");
 const { ApiError } = require("../lib/api-error");
+const { BRIEF_ORIGIN } = require("../lib/briefSource");
 const { requireAuth } = require("../middleware/auth.middleware");
 const { canonicalScholarId } = require("../lib/identity");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
@@ -180,10 +181,12 @@ router.post(
   asyncHandler(async (req, res) => {
     const profileId = requireProfile(req);
     const { origin, sourceId, audience, voice, brief, approveOutline: wantsOutline, createStory, levels } = req.body || {};
-    if (origin !== "harvested" && origin !== "contributed") {
-      throw new ApiError(400, "Source origin must be harvested or contributed.");
+    /* "brief": an article from the scholar's brief alone, drawing on none of
+       their papers (lib/briefSource.js). It names no source. */
+    if (origin !== "harvested" && origin !== "contributed" && origin !== BRIEF_ORIGIN) {
+      throw new ApiError(400, "Source origin must be harvested, contributed, or brief.");
     }
-    if (typeof sourceId !== "string" || !sourceId || sourceId.length > 200) {
+    if (origin !== BRIEF_ORIGIN && (typeof sourceId !== "string" || !sourceId || sourceId.length > 200)) {
       throw new ApiError(400, "Source id is invalid.");
     }
     if (brief !== undefined && brief !== null && (typeof brief !== "string" || brief.length > 1000)) {

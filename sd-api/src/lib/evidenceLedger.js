@@ -281,6 +281,10 @@ function summarySentence(manifest) {
   const t = manifest?.totals || {};
   if (!t.paragraphs) return "This story carries no evidence ledger.";
   const claims = t.claims || 0;
+  /* Every paragraph the author's own, none from a paper: from the brief alone. */
+  if (!t.cited && !t.extension && t.context && t.context === t.paragraphs) {
+    return `${t.paragraphs} paragraph${t.paragraphs === 1 ? "" : "s"}, all the author's own account and none drawn from a paper; ${t.verified} of ${t.to_verify} specific${t.to_verify === 1 ? "" : "s"} verified by the author. Approved by ${manifest.approval?.by || "the author"} as version ${manifest.story?.version}.`;
+  }
   if (!claims) return `${t.paragraphs} paragraph${t.paragraphs === 1 ? "" : "s"}, ${t.cited} drawn from the paper; no individual claims were recorded.`;
   const beyond = t.follows || t.overreach ? `; ${t.follows || 0} implication${t.follows === 1 ? "" : "s"} follow${t.follows === 1 ? "s" : ""} from it` + (t.overreach ? `, ${t.overreach} ${t.overreach === 1 ? "goes" : "go"} too far` : "") : "";
   return `${claims} claim${claims === 1 ? "" : "s"} checked against the paper, ${t.supported} supported` + (t.unsupported ? `, ${t.unsupported} not` : "") + `${beyond}. Approved by ${manifest.approval?.by || "the author"} as version ${manifest.story?.version}.`;
@@ -298,6 +302,11 @@ function summarySentence(manifest) {
 function readerSentence(totals) {
   const t = totals || {};
   const claims = t.claims || 0;
+  if (!t.cited && !t.extension && t.context && t.context === t.paragraphs) {
+    return t.to_verify
+      ? `The author's own account, not drawn from their research; every specific in it (${t.to_verify}) was verified by the author.`
+      : "The author's own account, not drawn from their research.";
+  }
   if (!claims) return "Every paragraph drawn from the paper was checked against it.";
   const parts = [];
   if (t.supported) parts.push(`${t.supported} traced to a passage in the paper`);

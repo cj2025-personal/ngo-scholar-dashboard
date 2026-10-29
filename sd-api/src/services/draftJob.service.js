@@ -31,6 +31,7 @@ const { env } = require("../config/env");
 const { COLLECTIONS, getCollections } = require("../db/mongo");
 const { ApiError } = require("../lib/api-error");
 const { serializeMongoValue } = require("../lib/serialize");
+const { BRIEF_ORIGIN, BRIEF_SOURCE_ID, isBriefOnly } = require("../lib/briefSource");
 const composer = require("../lib/draftComposer");
 const { USE } = require("../lib/draftEligibility");
 const { runDraftGraph, runOutlineOnly, normaliseApprovedOutline, GRAPH_VERSION } = require("../lib/draftGraph");
@@ -83,9 +84,17 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
   const inventory = await listDraftSources({ profileId });
   if (!inventory.eligible) throw new ApiError(403, inventory.gateReason);
 
+  /* From the brief alone: no paper, so nothing to find, load or screen, and
+     nothing to propose an angle from. It is the scholar's own account, so it
+     is written in their voice whatever was asked. */
+  const briefOnly = origin === BRIEF_ORIGIN;
+  if (briefOnly && kind === "proposal") throw new ApiError(400, "An angle is read from a paper. Say what to write, and it can come from your brief alone.");
+  if (briefOnly && !(typeof brief === "string" && brief.trim())) throw new ApiError(400, "With no paper behind it, the article needs a brief: say what it should be about.");
   const wanted = origin === "contributed" ? "contributed" : "harvested";
   const all = [...inventory.draftable, ...inventory.citable, ...inventory.unusable];
-  const source = all.find((s) => s.id === String(sourceId) && s.origin === wanted);
+  const source = briefOnly
+    ? { origin: BRIEF_ORIGIN, id: BRIEF_SOURCE_ID, title: null, year: null, use: USE.DRAFTABLE }
+    : all.find((s) => s.id === String(sourceId) && s.origin === wanted);
   if (!source) throw new ApiError(404, "That source is not in your inventory.");
   if (source.use !== USE.DRAFTABLE) {
     throw new ApiError(403, `This source can't be drafted from: ${source.reason}.`);
@@ -115,18 +124,22 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
     throw new ApiError(429, `Can't ${isProposal ? "ask for another angle" : "start another draft"}: ${cap.reason}.`);
   }
 
-  const rawText = await loadSourceText(db, source);
-  const prepared = composer.prepareSourceText(rawText);
-  if (prepared.words < 200) {
-    throw new ApiError(409, "We hold this source's title but not enough of its text to draft from.");
+  let prepared = { text: "", words: 0, totalWords: 0, truncated: false };
+  let screening = { passages: [], setAside: [] };
+  if (!briefOnly) {
+    const rawText = await loadSourceText(db, source);
+    prepared = composer.prepareSourceText(rawText);
+    if (prepared.words < 200) {
+      throw new ApiError(409, "We hold this source's title but not enough of its text to draft from.");
+    }
+    /* The source guard reads the paper before anything else does; what it
+       sets aside is kept on the job, so every run of it reads the same paper. */
+    screening = await screenedPassages(db, { source, text: prepared.text });
+    if (!screening.passages.length) throw new ApiError(409, "Every passage of this paper addresses its reader rather than reporting work, so there is nothing to draft from.");
   }
-  /* The source guard reads the paper before anything else does; what it
-     sets aside is kept on the job, so every run of it reads the same paper. */
-  const screening = await screenedPassages(db, { source, text: prepared.text });
-  if (!screening.passages.length) throw new ApiError(409, "Every passage of this paper addresses its reader rather than reporting work, so there is nothing to draft from.");
 
   const chosenAudience = composer.normaliseAudience(audience);
-  const chosenVoice = composer.normaliseVoice(voice);
+  const chosenVoice = briefOnly ? composer.VOICE.AUTHOR : composer.normaliseVoice(voice);
   const asked = typeof brief === "string" && brief.trim() ? brief.trim().slice(0, 1000) : null;
   /* A proposal is the agent being asked what a paper could become, so it
      arrives without a brief — and a plan with no brief is every beat a paper
@@ -197,7 +210,7 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
     attempts: 0,
     lease_owner: null,
     lease_expires_at: null,
-    events: [job.nextEvent([], "job_created", { source: source.title, audience: chosenAudience, retryOf: latest ? String(latest._id) : null }, now)],
+    events: [job.nextEvent([], "job_created", { source: briefOnly ? "your brief alone" : source.title, audience: chosenAudience, retryOf: latest ? String(latest._id) : null }, now)],
     draft: null,
     warnings: [],
     tokens: { input: 0, output: 0 },
@@ -305,7 +318,7 @@ async function approveOutline({ jobId, profileId, outline }) {
   const passages = plan.splitPassages(doc.source_text).filter((p) => !gone.has(p.id));
   let approved;
   try {
-    approved = normaliseApprovedOutline(doc.outline, outline || null, passages);
+    approved = normaliseApprovedOutline(doc.outline, outline || null, passages, { briefOnly: isBriefOnly(doc.source) });
   } catch (error) {
     throw new ApiError(400, error.message);
   }

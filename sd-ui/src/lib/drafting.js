@@ -95,6 +95,14 @@ export async function draftFromSource({ origin, sourceId, audience }) {
  * becomes a draft story and the job carries its `storyId`. `levels` is true
  * for every other reading age, or the bands to write, each on its own.
  */
+/**
+ * An article from the scholar's brief alone, drawing on none of their papers:
+ * offered beside their papers, known to the server as origin "brief". It has
+ * no source id; the draft is their own account, every specific in it listed
+ * for them to verify before it can be published.
+ */
+export const BRIEF_SOURCE = { origin: "brief", id: "only", title: "No paper — write from my brief", brief: true };
+
 export async function createDraftJob({ origin, sourceId, audience, voice = DEFAULT_VOICE, brief = null, approveOutline = false, createStory = true, levels = false }) {
   return request("/api/drafting/jobs", {
     method: "POST",

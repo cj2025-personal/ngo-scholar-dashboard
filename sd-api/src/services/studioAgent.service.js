@@ -12,6 +12,7 @@ const converse = require("../lib/agents/studioConverse");
 const ideasAgent = require("../lib/agents/studioIdeas");
 const vertex = require("../lib/vertex");
 const { listDraftSources } = require("./drafting.service");
+const { BRIEF_KEY, BRIEF_TITLE } = require("../lib/briefSource");
 const editorial = require("./editorial.service");
 const { getPolicy } = require("./policy.service");
 const { routerFor } = require("./models.service");
@@ -21,9 +22,12 @@ const { VOICES, AUDIENCE_LIST } = converse;
 
 const paperKey = (p) => `${p.origin}:${p.id}`;
 
+/* The scholar's papers, and — for anyone who may draft at all — writing from
+   the brief alone, drawing on none of them. */
 async function papersFor(profileId) {
   const inv = await listDraftSources({ profileId });
-  return { inventory: inv, papers: (inv.draftable || []).map((p) => ({ key: paperKey(p), title: p.title, year: p.year || null, words: p.words || p.wordCount || null })) };
+  const papers = (inv.draftable || []).map((p) => ({ key: paperKey(p), title: p.title, year: p.year || null, words: p.words || p.wordCount || null }));
+  return { inventory: inv, papers: inv.eligible ? [...papers, { key: BRIEF_KEY, title: BRIEF_TITLE, year: null, words: null }] : papers };
 }
 
 /* ── the conversation, kept here ────────────────────────────────────────────
@@ -157,7 +161,8 @@ async function ideasFor({ profileId, scholarId, storyId = null, paperKey: chosen
       generate: router.bound("studio.ideas"),
     });
   } else {
-    const { papers } = await papersFor(profileId);
+    /* Ideas are read from papers; the brief alone has none to read. */
+    const papers = (await papersFor(profileId)).papers.filter((p) => p.key !== BRIEF_KEY);
     const chosen = papers.find((p) => p.key === chosenKey) || null;
     key = `new:${profileId}:${papers.map((p) => p.key).join(",")}:${chosen?.key || ""}:${ideasAgent.IDEAS_VERSION}`;
     make = () => ideasAgent.ideasForNewStory({ papers, chosen, count: policy.ideas.count, generate: router.bound("studio.ideas") });

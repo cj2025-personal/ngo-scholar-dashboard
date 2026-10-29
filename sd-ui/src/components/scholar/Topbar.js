@@ -186,8 +186,39 @@ function SearchOpen({ onClose }) {
   );
 }
 
+/**
+ * The bar folded into a story's own bar: the mark, and under it the places a
+ * scholar goes. On a story the page is the writing, so the site's row of
+ * pills gives way to this one control (and 60 pixels go back to the article);
+ * every place is still one click from wherever the scholar is.
+ */
+export function SectionsMenu({ activeHref = "/editorial" }) {
+  const ref = useRef(null);
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(ref, open, close);
+  return (
+    <div className="nb-sections" ref={ref}>
+      <button type="button" className="nb-sections__btn" aria-haspopup="menu" aria-expanded={open} aria-label="Proj Arch: Studio, Papers, Stories, Podcasts" onClick={() => setOpen((v) => !v)}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/archivyn-mark.svg" alt="" width={26} height={26} className="nb-sections__mark" />
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+      {open ? (
+        <div className="nb-menu nb-sections__menu" role="menu">
+          {[...NAV, ...ELSEWHERE].map((item) => (
+            <Link key={item.href} href={item.href} role="menuitem" className={item.href === activeHref ? "nb-menu__item is-active" : "nb-menu__item"} aria-current={item.href === activeHref ? "page" : undefined} onClick={close}>
+              <item.icon size={16} aria-hidden /> {item.label}
+            </Link>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /* The scholar: their profile and the way out. On the Profile itself the avatar is the place you are, so it says so. */
-function AccountMenu({ me, active = false }) {
+export function AccountMenu({ me, active = false }) {
   const router = useRouter();
   const ref = useRef(null);
   const [open, setOpen] = useState(false);

@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FaArrowLeft,
   FaArrowUpRightFromSquare,
-  FaChevronRight,
   FaGear,
   FaPlus,
   FaXmark,
@@ -28,23 +27,36 @@ import HistoryRail from "@/components/editorial/HistoryRail";
 import EvidenceRail from "@/components/editorial/EvidenceRail";
 import ReadingLevels from "@/components/editorial/ReadingLevels";
 import RecordBanner from "@/components/editorial/RecordBanner";
-import { HiOutlineChatBubbleLeftRight, HiOutlineLightBulb } from "react-icons/hi2";
+import { HiOutlineBookOpen, HiOutlineChatBubbleLeftRight, HiOutlineCheckCircle, HiOutlineLightBulb } from "react-icons/hi2";
 import StudioAgentShell, { AgentAbout, AgentIdentity, AgentStrip, AgentTabs, STUDIO_PERMISSIONS } from "@/components/editorial/StudioAgentShell";
+import { AccountMenu, SectionsMenu } from "@/components/scholar/Topbar";
 import AgentIdeas from "@/components/editorial/AgentIdeas";
 import { Toast, ToastStack } from "@/components/editorial/Toasts";
 import DraftStream from "@/components/editorial/DraftStream";
 import Kivyn from "@/components/kivyn/Kivyn";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 import { rememberPane } from "@/lib/kivyn/pane";
-import { acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
+import { DRAFT_AUDIENCES, acceptAiTerms, generateStoryLevels, getStoryPassages, recheckStoryBlock } from "@/lib/drafting";
 import { plainText, shortSourceLabel } from "@/lib/provenance";
 import { AUDIENCE_TARGETS, assessForAudience, normaliseAudience } from "@/lib/readability";
 
-/* A new story's sections, as the pane's icon bar and the strip it leaves both show them. */
+/* A new story's sections: tabs at the top of Kivyn's pane, and the icons on the strip it leaves when closed. */
 const NEW_STORY_TABS = [
-  { key: "chat", label: "Chat", icon: <HiOutlineChatBubbleLeftRight size={20} /> },
-  { key: "ideas", label: "Ideas", icon: <HiOutlineLightBulb size={20} /> },
+  { key: "chat", label: "Chat", icon: <HiOutlineChatBubbleLeftRight size={16} /> },
+  { key: "ideas", label: "Ideas", icon: <HiOutlineLightBulb size={16} /> },
 ];
+
+/* A drafted story's sections, drawn rather than typed: the emoji glyphs they
+   used to wear rendered differently on every system and read as decoration. */
+const REVIEW_TAB_ICONS = {
+  chat: <HiOutlineChatBubbleLeftRight size={16} />,
+  ideas: <HiOutlineLightBulb size={16} />,
+  checks: <HiOutlineCheckCircle size={16} />,
+  sources: <HiOutlineBookOpen size={16} />,
+};
+
+/* The reader an article is for, in the words the reader sees: "Adults", "Ages 8–11". */
+const DRAFT_AUDIENCE_LABEL = Object.fromEntries(DRAFT_AUDIENCES.map((a) => [a.value, a.label]));
 
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000";
@@ -103,25 +115,6 @@ function storyToForm(story) {
 
 function createEmptyForm() {
   return storyToForm(null);
-}
-
-/**
- * A foldable section of the left rail.
- *
- * Native `<details>`: the disclosure, the keyboard and the open state come
- * with it, and a section the scholar folds stays folded while they read.
- */
-function RailSection({ title, count = null, defaultOpen = false, children }) {
-  return (
-    <details className="ws-sect" open={defaultOpen}>
-      <summary className="ws-sect__head">
-        <FaChevronRight size={9} className="ws-sect__chev" aria-hidden />
-        <span className="sc-kicker">{title}</span>
-        {count !== null ? <span className="ws-sect__count">{count}</span> : null}
-      </summary>
-      <div className="ws-sect__body">{children}</div>
-    </details>
-  );
 }
 
 /**
@@ -195,26 +188,23 @@ function collectInlineImagePayload(bodyBlocks) {
   return { serializedBlocks, inlineImages, inlineImageKeys, retainedInlineImageIds };
 }
 
-function formatDate(value) {
-  if (!value) return "Not saved yet";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Not saved yet";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
-}
-
 /** Sections for the outline rail: each subheading with the blocks under it. */
 function sectionsOf(blocks) {
   const sections = [];
-  let current = { id: "top", heading: "Opening", blockIds: [], attention: 0, edited: 0 };
+  let current = { id: "top", heading: "Opening", blockIds: [], attention: 0, edited: 0, drafted: 0, beyond: 0 };
   for (const b of blocks) {
     if (b.type === "subheading" || b.type === "heading") {
       if (current.blockIds.length || sections.length === 0) sections.push(current);
-      current = { id: b.id, heading: plainText(b.html) || "Untitled section", blockIds: [b.id], attention: 0, edited: 0 };
+      current = { id: b.id, heading: plainText(b.html) || "Untitled section", blockIds: [b.id], attention: 0, edited: 0, drafted: 0, beyond: 0 };
       continue;
     }
     current.blockIds.push(b.id);
-    if (b.fidelity && b.fidelity.verdict !== "supported" && Array.isArray(b.sourceRefs) && b.sourceRefs.length) current.attention += 1;
+    if (needsAttention(b)) current.attention += 1;
     if (b.traceable === false) current.edited += 1;
+    if (Array.isArray(b.sourceRefs) && b.sourceRefs.length) {
+      current.drafted += 1;
+      if (b.extension) current.beyond += 1;
+    }
   }
   sections.push(current);
   return sections.filter((s, i) => !(i === 0 && s.id === "top" && s.blockIds.length === 0));
@@ -282,9 +272,24 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   const [newPrefill, setNewPrefill] = useState("");
   const [proposeNow, setProposeNow] = useState(0);
   const [newPaper, setNewPaper] = useState(null);
+  /* Where the outline is shown while it waits: the space the article will
+     take, beside Kivyn. The agent renders its outline into this element. */
+  const [planSlot, setPlanSlot] = useState(null);
+  /* The step the drafter is on, and the section, for the plan filling in. */
+  const [draftStep, setDraftStep] = useState(null);
+  /* The reading ages, opened from the bar. */
+  const [levelsOpen, setLevelsOpen] = useState(false);
+  const levelsRef = useRef(null);
+  /* On a phone the bar keeps the title and the status; the rest is under "⋯". */
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef(null);
+  /* On a phone, Kivyn's pane is a sheet over the draft, opened from the bar at the foot. */
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [passages, setPassages] = useState(null);
   const [showPublishCheck, setShowPublishCheck] = useState(false);
   const [proposalPending, setProposalPending] = useState(false);
+  /* The blocks that waiting change would touch, marked in the article. */
+  const [proposalAt, setProposalAt] = useState([]);
   const [conflict, setConflict] = useState("");
   const [viewLevel, setViewLevel] = useState(null);
   const [agentPrefill, setAgentPrefill] = useState("");
@@ -363,7 +368,8 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   useEffect(() => {
     if (reviewMode) return undefined;
     const root = document.documentElement;
-    const bars = [".nb-bar"].map((sel) => document.querySelector(sel)).filter(Boolean);
+    /* The story's own bar is the page's only bar now, and it stays: the pane starts under it. */
+    const bars = [".nb-bar", ".sc-write-bar"].map((sel) => document.querySelector(sel)).filter(Boolean);
     const place = () => {
       const bottom = Math.max(0, ...bars.map((el) => el.getBoundingClientRect().bottom));
       root.style.setProperty("--ag-rail-top", `${Math.round(bottom)}px`);
@@ -379,6 +385,24 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   }, [reviewMode]);
 
   useEffect(() => () => { if (stopWatchingRef.current) stopWatchingRef.current(); }, []);
+
+  /* The reading ages close on a click elsewhere, and on Escape. */
+  useEffect(() => {
+    if (!levelsOpen) return undefined;
+    const onDown = (e) => { if (levelsRef.current && !levelsRef.current.contains(e.target)) setLevelsOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setLevelsOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [levelsOpen]);
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    const onDown = (e) => { if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") setMoreOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [moreOpen]);
 
   useEffect(() => {
     if (!reviewMode || passages) return;
@@ -416,20 +440,13 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   })), []);
   const draftingStage = !reviewMode && agentStage === "drafting" && totalWords === 0 && stream.beats.length > 0;
   const planRef = useRef(null);
+  const handleDraftStep = useCallback((step) => setDraftStep(step), []);
 
-  /* Put the outline on screen the moment the page has rearranged around it.
-     This belongs here, not in the rail: the rail's own effect runs before
-     this component has switched layouts, so it scrolled the fixed-position
-     pane the outline was about to leave. One frame after the canvas is
-     committed, the outline is where it can be read. */
+  /* The outline opens at its top: it takes the place of the editor, so the
+     page goes back to the start of it rather than where the editor was. */
   useEffect(() => {
     if (!outlineStage) return undefined;
-    const id = requestAnimationFrame(() => {
-      const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-      planRef.current
-        ?.querySelector(".ch-msg.is-outline")
-        ?.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
-    });
+    const id = requestAnimationFrame(() => window.scrollTo(0, 0));
     return () => cancelAnimationFrame(id);
   }, [outlineStage]);
   const signature = useMemo(() => JSON.stringify({
@@ -655,9 +672,11 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     });
     setActiveBlockId(incoming[0]?.id || null);
     setMode("write");
-    setPendingDraftJob({ id: job.id, sourceTitle: job.source?.title || source.title, sourceYear: job.source?.year || source.year || null });
+    /* From the brief alone there is no paper to name. */
+    const briefOnly = job.source?.origin === "brief";
+    setPendingDraftJob({ id: job.id, sourceTitle: briefOnly ? null : job.source?.title || source.title, sourceYear: briefOnly ? null : job.source?.year || source.year || null });
     const notes = Array.isArray(job.warnings) && job.warnings.length ? ` ${job.warnings.join(" ")}` : "";
-    setFeedback(`Drafted ${Number(draft.words || 0).toLocaleString()} words from “${job.source?.title || source.title}”. This is a machine first draft under your name — read every line before you publish.${notes}`);
+    setFeedback(`Drafted ${Number(draft.words || 0).toLocaleString()} words ${briefOnly ? "from your brief alone" : `from “${job.source?.title || source.title}”`}. This is a machine first draft under your name — read every line before you publish.${notes}`);
   }
 
   /* The rail's draft lands in the page, and the page becomes the story:
@@ -813,7 +832,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
       <AutoGrowField className="sc-write-title" placeholder="Title" value={form.title} onChange={(value) => updateField("title", value)} />
       <AutoGrowField className="sc-write-subtitle" placeholder="Add a subtitle…" value={form.subtitle} onChange={(value) => updateField("subtitle", value)} />
       <div className="sc-write-body">
-        <RichTextBlockEditor blocks={form.bodyBlocks} onChange={updateBodyBlocks} activeBlockId={activeBlockId} onActiveBlockChange={setActiveBlockId} sourceLabel={sourceLabel} />
+        <RichTextBlockEditor blocks={form.bodyBlocks} onChange={updateBodyBlocks} activeBlockId={activeBlockId} onActiveBlockChange={setActiveBlockId} sourceLabel={sourceLabel} proposedAt={reviewMode ? proposalAt : []} onProposed={() => { setRailTab("chat"); setSheetOpen(true); }} />
       </div>
 
       {!reviewMode ? (
@@ -839,10 +858,15 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
   );
 
   return (
-    <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}${!reviewMode && railOpen && !outlineStage ? " has-rail" : ""}`}>
+    <div className={`sc-writer mode-${mode}${reviewMode ? " is-review" : ""}${!reviewMode && railOpen ? " has-rail" : ""}${outlineStage ? " is-outline" : ""}${draftingStage ? " is-drafting" : ""}${sheetOpen ? " is-sheet-open" : ""}`}>
+      {/* One bar: on a story the site's bar and the story's bar are the same
+          row, so 60 more pixels of a laptop screen are the article. The
+          places a scholar goes are under the mark; who they are, at the end. */}
       <div ref={barRef} className={stuck ? "sc-write-bar is-stuck" : "sc-write-bar"}>
         <div className="sc-write-bar-left">
-          <Link href="/editorial" className="sc-write-back"><FaArrowLeft size={12} aria-hidden /> Stories</Link>
+          <SectionsMenu activeHref="/editorial" />
+          <Link href="/editorial" className="sc-write-back" aria-label="Stories"><FaArrowLeft size={12} aria-hidden /><span className="sc-write-back__text"> Stories</span></Link>
+          {reviewMode && form.title ? <span className="sc-write-title-line" title={form.title}>{form.title}</span> : null}
           <span className={statusPill.cls}>{statusPill.text}</span>
           {form.publicUrl ? (
             <a className="sc-write-live" href={form.publicUrl} target="_blank" rel="noreferrer">View as reader <FaArrowUpRightFromSquare size={10} aria-hidden="true" /><span className="sr-only"> (opens in a new tab)</span></a>
@@ -854,10 +878,14 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               paper title long enough to push the buttons off the edge. */}
           <span className="sc-write-metatext">
             {outlineStage
-              ? "Nothing written yet — the outline is waiting for you"
-              : totalWords === 0
-                ? "Nothing written yet"
-                : `${totalWords.toLocaleString()} ${totalWords === 1 ? "word" : "words"} · ${readingTime} min read`}
+              ? "Nothing written yet: the outline is waiting for you"
+              : draftingStage
+                ? `Section ${Math.min(stream.sections.length + 1, stream.beats.length)} of ${stream.beats.length} · nothing to save yet`
+                : totalWords === 0
+                  ? "Nothing written yet"
+                  : reviewMode
+                    ? `${totalWords.toLocaleString()} ${totalWords === 1 ? "word" : "words"}`
+                    : `${totalWords.toLocaleString()} ${totalWords === 1 ? "word" : "words"} · ${readingTime} min read`}
           </span>
           {/* On a phone the saved state rides in this row, beside the status,
               so the actions below it fit on one line. One of the two shows. */}
@@ -865,24 +893,31 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
         </div>
         <div className="sc-write-bar-right">
           <span className="sc-write-saved">{savedLabel}</span>
-          {/* It used to be a label. Saying what needs doing without offering
-              to take you there makes the reader hunt for it in a rail. */}
-          {reviewMode && summary.attention > 0 ? (
-            <button
-              type="button"
-              className="sc-write-attention"
-              onClick={() => { const i = form.bodyBlocks.findIndex(needsAttention); if (i >= 0) goToBlock(i, "source"); }}
-              title="Go to the first paragraph that needs a look"
-            >
-              {summary.attention} paragraph{summary.attention === 1 ? "" : "s"} need{summary.attention === 1 ? "s" : ""} your attention
-            </button>
+          {/* What needs a look is the Checks tab's badge, beside the paragraph
+              it is about: said once, where it can be acted on. */}
+          {/* The other reading ages, from the bar: they are the last job on
+              a draft, so they no longer sit above its title. */}
+          {reviewMode && form.id ? (
+            <div className="sc-write-levels" ref={levelsRef}>
+              <button type="button" className="sc-write-secondary sc-write-levels__btn" aria-haspopup="dialog" aria-expanded={levelsOpen} onClick={() => setLevelsOpen((v) => !v)}>
+                <span className="sc-write-levels__label">Reading ages</span>
+                {DRAFT_AUDIENCE_LABEL[normaliseAudience(audience)] || "Adults"}
+                {form.levels.some((l) => !l.approved && !l.stale) ? <span className="sc-write-levels__badge" aria-label="levels to approve">{form.levels.filter((l) => !l.approved && !l.stale).length}</span> : null}
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </button>
+              {levelsOpen ? (
+                <div className="sc-write-levels__pop" role="dialog" aria-label="Reading ages">
+                  <ReadingLevels part="controls" story={{ id: form.id, version: form.version, levels: form.levels, provenance: form.provenance }} viewLevel={viewLevel} onView={(v) => { setViewLevel(v); setLevelsOpen(false); }} dirty={dirty} onChanged={(story, message) => handleStoryChanged(story, message)} />
+                </div>
+              ) : null}
+            </div>
           ) : null}
           {/* Nothing has been written, so there is nothing to preview, save or
               publish. The bar used to offer all three — Publish loudest of
               all — over an empty document, which is an invitation to publish
               a blank page and a distraction from the only decision on the
               screen. */}
-          {outlineStage ? null : (
+          {outlineStage || draftingStage ? null : (
             <>
               <button type="button" className="sc-write-ghost" onClick={togglePreview}>{mode === "write" ? "Preview" : "Keep writing"}</button>
               <button type="button" className="sc-write-secondary" onClick={() => submitStory("draft")} disabled={isSaving || proposalPending}>{isSaving ? "Saving…" : "Save draft"}</button>
@@ -893,6 +928,24 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               )}
             </>
           )}
+          {/* A phone's bar: what does not fit, one tap away. The stylesheet
+              shows this below 680px and hides the buttons it stands for. */}
+          {outlineStage || draftingStage ? null : (
+            <div className="sc-write-more" ref={moreRef}>
+              <button type="button" className="sc-write-more__btn" aria-haspopup="menu" aria-expanded={moreOpen} aria-label="More for this story" onClick={() => setMoreOpen((v) => !v)}>
+                <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="3.5" cy="9" r="1.6" fill="currentColor" /><circle cx="9" cy="9" r="1.6" fill="currentColor" /><circle cx="14.5" cy="9" r="1.6" fill="currentColor" /></svg>
+              </button>
+              {moreOpen ? (
+                <div className="nb-menu sc-write-more__menu" role="menu">
+                  {savedLabel ? <p className="sc-write-more__state">{savedLabel}</p> : null}
+                  <button type="button" role="menuitem" className="nb-menu__item" onClick={() => { setMoreOpen(false); togglePreview(); }}>{mode === "write" ? "Preview" : "Keep writing"}</button>
+                  <button type="button" role="menuitem" className="nb-menu__item" disabled={isSaving || proposalPending} onClick={() => { setMoreOpen(false); submitStory("draft"); }}>{isSaving ? "Saving…" : "Save draft"}</button>
+                  {reviewMode && form.id ? <button type="button" role="menuitem" className="nb-menu__item" onClick={() => { setMoreOpen(false); setLevelsOpen(true); }}>Reading ages</button> : null}
+                </div>
+              ) : null}
+            </div>
+          )}
+          <AccountMenu me={me || { initials: "SC", name: "Scholar" }} />
         </div>
       </div>
 
@@ -911,7 +964,8 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
         {error ? <Toast kind="error" text={error} onDismiss={dismissError} /> : null}
         {feedback ? <Toast kind="ok" text={feedback} onDismiss={dismissFeedback} autoHide /> : null}
         {draftProgress ? <Toast kind="info" text={draftProgress} busy /> : null}
-        {proposalPending ? <Toast kind="info" text={`${AGENT_NAME} has proposed a change. Accept or reject it in Chat before saving.`} /> : null}
+        {/* A change waiting on the scholar is said in Kivyn's header, beside
+            the change itself; a card laid over the pane used to cover it. */}
       </ToastStack>
       {reviewMode && form.record?.alerts?.length ? (
         <RecordBanner storyId={form.id} record={form.record} status={form.status} onAskAgent={askAgent} onUnpublish={() => submitStory("draft")} onAcknowledged={(story) => handleStoryChanged(story, "Noted. The alert stays on the story until the record changes.")} />
@@ -941,36 +995,41 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
              at the same index. */
           /* The pane stays in the tree while closed, slid off to the left and
              inert, so opening it again finds the conversation where it was. */
-          <div className={outlineStage ? "ws-plan" : "ws-grid is-two"} ref={planRef}>
-            {outlineStage ? null : <div className="ws-center">{draftingStage ? <DraftStream title={stream.title} beats={stream.beats} sections={stream.sections} /> : editorColumn}</div>}
+          /* The outline waiting for approval takes the place the article will
+             take, beside Kivyn, rather than a centred thread with the pane
+             gone: the plan is read where the draft will land, and the
+             conversation about it stays where it was. */
+          <div className="ws-grid is-two" ref={planRef}>
+            <div className="ws-center">
+              {outlineStage ? (
+                <div className="ws-plan-slot" ref={setPlanSlot} role="region" aria-label="The outline, waiting for your approval" />
+              ) : draftingStage ? (
+                <DraftStream title={stream.title} beats={stream.beats} sections={stream.sections} step={draftStep} />
+              ) : editorColumn}
+            </div>
             <aside
-              className={outlineStage ? "ws-plan__inner" : `ws-right is-agent ws-agent-rail${railOpen ? "" : " is-closed"}${railOpen && railByDefault ? " is-default-open" : ""}`}
-              role={outlineStage ? "region" : undefined}
-              aria-label={outlineStage ? "The outline, waiting for your approval" : AGENT_NAME}
-              aria-hidden={!outlineStage && !railOpen ? true : undefined}
-              inert={!outlineStage && !railOpen ? true : undefined}
+              className={`ws-right is-agent ws-agent-rail${railOpen ? "" : " is-closed"}${railOpen && railByDefault ? " is-default-open" : ""}`}
+              aria-label={AGENT_NAME}
+              aria-hidden={!railOpen ? true : undefined}
+              inert={!railOpen ? true : undefined}
             >
-              {/* The pane's head, body and foot are laid around the agent,
+              {/* The pane's head, tabs and body are laid around the agent,
                   never wrapped over it, so its place in the tree holds. */}
-              {outlineStage ? null : (
-                <AgentIdentity status={agentStatus.text} busy={agentStatus.busy} pose={agentStatus.pose} about={newAbout} onAbout={setNewAbout} onClose={closeAgent} />
-              )}
-              <div className={`ws-rail-body${!outlineStage && (newTab !== "chat" || newAbout) ? " is-hidden" : ""}`}>
+              <AgentIdentity status={agentStatus.text} busy={agentStatus.busy} pose={agentStatus.pose} tone={agentStatus.tone} about={newAbout} onAbout={setNewAbout} onClose={closeAgent} />
+              <AgentTabs tabs={NEW_STORY_TABS} tab={newAbout ? null : newTab} onTab={(k) => { setNewTab(k); setNewAbout(false); }} />
+              <div className={`ws-rail-body${newTab !== "chat" || newAbout ? " is-hidden" : ""}`}>
                 {/* The agent is asked for an angle only once the terms are
                     settled — `terms`, which the consent sheet updates, not the
                     `aiTerms` this page was rendered with. */}
-                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} prefill={newPrefill} onPrefillTaken={() => setNewPrefill("")} proposeNow={proposeNow} onStatus={setAgentStatus} onPaperChange={setNewPaper} onDraftingStart={handleDraftingStart} onSection={handleSection} />
+                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} prefill={newPrefill} onPrefillTaken={() => setNewPrefill("")} proposeNow={proposeNow} onStatus={setAgentStatus} onPaperChange={setNewPaper} onDraftingStart={handleDraftingStart} onSection={handleSection} onDraftStep={handleDraftStep} planSlot={outlineStage ? planSlot : null} />
               </div>
-              {outlineStage ? null : newAbout ? (
+              {newAbout ? (
                 <AgentAbout onClose={() => setNewAbout(false)} permissions={STUDIO_PERMISSIONS} termsVersion={terms?.version || null} onTerms={() => { setConsentError(""); setConsentOpen(true); }} activity={<p className="st-muted">Nothing yet: this story is not saved. Once a draft lands, every version and who made it is listed here.</p>} />
               ) : newTab === "ideas" ? (
                 <div className="ws-agent-body">
                   <AgentIdeas paperKey={newPaper ? `${newPaper.origin}:${newPaper.id}` : null} disabled={agentStatus.busy} note="Ways this could start. Tap a brief to put it in the chat and change it before you send, or ask what the paper could become." onPick={(idea) => { setNewTab("chat"); if (idea.propose) setProposeNow((n) => n + 1); else setNewPrefill(idea.text); }} />
                 </div>
               ) : null}
-              {outlineStage ? null : (
-                <AgentTabs vertical tabs={NEW_STORY_TABS} tab={newTab} onTab={(k) => { setNewTab(k); setNewAbout(false); }} />
-              )}
             </aside>
           </div>
         )
@@ -981,68 +1040,63 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
               mean. The outline is open because it is used while reading; the
               other two are read once. Before this the rail held an outline
               and a legend and then two thirds of a screen of nothing. */}
+          {/* The outline, and what its marks mean in one line under it. What
+              the draft is (its paper, length, reader, version) is in the bar,
+              the Sources tab and the history; the rail is for moving about. */}
           <aside className="ws-left">
-            <RailSection title="Outline" defaultOpen count={sections.length}>
-              <nav className="ws-outline">
-                {sections.map((s) => (
-                  <button key={s.id} type="button" className={s.blockIds.includes(activeBlockId) ? "ws-outline-item on" : "ws-outline-item"} onClick={() => { const first = form.bodyBlocks.findIndex((b) => b.id === s.blockIds[0]); if (first >= 0) goToBlock(first); }}>
-                    <span className={`st-dot ${s.attention ? "is-warn" : "is-ok"}`} aria-hidden />
+            <nav className="ws-outline" aria-label="Outline">
+              <span className="ws-outline-head"><span className="sc-kicker">Outline</span><span className="ws-sect__count">{sections.length}</span></span>
+              {sections.map((s) => {
+                const tone = s.attention ? "is-warn" : s.drafted && s.beyond === s.drafted ? "is-beyond" : s.drafted ? "is-ok" : "is-faint";
+                return (
+                  <button key={s.id} type="button" className={s.blockIds.includes(activeBlockId) ? "ws-outline-item on" : "ws-outline-item"} aria-current={s.blockIds.includes(activeBlockId) ? "true" : undefined} onClick={() => { const first = form.bodyBlocks.findIndex((b) => b.id === s.blockIds[0]); if (first >= 0) goToBlock(first); }}>
+                    <span className={`st-dot ${tone}`} aria-hidden />
                     <span className="ws-outline-text">{s.heading}</span>
+                    {s.attention ? <span className="sr-only"> · needs a look</span> : null}
                   </button>
-                ))}
-              </nav>
-            </RailSection>
-
-            <RailSection title="This draft">
-              <dl className="ws-facts">
-                {form.provenance?.title ? (
-                  <>
-                    <dt>Drawn from</dt>
-                    <dd title={form.provenance.title}>
-                      {form.provenance.url
-                        ? <a href={form.provenance.url} target="_blank" rel="noreferrer">{form.provenance.title}</a>
-                        : form.provenance.title}
-                      {form.provenance.year ? ` (${form.provenance.year})` : ""}
-                    </dd>
-                  </>
-                ) : null}
-                <dt>Length</dt>
-                <dd>{totalWords.toLocaleString()} words · {readingTime} min</dd>
-                <dt>Written for</dt>
-                <dd>{AUDIENCE_TARGETS[normaliseAudience(audience)]?.label || "Adults"}</dd>
-                <dt>Version</dt>
-                <dd>v{form.version} · {formatDate(form.updatedAt)}</dd>
-              </dl>
-            </RailSection>
-
-            <RailSection title="What the marks mean">
-              <div className="ws-legend">
-                <div><span className="st-dot is-ok" /> Every claim supported</div>
-                <div><span className="st-dot is-warn" /> Something to check</div>
-                <div><span className="block-chip" style={{ padding: "0 7px" }}>p7</span> Passage it came from</div>
-                <div><span className="block-chip is-context" style={{ padding: "0 7px" }}>yours</span> Your own context</div>
-                <div><span className="block-chip is-lost" style={{ padding: "0 7px" }}>edited</span> Your words now</div>
-              </div>
-            </RailSection>
+                );
+              })}
+            </nav>
+            <div className="ws-legend" aria-label="What the marks mean">
+              <span><span className="st-dot is-ok" aria-hidden /> supported</span>
+              <span><span className="st-dot is-warn" aria-hidden /> look</span>
+              <span><span className="st-dot is-beyond" aria-hidden /> beyond</span>
+            </div>
           </aside>
 
           <div className="ws-center">
-            <ReadingLevels story={{ id: form.id, version: form.version, levels: form.levels, provenance: form.provenance }} viewLevel={viewLevel} onView={setViewLevel} dirty={dirty} onChanged={(story, message) => handleStoryChanged(story, message)} />
-            {viewLevel ? null : editorColumn}
+            {viewLevel ? (
+              <ReadingLevels part="preview" story={{ id: form.id, version: form.version, levels: form.levels, provenance: form.provenance }} viewLevel={viewLevel} onView={setViewLevel} dirty={dirty} onChanged={(story, message) => handleStoryChanged(story, message)} />
+            ) : editorColumn}
           </div>
 
-          {/* Below 1100px the rail stacks under the article; this keeps Kivyn one tap away. */}
-          <a href="#ws-kivyn" className="ws-jump"><Kivyn variant="mark" size={28} /> {AGENT_NAME}</a>
+          {/* Below 1100px the pane is a sheet over the draft, opened from the
+              bar at the foot: Kivyn, Checks, Sources, and the publish check.
+              It replaced a floating pill that sat over the text it was about. */}
+          <nav className="ws-footbar" aria-label="Story tools">
+            <button type="button" className={sheetOpen && railTab === "chat" ? "ws-footbar__btn on" : "ws-footbar__btn"} onClick={() => { setRailTab("chat"); setSheetOpen(true); }}>
+              <Kivyn variant="mark" size={22} /> {AGENT_NAME}
+            </button>
+            <button type="button" className={sheetOpen && railTab === "checks" ? "ws-footbar__btn on" : "ws-footbar__btn"} onClick={() => { setRailTab("checks"); setSheetOpen(true); }}>
+              {REVIEW_TAB_ICONS.checks} Checks{summary.attention ? <span className="ws-tab-badge">{summary.attention}</span> : null}
+            </button>
+            <button type="button" className={sheetOpen && railTab === "sources" ? "ws-footbar__btn on" : "ws-footbar__btn"} onClick={() => { setRailTab("sources"); setSheetOpen(true); }}>
+              {REVIEW_TAB_ICONS.sources} Sources
+            </button>
+            <button type="button" className="sc-write-publish ws-footbar__go" onClick={() => setShowPublishCheck(true)} disabled={isSaving || proposalPending || dirty}>Publish check</button>
+          </nav>
           <aside id="ws-kivyn" className={railTab === "chat" ? "ws-right is-agent" : "ws-right"}>
             <StudioAgentShell
-              status={!consented ? "Read the terms once to begin" : reviewPose === "tracing" ? (sourcesView === "story" ? "Tracing the story to its sources" : "Tracing the paragraph to its passages") : agentStatus.text}
+              status={!consented ? "Read the terms once to begin" : reviewPose === "tracing" ? (sourcesView === "story" ? "Tracing the story to its sources" : "Tracing the paragraph to its passages") : railTab === "checks" && summary.attention ? `${summary.attention} thing${summary.attention === 1 ? "" : "s"} need${summary.attention === 1 ? "s" : ""} you before you publish` : agentStatus.text}
               busy={consented && agentStatus.busy}
+              tone={railTab === "chat" ? agentStatus.tone : railTab === "checks" && summary.attention ? "warn" : null}
               pose={reviewPose}
+              onClose={() => setSheetOpen(false)}
               tabs={[
-                { key: "chat", label: "Chat", icon: "💬" },
-                { key: "ideas", label: "Ideas", icon: "✦" },
-                { key: "checks", label: "Checks", icon: "◎", badge: form.bodyBlocks.filter(needsAttention).length || 0 },
-                { key: "sources", label: "Sources", icon: "§" },
+                { key: "chat", label: "Chat", icon: REVIEW_TAB_ICONS.chat },
+                { key: "ideas", label: "Ideas", icon: REVIEW_TAB_ICONS.ideas },
+                { key: "checks", label: "Checks", icon: REVIEW_TAB_ICONS.checks, badge: form.bodyBlocks.filter(needsAttention).length || 0 },
+                { key: "sources", label: "Sources", icon: REVIEW_TAB_ICONS.sources },
               ]}
               tab={railTab}
               onTab={(k) => (k === "chat" ? openAgent() : setRailTab(k))}
@@ -1062,7 +1116,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                     : <EvidenceRail storyId={form.id} version={form.version} status={form.status} slug={initialStory?.slug} onGoTo={(i) => goToBlock(i, "source")} />}
                 </div>
               ) : null}
-              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} version={form.version} dirty={dirty} voice={form.provenance?.voice || null} onAskAgent={askAgent} warnings={initialStory?.draftWarnings} onVerify={verifySpecific} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => showRail("evidence")} /> : null}
+              {railTab === "checks" ? <ChecksRail blocks={form.bodyBlocks} assessment={assessment} audience={audience} version={form.version} dirty={dirty} voice={form.provenance?.voice || null} briefOnly={form.provenance?.origin === "brief"} onAskAgent={askAgent} warnings={initialStory?.draftWarnings} onVerify={verifySpecific} draftChecks={form.draftChecks} record={form.record} storyId={form.id} levels={form.levels} onGoTo={(i) => goToBlock(i, "source")} onStoryChanged={(story, message) => handleStoryChanged(story, message)} onOpenEvidence={() => showRail("evidence")} /> : null}
               {railTab === "ideas" ? (
                 <AgentIdeas
                   storyId={form.id}
@@ -1073,7 +1127,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                   onPick={(idea) => { if (!consented) { openAgent(); return; } setRailTab("chat"); setAgentPrefill(idea.text); }}
                 />
               ) : null}
-              {railTab === "chat" ? (consented ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} prefill={agentPrefill} onPrefillTaken={() => setAgentPrefill("")} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} onStatus={setAgentStatus} /> : (
+              {railTab === "chat" ? (consented ? <AgentPanel storyId={form.id} context={agentContext} dirty={dirty} prefill={agentPrefill} onPrefillTaken={() => setAgentPrefill("")} onStoryChanged={handleStoryChanged} onProposalPending={setProposalPending} onProposalAt={setProposalAt} onStatus={setAgentStatus} /> : (
                 <div className="ag-gate">
                   <p className="ag-empty-title">{AGENT_NAME} edits by instruction.</p>
                   <p className="st-muted">It works from the paper behind this story and shows every change before it lands. Read its terms once to use it.</p>
@@ -1099,6 +1153,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
           busy={isSaving}
           onClose={() => setShowPublishCheck(false)}
           onGoTo={(i) => goToBlock(i, "source")}
+          onStoryChanged={handleStoryChanged}
           onPublish={async () => { const ok = await submitStory("published"); if (ok) setShowPublishCheck(false); }}
           onSchedule={form.scheduledFor ? async () => { const ok = await submitStory("scheduled"); if (ok) setShowPublishCheck(false); } : null}
         />

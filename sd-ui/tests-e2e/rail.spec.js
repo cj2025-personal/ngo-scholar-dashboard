@@ -36,7 +36,7 @@ test("on a wide screen a new story opens beside Kivyn; closed, the pane leaves a
   const box = page.getByPlaceholder(/Describe the article you want/);
   await box.fill("I want to write from one of my papers");
   await box.press("Enter");
-  await expect(page.locator(".ch-msg.is-papers .ch-paper")).toHaveCount(3);
+  await expect(page.locator(".ch-msg.is-papers .ch-paper:not(.is-brief)")).toHaveCount(3);
   await page.getByRole("button", { name: "Close Kivyn" }).click();
   await expect(rail).toBeHidden();
   await expect.poll(async () => grid.evaluate((el) => getComputedStyle(el).paddingLeft)).toBe("0px");
@@ -49,7 +49,7 @@ test("on a wide screen a new story opens beside Kivyn; closed, the pane leaves a
   /* The strip opens it again, and the conversation is where it was. */
   await strip.getByRole("button", { name: "Open Kivyn" }).click();
   await expect(rail).toBeVisible();
-  await expect(page.locator(".ch-msg.is-papers .ch-paper")).toHaveCount(3);
+  await expect(page.locator(".ch-msg.is-papers .ch-paper:not(.is-brief)")).toHaveCount(3);
 
   /* Closed is remembered: a reload leaves the page to the scholar, with the strip. */
   await page.getByRole("button", { name: "Close Kivyn" }).click();

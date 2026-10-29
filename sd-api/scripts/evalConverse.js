@@ -38,9 +38,13 @@ const proposal = readProposal(process.argv);
 const policyFor = (name) => policyUnder(name, proposal);
 const converse = require("../src/lib/agents/studioConverse");
 
+const { BRIEF_KEY, BRIEF_TITLE } = require("../src/lib/briefSource");
+
+/* As the service offers them: the scholar's papers, then the brief alone. */
 const PAPERS = [
   { key: "harvested:spectral", title: "Spectral Domain Sparse Representation for DOA Estimation of Signals with Large Dynamic Range", year: 2021 },
   { key: "harvested:bartlett", title: "Application of Sparse Representation to Bartlett Spectra for Improved Direction of Arrival Estimation", year: 2019 },
+  { key: BRIEF_KEY, title: BRIEF_TITLE },
 ];
 
 const args = process.argv.slice(2);
@@ -87,6 +91,9 @@ const main = async () => {
     const actionOk = Boolean(d && e.action.includes(d.action));
     const fields = [];
     if ("paper" in e) fields.push(["paper", d?.paperKey === e.paper || (!d?.paperKey && row.state?.paperKey === e.paper)]);
+    /* Any of these (null for none named), or anything but this one. */
+    if ("paperIn" in e) fields.push(["paper∈", e.paperIn.includes(d?.paperKey ?? null)]);
+    if ("paperNot" in e) fields.push(["paper≠", d?.paperKey !== e.paperNot]);
     if ("audience" in e) fields.push(["audience", e.audience.includes(d?.audience ?? null)]);
     for (const w of e.briefHas || []) fields.push([`brief~${w}`, new RegExp(w, "i").test(d?.brief || "")]);
     for (const w of e.replyHas || []) fields.push([`reply~${w}`, new RegExp(w, "i").test(d?.reply || "")]);

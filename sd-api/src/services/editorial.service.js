@@ -6,6 +6,7 @@ const sanitizeHtml = require("sanitize-html");
 const { env } = require("../config/env");
 const { COLLECTIONS, getDb } = require("../db/mongo");
 const { ApiError } = require("../lib/api-error");
+const { BRIEF_LINE, isBriefOnly } = require("../lib/briefSource");
 const { getEditorialImagesBucket } = require("../lib/gcs");
 const { serializeMongoValue } = require("../lib/serialize");
 const { ownedByScholarFilter } = require("../lib/identity");
@@ -858,7 +859,18 @@ async function resolveStoryAuthor(db, profileId) {
  * cannot name what it was drawn from is not one worth printing.
  */
 async function resolveStoryProvenance(db, provenance) {
-  if (!provenance || !provenance.source_id) return null;
+  if (!provenance) return null;
+  /* Written from the scholar's brief alone: theirs, machine-drafted, checked
+     and with its specifics verified, but drawn from none of their papers —
+     which readers are told under the byline. */
+  if (isBriefOnly(provenance)) {
+    return {
+      origin: provenance.origin, sourceId: null, audience: provenance.audience || null, voice: provenance.voice || null,
+      draftedAt: provenance.drafted_at || null, promptVersion: provenance.prompt_version || null,
+      title: null, year: null, url: null, line: BRIEF_LINE, briefOnly: true,
+    };
+  }
+  if (!provenance.source_id) return null;
   const base = {
     origin: provenance.origin,
     sourceId: provenance.source_id,
@@ -1209,10 +1221,16 @@ function mapStorySummary(story) {
     wordCount: mapped.wordCount,
     readingTimeMinutes: mapped.readingTimeMinutes,
     coverImage: mapped.coverImage,
-    provenance: story.provenance ? { sourceId: story.provenance.source_id || null, title: story.provenance.source_title || null, audience: story.provenance.audience || null } : null,
+    provenance: story.provenance ? { origin: story.provenance.origin || null, sourceId: story.provenance.source_id || null, title: story.provenance.source_title || null, audience: story.provenance.audience || null } : null,
     /* Enough for a to-do line, not the whole picture. */
     record: mapped.record ? { headline: mapped.record.headline, acknowledgedAt: mapped.record.acknowledgedAt, alerts: mapped.record.alerts.length } : null,
-    levels: { written: mapped.levels.length, waiting: mapped.levels.filter((l) => !l.approved && !l.stale).length, stale: mapped.levels.filter((l) => l.stale).length },
+    levels: {
+      written: mapped.levels.length,
+      waiting: mapped.levels.filter((l) => !l.approved && !l.stale).length,
+      stale: mapped.levels.filter((l) => l.stale).length,
+      /* Each level by its reader, so a list can show which ages are live and which wait on the scholar. */
+      bands: mapped.levels.map((l) => ({ audience: l.audience, label: l.label, approved: Boolean(l.approved), stale: Boolean(l.stale) })),
+    },
   };
 }
 

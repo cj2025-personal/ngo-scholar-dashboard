@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FaCheck, FaXmark } from "react-icons/fa6";
 import { HiOutlineArrowUp, HiOutlinePlus } from "react-icons/hi2";
 
-import { DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, converseWithAgent, createDraftJob, discardDraftJob, endConversation, getDraftJob, getDraftSources, latestConversation, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
+import { BRIEF_SOURCE, DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, converseWithAgent, createDraftJob, discardDraftJob, endConversation, getDraftJob, getDraftSources, latestConversation, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 import Kivyn from "@/components/kivyn/Kivyn";
 import KivynButton from "@/components/kivyn/KivynButton";
+import TypedText, { TypingDots } from "@/components/kivyn/TypedText";
 import { useKivynMoment } from "@/components/kivyn/useKivynMoment";
 import { AGENT_NAME, poseForStep } from "@/lib/kivyn/pose.mjs";
 
@@ -31,10 +33,11 @@ const Face = () => <Kivyn variant="mark" size={28} />;
  * so a story is one thing in one place whoever wrote its first paragraph.
  */
 
-const PLACEHOLDER_START = "Describe the article you want, or say which paper it should come from…";
+const PLACEHOLDER_START = "Describe the article you want, and which paper it should come from, if any…";
+const PLACEHOLDER_FROM_BRIEF = "Describe the article you want: the subject, what to cover, who it is for…";
 /* With a paper chosen, asking which paper is a question already answered. */
 const PLACEHOLDER_FROM_PAPER = "Describe the article you want: what to focus on, and who it is for…";
-const PLACEHOLDER_REPLY = "Reply with what to change about the outline, or approve it above";
+const PLACEHOLDER_REPLY = "Tell me what to change about the outline…";
 
 function paperKey(p) {
   return `${p.origin}:${p.id}`;
@@ -63,9 +66,13 @@ function PaperCards({ papers, onPick, disabled }) {
   return (
     <div className="ch-papers">
       {papers.map((p) => (
-        <button key={paperKey(p)} type="button" className="ch-paper" disabled={disabled} onClick={() => onPick(p)}>
+        <button key={paperKey(p)} type="button" className={p.brief ? "ch-paper is-brief" : "ch-paper"} disabled={disabled} onClick={() => onPick(p)}>
           <span className="ch-paper-title">{p.title}</span>
-          <span className="ch-paper-meta">{[p.year, p.wordCount ? `${Number(p.wordCount).toLocaleString()} words` : null, p.host || null].filter(Boolean).join(" · ")}</span>
+          <span className="ch-paper-meta">
+            {p.brief
+              ? "From what you tell me, using none of your papers. Every specific is listed for you to verify."
+              : [p.year, p.wordCount ? `${Number(p.wordCount).toLocaleString()} words` : null, p.host || null].filter(Boolean).join(" · ")}
+          </span>
         </button>
       ))}
     </div>
@@ -94,7 +101,108 @@ function AudienceChips({ onPick, disabled }) {
   );
 }
 
-function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, moment = null }) {
+/* What each drafting step is, said of the section it is on. */
+const STEP_WORDS = {
+  draft_blocks: (n) => `Writing section ${n}`,
+  judge_voice: (n) => `Reading section ${n} for whose voice it is in`,
+  judge_fidelity: (n) => `Checking section ${n} against the paper`,
+  judge_reach: (n) => `Checking what section ${n} draws from the paper`,
+  judge_context: (n) => `Checking section ${n} for what it claims of the paper`,
+};
+const ARTICLE_STEPS = new Set(["assemble", "review_article", "verify", "create_story"]);
+
+/**
+ * The draft under way, as a checklist: the paper read, each section written
+ * and checked, the one being worked on, the ones still to come, and the
+ * whole article read as its reader would. Every line is a step the drafter
+ * reported; nothing advances on a clock.
+ */
+function DraftChecklist({ run, brief = false }) {
+  const onArticle = ARTICLE_STEPS.has(run.step);
+  return (
+    <ol className="ns-checklist" aria-live="polite">
+      <li className="is-done"><span className="ns-check" aria-hidden>✓</span>{brief ? "Read your brief" : "Read the paper"}</li>
+      {run.beats.map((b) => {
+        const done = run.written.includes(b.index);
+        const now = !done && !onArticle && run.index === b.index;
+        /* The section's number is in its circle; the line says what it is, or what is happening to it. */
+        const label = done ? `${b.heading} · written and checked` : now ? (STEP_WORDS[run.step] || STEP_WORDS.draft_blocks)(b.index) : b.heading;
+        return (
+          <li key={b.index} className={done ? "is-done" : now ? "is-now" : "is-waiting"}>
+            <span className="ns-check" aria-hidden>{done ? "✓" : b.index}</span>
+            <span>{label}{now ? <TypingDots label="working" /> : null}</span>
+          </li>
+        );
+      })}
+      <li className={onArticle ? "is-now" : "is-waiting"}>
+        <span className="ns-check" aria-hidden />
+        <span>Read the whole article as its reader would{onArticle ? <TypingDots label="working" /> : null}</span>
+      </li>
+    </ol>
+  );
+}
+
+/**
+ * The outline waiting for approval, where the article will be.
+ *
+ * Read in the space the draft will take, beside Kivyn, with its decision
+ * pinned at the foot of the page so "Approve and draft" is always in view on
+ * a laptop; the sections are cards to keep or cut. It keeps the outline
+ * message's own classes, so what finds an outline still finds this one.
+ */
+function OutlinePlan({ msg, beats, setBeats, kept, busy, onApprove, onDiscard }) {
+  const beyond = beats.filter((b) => b.kind === "extension").length;
+  const coverage = msg.outline.coverage || null;
+  return (
+    <div className="ch-msg is-agent is-outline ag-approval ws-outline-plan">
+      <div className="ws-outline-plan__body">
+        <p className="ag-approval-kicker">Outline · needs your approval</p>
+        <h1 className="ch-outline-title">{msg.outline.title}</h1>
+        {msg.outline.deck ? <p className="ws-outline-plan__deck">{msg.outline.deck}</p> : null}
+        <p className="ws-outline-plan__note">
+          {msg.replans ? "Replanned from what you said. " : ""}
+          {msg.briefOnly
+            ? `${beats.length} section${beats.length === 1 ? "" : "s"} from your brief, as your own account; none of your papers is used. Every specific the draft brings in is listed for you to verify before it can be published.`
+            : beyond
+            ? `${beats.length - beyond} section${beats.length - beyond === 1 ? "" : "s"} built only from the passages listed with ${beats.length - beyond === 1 ? "it" : "them"}, and ${beyond} that say${beyond === 1 ? "s" : ""} what follows for the reader: implications only, checked claim by claim.`
+            : `${beats.length} section${beats.length === 1 ? "" : "s"}, each built only from the passages listed with it.`}
+        </p>
+        {coverage && coverage.met !== "full" ? (
+          <p className="ch-coverage">
+            {coverage.met === "none" ? "The paper cannot carry what you asked for" : "Part of what you asked for is left out"}
+            {coverage.note ? `: ${coverage.note}` : "."}{" "}
+            {coverage.met === "none" ? "This plan reports the paper instead." : "Tell Kivyn if you want a different plan."}
+          </p>
+        ) : null}
+        <ol className="ch-beats">
+          {beats.map((b, i) => (
+            <li key={`${b.heading}-${i}`} className={`ch-beat${b.kept ? "" : " is-cut"}${b.kind === "extension" ? " is-beyond" : ""}`}>
+              <span className="ch-beat-n" aria-hidden>{i + 1}</span>
+              <div className="ch-beat-body">
+                <div className="ch-beat-heading">{b.heading}{b.kind === "extension" ? <span className="ch-beat-kind" title="Says what follows from the paper for the reader. Every claim is checked to follow from the passages it builds on; nothing from outside the paper.">Beyond the paper</span> : b.kind === "context" && !msg.briefOnly ? <span className="ch-beat-kind is-context" title="Your own context: what you know about the world around the work, written as your view. Nothing in it is attributed to the paper, and every specific it brings in is listed for you to verify before the story can be published.">Your own context</span> : null}</div>
+                <div className="st-todo-detail">{b.goal}</div>
+              </div>
+              <div className="ch-beat-refs">{(b.passageIds || []).map((id) => <span key={id} className="block-chip" style={{ cursor: "default" }}>{id}</span>)}</div>
+              <button type="button" className="nsf-cut" aria-label={b.kept ? `Cut section ${i + 1}` : `Keep section ${i + 1}`} disabled={busy} onClick={() => setBeats((cur) => cur.map((x, k) => (k === i ? { ...x, kept: !x.kept } : x)))}>
+                {b.kept ? <FaXmark size={11} /> : <FaCheck size={11} />}
+              </button>
+            </li>
+          ))}
+        </ol>
+      </div>
+      {/* The decision, pinned: it stays in view however long the plan. */}
+      <div className="ch-actions ws-outline-plan__bar">
+        <span className="ws-outline-plan__kept"><b>{kept.length} of {beats.length} sections kept</b> · nothing is drafted until you approve</span>
+        <button type="button" className="st-link ch-discard" disabled={busy} onClick={onDiscard}>Discard</button>
+        <button type="button" className="sc-write-publish st-btn-primary" disabled={busy || kept.length === 0} onClick={() => onApprove({ title: msg.outline.title, deck: msg.outline.deck, beats: kept.map(({ kept: _k, ...b }) => b) })}>
+          <FaCheck size={11} aria-hidden /> Approve and draft{kept.length !== beats.length ? ` ${kept.length} of ${beats.length}` : ""}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, moment = null, slot = null }) {
   const [beats, setBeats] = useState(() => (msg.outline.beats || []).map((b) => ({ ...b, kept: true })));
   const kept = beats.filter((b) => b.kept);
   /* The outline as it stands, sections cut or kept, so an approval said in
@@ -104,6 +212,21 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, momen
   }, [latest, beats, msg.outline.title, msg.outline.deck, onKept]);
   const beyond = beats.filter((b) => b.kind === "extension").length;
   const coverage = msg.outline.coverage || null;
+  /* Waiting, with the page free to show it: the plan goes where the article
+     will be, and the thread says where it is. */
+  if (latest && slot) {
+    return (
+      <>
+        <div className="ch-msg is-agent is-outline-note">
+          <Kivyn variant="mark" size={28} pose={moment || "neutral"} live={Boolean(moment)} />
+          <div className="ch-bubble">
+            <TypedText animate={Boolean(msg.fresh)} text={msg.briefOnly ? `The outline is beside us: ${beats.length} section${beats.length === 1 ? "" : "s"} from your brief, using none of your papers. Approve it, cut what you don't want, or tell me what to change.` : `I read the paper. The outline is beside us: ${beats.length} section${beats.length === 1 ? "" : "s"}${beyond ? `, ${beyond} of them saying what follows for the reader` : ""}. Approve it, cut what you don't want, or tell me what to change.`} />
+          </div>
+        </div>
+        {createPortal(<OutlinePlan msg={msg} beats={beats} setBeats={setBeats} kept={kept} busy={busy} onApprove={onApprove} onDiscard={onDiscard} />, slot)}
+      </>
+    );
+  }
   return (
     <div className={`ch-msg is-agent is-outline${latest ? " ag-approval" : ""}`}>
       {/* While an outline waits the page is the plan and the pane's head is gone, so its moment is on this face. */}
@@ -111,7 +234,7 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, momen
       <div className="ch-bubble">
         {latest ? <p className="ag-approval-kicker">Needs your approval</p> : null}
         <p className="ch-text">
-          {msg.replans ? "Here is the outline again, replanned from what you said." : "I read the paper. Here is how the article would go."}{" "}
+          {msg.replans ? "Here is the outline again, replanned from what you said." : msg.briefOnly ? "Here is how the article would go, from your brief alone." : "I read the paper. Here is how the article would go."}{" "}
           {beyond
             ? `${beats.length - beyond} section${beats.length - beyond === 1 ? "" : "s"} built only from the passages listed beside ${beats.length - beyond === 1 ? "it" : "them"}, and ${beyond} that say${beyond === 1 ? "s" : ""} what follows from the paper for the reader — implications only, checked claim by claim, with nothing from outside the paper.`
             : `${beats.length} section${beats.length === 1 ? "" : "s"}, each built only from the passages listed beside it.`}
@@ -169,8 +292,11 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, momen
  *                                    `initialSource` rather than describing one
  * @param {(stage: "outline"|null) => void} [p.onStageChange]   what the rail is asking for, so the page can give it the room it needs
  */
-export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, onStatus, onPaperChange, onDraftingStart, onSection }) {
+export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, onStatus, onPaperChange, onDraftingStart, onSection, onDraftStep, planSlot = null }) {
   const [inventory, setInventory] = useState(null);
+  /* The draft under way, as the checklist in this pane shows it: the
+     sections approved, the ones written, and the step the drafter is on. */
+  const [draftRun, setDrafting] = useState({ beats: [], written: [], step: null, index: null });
   /* A finished piece of work, for a moment: an outline in, a draft landed. */
   const [moment, showMoment] = useKivynMoment();
   const [paper, setPaper] = useState(initialSource);
@@ -213,8 +339,12 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, []);
 
-  const draftable = inventory?.draftable || [];
+  /* The scholar's papers, and beside them writing from the brief alone, for
+     anyone who may draft at all. */
+  const papersHeld = inventory?.draftable || [];
+  const draftable = inventory?.eligible ? [...papersHeld, BRIEF_SOURCE] : papersHeld;
   const selectedPaper = draftable.find((p) => paperKey(p) === paper) || null;
+  const fromBrief = Boolean(selectedPaper?.brief);
   const outlineWaiting = job?.status === "awaiting_outline";
   const locked = Boolean(job);
   /* Until the inventory has loaded, the agent does not yet know which papers
@@ -238,7 +368,9 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   /* Closing the rail, or leaving, puts the page back the way it was. */
   useEffect(() => () => onStageChange?.(null), [onStageChange]);
 
-  const push = useCallback((m) => setMessages((cur) => [...cur, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...m }]), []);
+  /* What arrives while the scholar watches is typed onto the screen; what was
+     picked up from the record was said before, and is shown whole. */
+  const push = useCallback((m) => setMessages((cur) => [...cur, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, fresh: m.role !== "user", ...m }]), []);
   const setProgress = useCallback((textValue, step) => setMessages((cur) => {
     const i = cur.findIndex((m) => m.role === "progress");
     if (i < 0) return [...cur, { id: "progress", role: "progress", text: textValue, step }];
@@ -261,7 +393,8 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       return;
     }
     if ((inv.draftable || []).length === 0) {
-      push({ role: "agent", text: inv.nudge || "Nothing is ready to draft from yet. Add a paper you hold the rights to and come back." });
+      /* No paper to draft from: the brief alone still is. */
+      push({ role: "agent", text: `${inv.nudge ? `${inv.nudge} ` : "None of your papers can be drafted from yet. "}I can still write from your brief alone: tell me what the article should be about and who it is for.` });
       return;
     }
     const chosen = (inv.draftable || []).find((p) => paperKey(p) === paper) || null;
@@ -299,7 +432,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
         const kept = found.lines.map((l, i) => ({ id: `kept-${i}`, role: l.role === "scholar" ? "user" : "agent", text: l.text, spoken: true }));
         kept.forEach((m) => reportedRef.current.add(m.id));
         setMessages(kept);
-        if (found.state?.paperKey && (r.data.draftable || []).some((p) => paperKey(p) === found.state.paperKey)) setPaper(found.state.paperKey);
+        if (found.state?.paperKey && (found.state.paperKey === paperKey(BRIEF_SOURCE) || (r.data.draftable || []).some((p) => paperKey(p) === found.state.paperKey))) setPaper(found.state.paperKey);
         if (found.state?.audience) { setAudience(found.state.audience); setAudienceSet(true); }
         if (found.state?.voice) setVoice(found.state.voice);
         return;
@@ -327,7 +460,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   function showOutline(j, { replans = 0 } = {}) {
     /* An outline is work done; one that says the paper cannot carry what was asked is the paper not saying it. */
     showMoment(j.outline?.coverage?.met === "none" ? "cant-answer" : "done");
-    setMessages((cur) => [...cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m)), { id: `outline-${j.id}-${replans}`, role: "outline", outline: j.outline, replans, jobId: j.id }]);
+    setMessages((cur) => [...cur.filter((m) => m.role !== "progress").map((m) => (m.role === "outline" ? { ...m, superseded: true } : m)), { id: `outline-${j.id}-${replans}`, role: "outline", outline: j.outline, replans, jobId: j.id, briefOnly: j.source?.origin === "brief" }]);
   }
 
   /* The finished draft goes to the page. A job started before the rail
@@ -336,7 +469,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     clearProgress();
     if (settled.storyId) {
       showMoment("done");
-      push({ role: "agent", text: "Your draft is ready. Opening it, where you can read it against the paper and keep editing by instruction." });
+      push({ role: "agent", text: settled.source?.origin === "brief" ? "Your draft is ready. Opening it, where you can verify what it names and keep editing by instruction." : "Your draft is ready. Opening it, where you can read it against the paper and keep editing by instruction." });
       /* The story is where the work goes on; this conversation is over. */
       if (conversationRef.current) { endConversation(conversationRef.current); conversationRef.current = null; }
       onStoryReady?.(settled.storyId);
@@ -344,7 +477,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     }
     if (settled.status === "awaiting_review" && settled.draft) {
       showMoment("done");
-      push({ role: "agent", text: "The draft is in the page beside us, under your name. Every paragraph shows the passage it came from. Read it, change what you like, and tell me what to do next." });
+      push({ role: "agent", text: settled.source?.origin === "brief" ? "The draft is in the page beside us, under your name, written from your brief alone. Every specific it names is listed in Checks for you to verify before it can be published. Read it, change what you like, and tell me what to do next." : "The draft is in the page beside us, under your name. Every paragraph shows the passage it came from. Read it, change what you like, and tell me what to do next." });
       onDraftReady?.(settled, source || settled.source || {}, { levels: wantedLevelsRef.current });
       return true;
     }
@@ -357,6 +490,15 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       after,
       onProgress: ({ step, message, detail }) => {
         setProgress(message, step);
+        /* The step and the section it is on, for the checklist here and the plan on the page. */
+        const index = Number.isInteger(detail?.index) ? detail.index : null;
+        setDrafting((cur) => ({
+          ...cur,
+          step,
+          index: index ?? cur.index,
+          written: step === "section_drafted" && index !== null && !cur.written.includes(index) ? [...cur.written, index] : cur.written,
+        }));
+        onDraftStep?.({ step, index });
         /* A section as it lands: handed to the page, which types it in. */
         if (detail?.step === "section_drafted" && Array.isArray(detail.blocks)) onSection?.({ index: detail.index, total: detail.total, heading: detail.heading, kind: detail.kind, blocks: detail.blocks });
       },
@@ -379,7 +521,8 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
      proposal that exists picks it up rather than paying for a second one. */
   const proposedRef = useRef(false);
   async function propose({ from = selectedPaper, said = true } = {}) {
-    if (!ready || busy || job || !from) return;
+    /* An angle is read from a paper; the brief alone has none to read. */
+    if (!ready || busy || job || !from || from.brief) return;
     if (said) push({ role: "user", text: "What could this paper become?" });
     setBusy(true);
     setProgress("Reading the paper…", "pick_source");
@@ -402,7 +545,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   }
   useEffect(() => {
     if (!autoPropose || proposedRef.current) return;
-    if (!ready || resumeJobId || job || !selectedPaper) return;
+    if (!ready || resumeJobId || job || !selectedPaper || selectedPaper.brief) return;
     proposedRef.current = true;
     const t = setTimeout(propose, 0);
     return () => clearTimeout(t);
@@ -414,7 +557,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     if (proposeNow === proposeSeenRef.current) return undefined;
     proposeSeenRef.current = proposeNow;
     const t = setTimeout(() => {
-      if (!selectedPaper) { push({ role: "agent", text: "Pick a paper below first, and I will read it and propose what it could become." }); return; }
+      if (!selectedPaper || selectedPaper.brief) { push({ role: "agent", text: "Pick a paper below first, and I will read it and propose what it could become." }); return; }
       propose();
     }, 0);
     return () => clearTimeout(t);
@@ -441,7 +584,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     const text = busy ? (progressText || "Working") : outlineWaiting ? "An outline is waiting for your approval" : locked ? "Draft in hand" : !ready ? "Looking at your papers" : awaitingAudience ? "Who is the article for?" : selectedPaper ? `Ready to plan from “${String(selectedPaper.title || "").length > 26 ? `${String(selectedPaper.title).slice(0, 25).trim()}…` : selectedPaper.title}”` : "Tell me what to write";
     onStatus?.({ text, busy, pose: busy ? poseForStep(progressStep) : moment || "neutral" });
   }, [busy, progressText, progressStep, moment, outlineWaiting, locked, ready, selectedPaper, awaitingAudience, onStatus]);
-  useEffect(() => { onPaperChange?.(selectedPaper); }, [selectedPaper, onPaperChange]);
+  useEffect(() => { onPaperChange?.(fromBrief ? null : selectedPaper); }, [selectedPaper, fromBrief, onPaperChange]);
 
   /* Coming back to a job from Studio. */
   useEffect(() => {
@@ -487,10 +630,11 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   async function startJob(brief, { from = selectedPaper, forAudience = audience, forVoice = voice, extras = levelBands } = {}) {
     if (!from) return;
     setBusy(true);
-    setProgress("Reading the paper…", "pick_source");
+    setProgress(from.brief ? "Planning from your brief…" : "Reading the paper…", "pick_source");
     wantedLevelsRef.current = extras.filter((a) => a !== forAudience);
-    /* No story from the job: the page beside us is the story. */
-    const r = await createDraftJob({ origin: from.origin, sourceId: from.id, audience: forAudience, voice: forVoice, brief, approveOutline: true, createStory: false, levels: false });
+    /* No story from the job: the page beside us is the story. The brief
+       alone names no source, and is always the scholar's own account. */
+    const r = await createDraftJob({ origin: from.origin, sourceId: from.brief ? null : from.id, audience: forAudience, voice: forVoice, brief, approveOutline: true, createStory: false, levels: false });
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     const j = r.data.job;
     if (r.data.reused && j.terminal) {
@@ -577,7 +721,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
         startJob(d.brief, { from, forAudience, forVoice, extras });
         return;
       case "propose":
-        if (!from) { askWhichPaper(d.reply); return; }
+        if (!from || from.brief) { askWhichPaper(d.reply); return; }
         if (d.reply) push({ role: "agent", text: d.reply, spoken: true });
         propose({ from, said: false });
         return;
@@ -637,7 +781,9 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     if (said) push({ role: "user", text: `Approved${outline.beats.length ? `: ${outline.beats.length} section${outline.beats.length === 1 ? "" : "s"}` : ""}.` });
     setProgress("Drafting…", "draft_blocks");
     /* The page knows what is coming, and shows each section as it is written. */
-    onDraftingStart?.({ title: outline.title || "", beats: outline.beats.map((b, i) => ({ index: b.index ?? i + 1, heading: b.heading })) });
+    const beats = outline.beats.map((b, i) => ({ index: b.index ?? i + 1, heading: b.heading }));
+    onDraftingStart?.({ title: outline.title || "", beats });
+    setDrafting({ beats, written: [], step: "draft_blocks", index: beats[0]?.index ?? 1 });
     const r = await approveDraftOutline(job.id, outline);
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     setJob(r.data.job);
@@ -673,7 +819,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       <div className="ch-thread" ref={threadRef}>
         {messages.map((m) => {
           if (m.role === "outline") {
-            return <OutlineMessage key={m.id} msg={m} latest={m.id === latestOutlineId && outlineWaiting} busy={busy} onApprove={(o) => approve(o)} onDiscard={() => discard()} onKept={onKept} moment={moment} />;
+            return <OutlineMessage key={m.id} msg={m} latest={m.id === latestOutlineId && outlineWaiting} busy={busy} onApprove={(o) => approve(o)} onDiscard={() => discard()} onKept={onKept} moment={moment} slot={planSlot} />;
           }
           if (m.role === "user") return <div key={m.id} className="ch-msg is-user"><div className="ch-bubble">{m.text}</div></div>;
           if (m.role === "papers") {
@@ -681,7 +827,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
               <div key={m.id} className="ch-msg is-agent is-papers">
                 <Face />
                 <div className="ch-bubble">
-                  <p className="ch-text">{m.text}</p>
+                  <TypedText as="p" className="ch-text" animate={Boolean(m.fresh)} text={m.text} />
                   <PaperCards papers={draftable} disabled={busy || locked || Boolean(selectedPaper)} onPick={(p) => pickPaper(p)} />
                 </div>
               </div>
@@ -692,7 +838,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
               <div key={m.id} className="ch-msg is-agent is-story">
                 <Face />
                 <div className="ch-bubble">
-                  <p className="ch-text">{m.text}</p>
+                  <TypedText as="p" className="ch-text" animate={Boolean(m.fresh)} text={m.text} />
                   <div className="ch-chips"><button type="button" className="ch-chip is-default" onClick={() => onStoryReady?.(m.storyId)}>Open the story</button></div>
                 </div>
               </div>
@@ -703,26 +849,39 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
               <div key={m.id} className="ch-msg is-agent is-audience">
                 <Face />
                 <div className="ch-bubble">
-                  <p className="ch-text">{m.text}</p>
+                  <TypedText as="p" className="ch-text" animate={Boolean(m.fresh)} text={m.text} />
                   <AudienceChips disabled={busy || locked || !awaitingAudience} onPick={(a) => pickAudience(a)} />
                 </div>
               </div>
             );
           }
           if (m.role === "progress") {
+            /* While the draft is written, the steps as a checklist; before
+               that, what Kivyn is doing in a line, with the dots of a reply
+               on its way. */
+            const draftingNow = Boolean(job) && !outlineWaiting && draftRun.beats.length > 0;
             return (
-              <div key={m.id} className="ch-msg is-agent is-working">
-                <KivynButton pose={poseForStep(m.step)} busy size={56} />
-                <div className="ag-working" role="status" aria-live="polite"><div className="ag-working-line">{m.text}</div></div>
+              <div key={m.id} className={`ch-msg is-agent is-working${draftingNow ? " is-drafting" : ""}`}>
+                <KivynButton pose={poseForStep(m.step)} busy size={draftingNow ? 44 : 56} />
+                <div className="ag-working" role="status" aria-live="polite">
+                  {draftingNow ? (
+                    <>
+                      <div className="ag-working-line"><b>Drafting it now</b></div>
+                      <DraftChecklist run={draftRun} brief={job?.source?.origin === "brief"} />
+                    </>
+                  ) : (
+                    <div className="ag-working-line">{m.text} <TypingDots label="working" /></div>
+                  )}
+                </div>
               </div>
             );
           }
-          if (m.role === "error") return <div key={m.id} className="ch-msg is-agent"><Face /><div className="ch-bubble is-error">{m.text}</div></div>;
+          if (m.role === "error") return <div key={m.id} className="ch-msg is-agent"><Face /><div className="ch-bubble is-error"><TypedText animate={Boolean(m.fresh)} text={m.text} /></div></div>;
           return (
             <div key={m.id} className="ch-msg is-agent">
               <Face />
               <div className="ch-bubble">
-                {m.text}
+                <TypedText animate={Boolean(m.fresh)} text={m.text} />
                 {/* Ways to begin: each fills the box, never sends, so the scholar finishes the sentence. Gone once anything is said. */}
                 {m.starters && !saidAnything ? (
                   <div className="ch-chips ch-starters" role="group" aria-label="Ways to begin">
@@ -743,68 +902,69 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
             with the controls one tap away behind "Change", never in the way
             of the words. The selects keep their labels so the keyboard, the
             screen reader and the browser suite see ordinary controls. */}
-        {selectedPaper || locked ? (
-          <div className={`ch-context${locked ? " is-locked" : ""}`}>
-            <span className="ch-context-line">
-              <b>From</b> “{selectedPaper?.title || "your paper"}” · <b>for</b> {DRAFT_AUDIENCES.find((a) => a.value === audience)?.label.toLowerCase() || "adults"} · {DRAFT_VOICES.find((v) => v.value === voice)?.label.toLowerCase() || "my own account"}{extraBands.length ? ` · also for ${extraBands.length} more ${extraBands.length === 1 ? "age" : "ages"}` : ""}
+        {/* What the article is set to: the paper, the reader, the voice,
+            each changed where it is shown. Once a draft is under way they
+            are said in a line, with the way to start another. */}
+        {locked ? (
+          <div className="ch-context ns-pickers is-locked">
+            <span className="ch-locked">
+              <b>Set for this draft:</b> {fromBrief ? "your brief alone, no paper" : <>“{selectedPaper?.title || "your paper"}”</>} · for {DRAFT_AUDIENCES.find((a) => a.value === audience)?.label.toLowerCase() || "adults"} · {DRAFT_VOICES.find((v) => v.value === voice)?.label.toLowerCase() || "my own account"}{extraBands.length ? ` · also for ${extraBands.length} more ${extraBands.length === 1 ? "age" : "ages"}` : ""}
+              {" · "}<button type="button" className="st-link" onClick={startAnother}>Start another</button>
             </span>
-            {locked ? (
-              <span className="ch-locked">Set for this draft · <button type="button" className="st-link" onClick={startAnother}>Start another</button></span>
-            ) : (
-              <details ref={bandsRef} className="ch-context-more">
-                <summary className="st-link">Change</summary>
-                <div className="ch-menu ch-context-menu">
-                  <label className="ch-field"><span>Paper</span>
-                    <select aria-label="Paper" value={paper || ""} onChange={(e) => setPaper(e.target.value || null)}>
-                      <option value="">Choose a paper…</option>
-                      {draftable.map((p) => <option key={paperKey(p)} value={paperKey(p)}>{p.title}{p.year ? ` (${p.year})` : ""}</option>)}
-                    </select>
-                  </label>
-                  <label className="ch-field"><span>Reader age</span>
-                    <select aria-label="Reader age" value={audience} onChange={(e) => { setAudience(e.target.value); setAudienceSet(true); }}>
-                      {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label} · grade {a.grade}</option>)}
-                    </select>
-                  </label>
-                  <label className="ch-field"><span>Written as</span>
-                    <select aria-label="Written as" value={voice} onChange={(e) => setVoice(e.target.value)}>
-                      {DRAFT_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-                    </select>
-                  </label>
-                  <fieldset className="ch-field ch-field-bands">
-                    <legend>Also write it for</legend>
-                    <p className="ch-menu__note">After the article, {AGENT_NAME} writes it again for each of these, on its own. You approve every level before readers see it.</p>
-                    {DRAFT_AUDIENCES.filter((a) => a.value !== audience).map((a) => (
-                      <label key={a.value} className="ch-menu__row">
-                        <input type="checkbox" checked={levelBands.includes(a.value)} onChange={(e) => setLevelBands((cur) => (e.target.checked ? [...cur, a.value] : cur.filter((v) => v !== a.value)))} />
-                        <span>{a.label}</span>
-                        <span className="ch-menu__grade">reads at grade {a.grade}</span>
-                      </label>
-                    ))}
-                  </fieldset>
-                </div>
-              </details>
+          </div>
+        ) : ready && draftable.length ? (
+          <div className="ch-context ns-pickers">
+            <label className="ns-pick is-paper">
+              <span className="ns-pick__label">From</span>
+              <select aria-label="Paper" value={paper || ""} disabled={busy} onChange={(e) => setPaper(e.target.value || null)}>
+                <option value="">Choose a paper…</option>
+                {draftable.map((p) => <option key={paperKey(p)} value={paperKey(p)}>{p.title}{p.year ? ` (${p.year})` : ""}</option>)}
+              </select>
+            </label>
+            <label className="ns-pick">
+              <span className="ns-pick__label">For</span>
+              <select aria-label="Reader age" value={audience} disabled={busy} onChange={(e) => { setAudience(e.target.value); setAudienceSet(true); }}>
+                {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+              </select>
+            </label>
+            {/* From the brief alone it is always the scholar's own account. */}
+            {fromBrief ? null : (
+              <label className="ns-pick">
+                <span className="ns-pick__label">Voice</span>
+                <select aria-label="Written as" value={voice} disabled={busy} onChange={(e) => setVoice(e.target.value)}>
+                  {DRAFT_VOICES.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+                </select>
+              </label>
             )}
+            {/* The other reading ages: a choice made once, at the end, so a
+                small menu rather than a fourth picker. */}
+            <details ref={bandsRef} className="ch-context-more ns-pick-more">
+              <summary aria-label="Also write it for other reading ages" title="Also write it for other reading ages">
+                <HiOutlinePlus size={14} aria-hidden />{extraBands.length ? <span className="ns-pick-more__n">{extraBands.length}</span> : null}
+              </summary>
+              <div className="ch-menu ch-context-menu">
+                <fieldset className="ch-field ch-field-bands">
+                  <legend>Also write it for</legend>
+                  <p className="ch-menu__note">After the article, {AGENT_NAME} writes it again for each of these, on its own. You approve every level before readers see it.</p>
+                  {DRAFT_AUDIENCES.filter((a) => a.value !== audience).map((a) => (
+                    <label key={a.value} className="ch-menu__row">
+                      <input type="checkbox" checked={levelBands.includes(a.value)} onChange={(e) => setLevelBands((cur) => (e.target.checked ? [...cur, a.value] : cur.filter((v) => v !== a.value)))} />
+                      <span>{a.label}</span>
+                      <span className="ch-menu__grade">reads at grade {a.grade}</span>
+                    </label>
+                  ))}
+                </fieldset>
+              </div>
+            </details>
           </div>
         ) : null}
         <div className="ch-dock">
           <div className="ag-box">
-            {/* "+": the paper, the reader, the voice. With no paper yet it
-                asks which; with one, it opens the line above for changing. */}
-            <button
-              type="button"
-              className="ch-plus"
-              aria-label={selectedPaper ? "Options" : "Add a source"}
-              title={selectedPaper ? "Which source, who it is for, whose voice" : "Add a source"}
-              disabled={!ready || busy || (locked && !outlineWaiting)}
-              onClick={() => { if (!selectedPaper) { askWhichPaper(); return; } const el = bandsRef.current; if (el) el.open = !el.open; }}
-            >
-              <HiOutlinePlus size={18} aria-hidden />
-            </button>
             <textarea
               ref={inputRef}
               className="ag-input"
               rows={1}
-              placeholder={outlineWaiting ? PLACEHOLDER_REPLY : awaitingAudience ? "Tap an age above, or tell me who it is for…" : selectedPaper ? PLACEHOLDER_FROM_PAPER : PLACEHOLDER_START}
+              placeholder={outlineWaiting ? PLACEHOLDER_REPLY : awaitingAudience ? "Tap an age above, or tell me who it is for…" : fromBrief ? PLACEHOLDER_FROM_BRIEF : selectedPaper ? PLACEHOLDER_FROM_PAPER : PLACEHOLDER_START}
               value={text}
               disabled={!ready || busy || (locked && !outlineWaiting)}
               onChange={(e) => setText(e.target.value)}
@@ -814,8 +974,14 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
           </div>
         </div>
         <div className="ag-hint">
-          <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
-          <span>{outlineWaiting ? "Approve the outline, or say what to change" : selectedPaper ? "An outline is proposed before anything is drafted" : "Name a paper, or ask to write from one"}</span>
+          {locked && !outlineWaiting && busy ? (
+            <span>You can talk to {AGENT_NAME} again when the draft lands.</span>
+          ) : (
+            <>
+              <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
+              <span>{outlineWaiting ? "Approve the outline, or say what to change" : selectedPaper ? "An outline comes before anything is drafted" : "Name a paper, or say to write from none"}</span>
+            </>
+          )}
         </div>
       </form>
     </div>

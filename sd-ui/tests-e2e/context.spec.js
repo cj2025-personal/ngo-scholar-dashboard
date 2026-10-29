@@ -47,7 +47,9 @@ test("a brief about the world today gets the author's own context, held for the 
      kind, which is the point of a legend. */
   const chip = page.locator(".block-row .block-chip.is-context");
   await expect(chip).toHaveCount(1);
-  await expect(chip).toContainText("1 to verify");
+  /* The mark in the margin is short ("yours · 1"); what it stands for is on hover. */
+  await expect(chip).toContainText("yours · 1");
+  await expect(chip).toHaveAttribute("title", /1 to verify/);
   await expect(page.locator(".block-chip.is-reach")).toHaveCount(0, "a context brief plans context, not an implication");
 
   /* The server holds the gate whatever a client sends. (A freshly opened
@@ -76,7 +78,7 @@ test("a brief about the world today gets the author's own context, held for the 
   await page.getByRole("tab", { name: "Checks" }).click();
   await expect(page.getByText("To verify", { exact: true })).toBeVisible();
   await page.locator(".ck-verify__row input[type=checkbox]").first().check();
-  await expect(chip).toContainText("verified");
+  await expect(chip).toHaveAttribute("title", /your own context · verified/);
   await expect(page.locator(".sc-write-saved")).toHaveText("Saved", { timeout: 20_000 });
   await expect(publishCheck).toBeEnabled({ timeout: 20_000 });
   await publishCheck.click();

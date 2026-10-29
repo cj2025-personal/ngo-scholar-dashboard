@@ -36,14 +36,16 @@ import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
  * doing. Kivyn is its own button — a tap gets a reaction — and the name
  * beside it opens who Kivyn is, so the two never compete for one click.
  */
-export function AgentIdentity({ status, busy = false, pose = "neutral", about, onAbout, onClose, closeLabel = `Close ${AGENT_NAME}` }) {
+export function AgentIdentity({ status, busy = false, pose = "neutral", tone = null, about, onAbout, onClose, closeLabel = `Close ${AGENT_NAME}` }) {
   return (
     <div className="rc-head ws-agent-head">
-      <KivynButton pose={pose} busy={busy} size={52} />
+      <KivynButton pose={pose} busy={busy} size={44} />
       <button type="button" className="rc-identity ws-identity" onClick={() => onAbout(!about)} aria-expanded={about} title={`Who ${AGENT_NAME} is, what it may do, and what it did`}>
         <span className="rc-identity-text">
           <b>{AGENT_NAME}</b>
-          <span className={`rc-status${busy ? " is-busy" : ""}`}>{status}</span>
+          {/* A change waiting on the scholar is said here, in amber, beside
+              the change: the one place it is announced. */}
+          <span className={`rc-status${busy ? " is-busy" : ""}${tone ? ` is-${tone}` : ""}`} role="status">{status}</span>
         </span>
       </button>
       {onClose ? <button type="button" className="ag-rail-close" aria-label={closeLabel} onClick={onClose}><FaXmark size={13} aria-hidden /></button> : null}
@@ -85,31 +87,19 @@ export function AgentAbout({ onClose, permissions, termsVersion = null, onTerms,
 }
 
 /**
- * The sections, as tabs: along the foot, or as an icon bar down the side
- * (`vertical`), where each tab is an icon with its name for a screen
- * reader and a tooltip. Either way they are real tabs.
+ * The sections, as tabs along the top of the pane, under Kivyn's name: a
+ * drawn icon and the word. At the foot they fell below the fold on a
+ * laptop, so Checks and Sources could not be reached without scrolling.
  */
-export function AgentTabs({ tabs, tab, onTab, vertical = false }) {
+export function AgentTabs({ tabs, tab, onTab }) {
   if (!tabs || tabs.length < 2) return null;
-  if (vertical) {
-    return (
-      <div className="ws-iconbar" role="tablist" aria-label="Agent sections" aria-orientation="vertical">
-        {tabs.map((t) => (
-          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`ws-tab ws-icon-tab${tab === t.key ? " on" : ""}`} title={t.label} onClick={() => onTab(t.key)}>
-            <span className="ws-icon-tab-ic" aria-hidden>{t.icon}</span>
-            <span className="sr-only">{t.label}</span>
-            {t.badge ? <span className="ws-tab-badge is-corner" aria-hidden>{t.badge}</span> : null}
-          </button>
-        ))}
-      </div>
-    );
-  }
   return (
-    <div className="rc-tabs ws-tabs" role="tablist" aria-label="Agent sections" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
+    <div className="ws-tabs ws-tabs-top" role="tablist" aria-label="Agent sections">
       {tabs.map((t) => (
-        <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`ws-tab rc-tab-btn${tab === t.key ? " on" : ""}`} onClick={() => onTab(t.key)}>
-          <span className="rc-tab-ic" aria-hidden>{t.icon}</span>
-          <span>{t.label}{t.badge ? <span className="ws-tab-badge">{t.badge}</span> : null}</span>
+        <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`ws-tab${tab === t.key ? " on" : ""}`} onClick={() => onTab(t.key)}>
+          <span className="ws-tab-ic" aria-hidden>{t.icon}</span>
+          <span>{t.label}</span>
+          {t.badge ? <span className="ws-tab-badge" aria-label={`${t.badge} to look at`}>{t.badge}</span> : null}
         </button>
       ))}
     </div>
@@ -163,17 +153,17 @@ export const STUDIO_PERMISSIONS = [
  * @param {string} [p.activityTitle]
  * @param {import("react").ReactNode} p.children   the current tab's body
  */
-export default function StudioAgentShell({ status, busy = false, pose = "neutral", tabs, tab, onTab, termsVersion = null, onTerms, activity = null, activityTitle, children }) {
+export default function StudioAgentShell({ status, busy = false, pose = "neutral", tone = null, tabs, tab, onTab, termsVersion = null, onTerms, activity = null, activityTitle, onClose = null, children }) {
   const [about, setAbout] = useState(false);
   return (
     <div className="ag-panel ws-agent">
-      <AgentIdentity status={status} busy={busy} pose={pose} about={about} onAbout={setAbout} />
+      <AgentIdentity status={status} busy={busy} pose={pose} tone={tone} about={about} onAbout={setAbout} onClose={onClose} closeLabel={`Close ${AGENT_NAME}`} />
       {about ? (
         <AgentAbout onClose={() => setAbout(false)} permissions={STUDIO_PERMISSIONS} termsVersion={termsVersion} onTerms={onTerms} activity={activity} activityTitle={activityTitle} />
       ) : (
         <>
-          <div className="ws-agent-body">{children}</div>
           <AgentTabs tabs={tabs} tab={tab} onTab={onTab} />
+          <div className="ws-agent-body">{children}</div>
         </>
       )}
     </div>
