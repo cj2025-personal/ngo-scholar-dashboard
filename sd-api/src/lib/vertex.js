@@ -32,24 +32,32 @@ let auth = null;
 /**
  * The same credentials the storage client uses, resolved the same way:
  * inline JSON first, then a key file — where "file" may be the directory
- * holding exactly one key, which is how this deployment's `.env` points at
- * it. Neither set means Application Default Credentials, which is what a
- * Cloud Run service account provides.
+ * holding exactly one key, which is how a developer's `.env` points at it.
+ *
+ * Neither set means Application Default Credentials, and the options then
+ * carry nothing that would override them. That is the path every keyless
+ * run takes: on Cloud Run, the service's own account; on a workstation,
+ * `gcloud auth application-default login` (run with the key-file variables
+ * blanked); in CI, the workload-identity credential file the auth step
+ * writes and names in GOOGLE_APPLICATION_CREDENTIALS — ADC's own variable,
+ * which env.js reads as the key file, so the client reads that same file.
  */
-function getAuth() {
-  if (!auth) {
-    const options = { scopes: ["https://www.googleapis.com/auth/cloud-platform"] };
-    if (env.gcpServiceAccountJson) {
-      try {
-        options.credentials = JSON.parse(env.gcpServiceAccountJson);
-      } catch {
-        throw new Error("GCP service account JSON is invalid.");
-      }
-    } else if (env.gcpServiceAccountKeyFile) {
-      options.keyFilename = resolveKeyFilename(env.gcpServiceAccountKeyFile);
+function authOptions(config = env) {
+  const options = { scopes: ["https://www.googleapis.com/auth/cloud-platform"] };
+  if (config.gcpServiceAccountJson) {
+    try {
+      options.credentials = JSON.parse(config.gcpServiceAccountJson);
+    } catch {
+      throw new Error("GCP service account JSON is invalid.");
     }
-    auth = new GoogleAuth(options);
+  } else if (config.gcpServiceAccountKeyFile) {
+    options.keyFilename = resolveKeyFilename(config.gcpServiceAccountKeyFile);
   }
+  return options;
+}
+
+function getAuth() {
+  if (!auth) auth = new GoogleAuth(authOptions());
   return auth;
 }
 
@@ -109,6 +117,37 @@ async function getAccessToken() {
   const { token } = await client.getAccessToken();
   if (!token) throw new Error("Failed to obtain a Google access token.");
   return token;
+}
+
+/**
+ * Can this process reach the model? Answers without calling it: builds the
+ * client a generation would use and asks Google for an access token with it.
+ *
+ * What the evals check before they run, so that a run without credentials
+ * fails saying so instead of measuring nothing. The fake model is a failure
+ * here too: an eval of the fake measures the fake.
+ *
+ * @returns {Promise<{ok: boolean, problem: string|null, credentials: string|null, model: string|null}>}
+ */
+async function checkAccess({ client = () => getAuth().getClient(), token = getAccessToken } = {}) {
+  if (isFake()) return { ok: false, problem: "LLM_PROVIDER is \"fake\"; the evals would measure the test double.", credentials: null, model: null };
+  const missing = describeMissingConfig();
+  if (missing) return { ok: false, problem: missing, credentials: null, model: null };
+  const model = resolveResourceName();
+  let credentials = null;
+  try {
+    /* A token handed in directly is what a generation would use; no client
+       is built for it. Otherwise the kind of client says where the
+       credentials came from: an IdentityPoolClient is workload identity
+       federation, Compute is a metadata server, UserRefreshClient is a
+       gcloud login, JWT is a key. */
+    const built = process.env.VERTEX_ACCESS_TOKEN ? null : await client();
+    credentials = built ? built.constructor?.name || "unknown" : "VERTEX_ACCESS_TOKEN";
+    await token();
+  } catch (error) {
+    return { ok: false, problem: `no usable Google credentials (${error.message})`, credentials, model };
+  }
+  return { ok: true, problem: null, credentials, model };
 }
 
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
@@ -322,4 +361,4 @@ async function embed({ texts, taskType = "RETRIEVAL_DOCUMENT", model, batchSize 
   return { vectors, model, usage: { input: tokens || null } };
 }
 
-module.exports = { generateContent, embed, getAccessToken, isConfigured, describeMissingConfig, resolveResourceName };
+module.exports = { generateContent, embed, getAccessToken, checkAccess, authOptions, isConfigured, describeMissingConfig, resolveResourceName };

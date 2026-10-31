@@ -7,6 +7,7 @@
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "test": "node scripts/runTests.js tests",
+    "eval:preflight": "node scripts/evalPreflight.js",
     "eval:drafts": "node scripts/evalDrafts.js",
     "eval:reader": "node scripts/evalReader.js",
     "eval:voice": "node scripts/evalVoice.js",

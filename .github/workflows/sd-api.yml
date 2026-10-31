@@ -1,9 +1,10 @@
 name: sd-api
 
-# Unit and contract tests on every change; the draft evals when the model
-# credentials are available to the run. A prompt, graph or model change that
-# drops an eval score below its floor fails this workflow — that is the gate
-# the plan calls for, and it lives here so it cannot be skipped by being busy.
+# Unit and contract tests on every change, and the live model evals on every
+# change from this repository (keyless; see the evals job). A prompt, graph or
+# model change that drops an eval score below its floor fails this workflow —
+# that is the gate the plan calls for, and it lives here so it cannot be
+# skipped by being busy. Nor by missing credentials: those fail it too.
 
 on:
   push:
@@ -71,10 +72,28 @@ jobs:
           if-no-files-found: ignore
 
   evals:
-    # Needs a Vertex service account; skipped on forks and where the secret is unset.
+    # The live model evals, on Vertex, with no key stored anywhere.
+    #
+    # The auth step exchanges GitHub's OIDC token for this repository, through
+    # the project's workload identity pool, for the github-deployer service
+    # account, and writes a short-lived credential file that it names in
+    # GOOGLE_APPLICATION_CREDENTIALS. That is Application Default
+    # Credentials' own variable, so the eval runner's Google client reads it;
+    # GCP_SERVICE_ACCOUNT_JSON and GCP_SERVICE_ACCOUNT_KEY_FILE are kept empty
+    # so nothing points the client at a key instead.
+    #
+    # It fails, never skips. Until 2026-10-30 every step here exited 0 when
+    # GCP_SERVICE_ACCOUNT_JSON was unset — and it was never set — so the job
+    # was green in 0 seconds and tested nothing. Now the auth step fails if
+    # the exchange is refused, the preflight fails if no access token can be
+    # had, and each eval fails on its own floors. A fork's pull request gets
+    # no OIDC token for this pool, so the job does not run there at all.
     needs: test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: sd-api
@@ -83,37 +102,46 @@ jobs:
       MONGODB_DB: evals-unused
       LLM_PROVIDER: vertex
       STORY_LLM_MODEL: ${{ vars.STORY_LLM_MODEL || 'gemini-2.5-flash' }}
-      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      # Not a credential: a project id, so the working value is the default.
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID || 'ngo-application-services' }}
       GCP_LOCATION: ${{ vars.GCP_LOCATION || 'us-central1' }}
-      GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+      GCP_SERVICE_ACCOUNT_JSON: ''
+      GCP_SERVICE_ACCOUNT_KEY_FILE: ''
       LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
       LANGSMITH_PROJECT: archivyn-drafting-ci
     steps:
+      # Before the auth step: checkout cleans the workspace, and the
+      # credential file is written into it.
       - uses: actions/checkout@v4
+      - id: auth
+        name: Authenticate to Google Cloud (workload identity, no key)
+        uses: google-github-actions/auth@v2
+        with:
+          # Neither is a credential: one is a resource path, the other an
+          # account's email. What protects the account is its trust policy —
+          # the provider accepts only this GitHub account's tokens, and only
+          # the repositories bound on github-deployer may impersonate it.
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/77137640226/locations/global/workloadIdentityPools/github-pool/providers/github-provider' }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT || 'github-deployer@ngo-application-services.iam.gserviceaccount.com' }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: sd-api/package-lock.json
       - run: npm ci
-      - name: Draft evals (skipped without model credentials)
-        run: |
-          if [ -z "$GCP_SERVICE_ACCOUNT_JSON" ] || [ -z "$GCP_PROJECT_ID" ]; then
-            echo "No Vertex credentials in this run; evals skipped."
-            exit 0
-          fi
-          npm run eval:drafts -- --json eval-results.json ${LANGSMITH_API_KEY:+--langsmith}
-      - name: Reader evals (skipped without model credentials)
+      - name: Model credentials (fails, never skips)
+        # No model call: builds the client the evals use and asks for an
+        # access token with it, so a credential problem is named here rather
+        # than surfacing as every eval row erroring.
+        run: npm run eval:preflight
+      - name: Draft evals
+        run: npm run eval:drafts -- --json eval-results.json ${LANGSMITH_API_KEY:+--langsmith}
+      - name: Reader evals
         # The reading companion's grounding, citations and Sentinel pass rate
         # over evals/reader.jsonl. A prompt change that makes it guess where
         # it should say "the article doesn't say" fails the build here.
-        run: |
-          if [ -z "$GCP_SERVICE_ACCOUNT_JSON" ] || [ -z "$GCP_PROJECT_ID" ]; then
-            echo "No Vertex credentials in this run; evals skipped."
-            exit 0
-          fi
-          npm run eval:reader -- --json reader-eval-results.json
-      - name: Studio evals (skipped without model credentials)
+        run: npm run eval:reader -- --json reader-eval-results.json
+      - name: Studio evals
         # Kivyn's four judgements, each against its floor: what a scholar
         # means (converse), whose voice a paragraph is in (voice), the
         # article reviewer's headings and pronouns (review), and the editing
@@ -121,10 +149,6 @@ jobs:
         # on what it wrote (edit). A prompt or route change that drops one
         # below its floor fails the build here.
         run: |
-          if [ -z "$GCP_SERVICE_ACCOUNT_JSON" ] || [ -z "$GCP_PROJECT_ID" ]; then
-            echo "No Vertex credentials in this run; evals skipped."
-            exit 0
-          fi
           npm run eval:converse -- --json converse-eval-results.json
           npm run eval:voice -- --json voice-eval-results.json
           npm run eval:review -- --json review-eval-results.json
