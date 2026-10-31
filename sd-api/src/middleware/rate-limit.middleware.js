@@ -1,4 +1,5 @@
 const { ApiError } = require("../lib/api-error");
+const { accountKey, clientAddress } = require("../lib/clientAddress");
 
 /**
  * A small fixed-window limiter.
@@ -69,20 +70,17 @@ const fallback = memoryStore();
 let warnedFallback = false;
 
 /**
- * Identify the caller.
+ * Whose budget a request spends.
  *
- * `x-forwarded-for` is only meaningful behind a proxy that sets it, and Express
- * only trusts it when `trust proxy` is configured. Falling back to `req.ip`
- * means a misconfigured deployment limits everyone as one bucket — noisy, but
- * failing closed is the right direction for a limiter.
+ * The signed-in scholar's, when there is a session: two scholars behind one
+ * school's address do not share a budget, and one scholar on two devices does.
+ * Otherwise the caller's address, as lib/clientAddress.js reads it — the entry
+ * our own proxy appended, never the first X-Forwarded-For entry, which the
+ * caller writes and could change on every request for a fresh budget.
  */
-function callerKey(req) {
-  const forwarded = req.headers["x-forwarded-for"];
-  const ip =
-    (typeof forwarded === "string" ? forwarded.split(",")[0].trim() : null) ||
-    req.ip ||
-    "unknown";
-  return ip;
+function callerKey(req, keyOption) {
+  const own = typeof keyOption === "function" ? keyOption(req) : accountKey(req);
+  return own ? `account:${own}` : clientAddress(req);
 }
 
 /**
@@ -91,10 +89,9 @@ function callerKey(req) {
  * @param {number|(() => Promise<number>)} options.limit     requests allowed per window
  * @param {number|(() => Promise<number>)} options.windowMs
  * @param {(req: object) => (string|null|undefined)} [options.key]
- *        who the budget belongs to, when not the caller's address: on a
- *        signed-in route, the account, so two scholars behind one proxy do
- *        not share a budget and one scholar on two devices does. A key the
- *        function cannot give falls back to the address.
+ *        who the budget belongs to, when not the signed-in scholar or the
+ *        caller's address. A key the function cannot give falls back to the
+ *        address.
  * @param {{take: Function}} [options.store]   where the count lives; the database unless a test says otherwise
  */
 function rateLimit({ name, limit: limitOption, windowMs: windowOption, key: keyOption = null, store = null }) {
@@ -109,8 +106,7 @@ function rateLimit({ name, limit: limitOption, windowMs: windowOption, key: keyO
   async function apply(req, res, next) {
     const [limit, windowMs] = await Promise.all([read(limitOption), read(windowOption)]);
     const now = Date.now();
-    const own = typeof keyOption === "function" ? keyOption(req) : null;
-    const key = `${name}:${own ? `account:${own}` : callerKey(req)}`;
+    const key = `${name}:${callerKey(req, keyOption)}`;
 
     let bucket;
     try {
@@ -134,4 +130,4 @@ function resetRateLimits() {
   fallback.reset();
 }
 
-module.exports = { rateLimit, resetRateLimits, memoryStore, mongoStore };
+module.exports = { rateLimit, resetRateLimits, memoryStore, mongoStore, callerKey };

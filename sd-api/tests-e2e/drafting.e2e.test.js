@@ -826,6 +826,12 @@ test("a rate limit is counted in the database, one budget for every replica", as
   assert.ok(row, "the count is in the database, not this replica's memory");
   assert.equal(row.count, 31);
   assert.ok(row.expires_at > new Date(), "and expires on its own");
+  /* An address written in front of the one the proxy appended is the same
+     caller: the header's first entry is the caller's to choose, so it cannot
+     be the budget, or every request could name a fresh one. */
+  const spoofed = await fetch(`${base}/api/invites/not-a-real-token`, { headers: { "x-forwarded-for": "203.0.113.50, 198.51.100.7" } });
+  assert.equal(spoofed.status, 429, "a made-up leading entry does not buy a fresh budget");
+  assert.equal(await db.collection("rate_limits").countDocuments({ key: "invite-describe:203.0.113.50" }), 0, "and is not counted as a caller");
   /* Another address is another budget. */
   const other = await fetch(`${base}/api/invites/not-a-real-token`, { headers: { "x-forwarded-for": "198.51.100.8" } });
   assert.notEqual(other.status, 429);

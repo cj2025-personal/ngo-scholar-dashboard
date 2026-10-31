@@ -10,6 +10,7 @@ const {
   readServiceToken,
 } = require("../lib/service-auth");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
+const { clientAddress } = require("../lib/clientAddress");
 const {
   issueInvite,
   describeInvite,
@@ -161,7 +162,7 @@ router.post(
       password,
       email: req.body?.email ? String(req.body.email).trim() : null,
       metadata: {
-        ipAddress: req.ip,
+        ipAddress: clientAddress(req),
         userAgent: req.get("user-agent") || "unknown",
       },
     });

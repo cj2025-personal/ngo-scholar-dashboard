@@ -30,6 +30,11 @@ const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   isProduction: process.env.NODE_ENV === "production",
   port: getNumberEnv("PORT", 4000),
+  /* How many proxies in front of this service append to X-Forwarded-For and
+     can be believed. Cloud Run has one, Google's front end; an external load
+     balancer ahead of it makes two. The caller's address is the entry that
+     many hops from the end — see lib/clientAddress.js. */
+  trustProxyHops: getNumberEnv("TRUST_PROXY_HOPS", 1),
   corsOrigins,
   mongodbUri: process.env.MONGODB_URI,
   mongodbDb: process.env.MONGODB_DB,
@@ -160,6 +165,12 @@ if (!env.mongodbUri) {
 
 if (!env.mongodbDb) {
   throw new Error("MONGODB_DB is required.");
+}
+
+/* A fractional or negative hop count has no meaning, and guessing one would
+   pick which X-Forwarded-For entry is believed. */
+if (!Number.isInteger(env.trustProxyHops) || env.trustProxyHops < 0) {
+  throw new Error(`TRUST_PROXY_HOPS must be a whole number, 0 or more (got "${process.env.TRUST_PROXY_HOPS}").`);
 }
 
 /* A misspelled SameSite is worse than a rejected one: Express passes the

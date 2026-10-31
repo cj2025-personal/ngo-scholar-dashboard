@@ -28,6 +28,7 @@ const { env } = require("../config/env");
 const { readServiceToken, secretsMatch } = require("../lib/service-auth");
 const { getDb } = require("../db/mongo");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
+const { clientAddress } = require("../lib/clientAddress");
 const { describeError } = require("../middleware/error.middleware");
 const { wantsEventStream, openEventStream } = require("../lib/eventStream");
 const { getPolicy } = require("../services/policy.service");
@@ -37,13 +38,13 @@ const router = express.Router();
 /* Each instruction is a tool-calling loop of several model calls. */
 /* Each turn of the editing agent is a run of paid model calls. The burst
    ceiling is the studio policy's, read on every request, and the budget is
-   the account's rather than the address's: it sits behind requireAuth. The
-   day's token budget is the service's, counted from the turns it stored. */
+   the account's rather than the address's: it sits behind requireAuth, and
+   the limiter keys a signed-in request on the scholar. The day's token budget
+   is the service's, counted from the turns it stored. */
 const agentLimiter = rateLimit({
   name: "story-agent",
   limit: async () => (await getPolicy("studio")).rateLimit.edit.burst,
   windowMs: async () => (await getPolicy("studio")).rateLimit.edit.windowSeconds * 1000,
-  key: (req) => (req.auth?.user?.profile_id ? String(req.auth.user.profile_id) : null),
 });
 
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
@@ -406,7 +407,7 @@ router.post(
      theatre behind one address is never turned away. */
   rateLimit({ name: "story-read", limit: 120, windowMs: 10 * 60 * 1000 }),
   asyncHandler(async (req, res) => {
-    await recordStoryRead(await getDb(), { slug: req.params.slug, from: req.ip || "" });
+    await recordStoryRead(await getDb(), { slug: req.params.slug, from: clientAddress(req) });
     res.status(204).end();
   }),
 );

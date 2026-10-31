@@ -26,7 +26,10 @@ const profileRoutes = require("./routes/profile.routes");
 
 const app = express();
 
-app.set("trust proxy", 1);
+/* The same hop count lib/clientAddress.js reads, so `req.ip` and the address
+   every limit and session record is keyed on are one answer: the entry our
+   own proxies appended to X-Forwarded-For, never the one the caller wrote. */
+app.set("trust proxy", env.trustProxyHops);
 /* The version and platform of the server are not the caller's business. */
 app.disable("x-powered-by");
 

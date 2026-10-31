@@ -1,19 +1,15 @@
 const { env } = require("../config/env");
 const { clearAuthCookie } = require("../lib/cookies");
 const { ApiError } = require("../lib/api-error");
+const { clientAddress } = require("../lib/clientAddress");
 const { getAuthenticatedScholarBySessionToken } = require("../services/auth.service");
 const { loadLinkedRecords } = require("../services/scholar-context.service");
 
 function getRequestMetadata(req) {
-  const forwardedFor = req.headers["x-forwarded-for"];
-  const ipAddress = Array.isArray(forwardedFor)
-    ? forwardedFor[0]
-    : typeof forwardedFor === "string"
-      ? forwardedFor.split(",")[0].trim()
-      : req.ip;
-
   return {
-    ipAddress,
+    /* The address our proxy saw, not the first X-Forwarded-For entry, which
+       the caller writes. */
+    ipAddress: clientAddress(req),
     userAgent: req.get("user-agent") || "unknown",
   };
 }

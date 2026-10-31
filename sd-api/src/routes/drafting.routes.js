@@ -17,10 +17,11 @@ const { converseWith, latestConversation, endConversation, ideasFor } = require(
 
 const router = express.Router();
 
-/* Each draft is a paid model call over up to 9,000 words. The limiter is
-   per caller address, in memory, and documented as such in its own file; it
-   is cost control, not abuse defence — the session cookie is that. Both
-   limits are read from the studio policy on every request. */
+/* Each draft is a paid model call over up to 9,000 words. Every route below
+   is behind requireAuth, so the budget is the signed-in scholar's, counted in
+   the database across replicas (see the limiter's own file); it is cost
+   control, not abuse defence — the session cookie is that. Both limits are
+   read from the studio policy on every request. */
 const studioLimit = (which) => ({
   limit: async () => (await getPolicy("studio")).rateLimit[which].burst,
   windowMs: async () => (await getPolicy("studio")).rateLimit[which].windowSeconds * 1000,

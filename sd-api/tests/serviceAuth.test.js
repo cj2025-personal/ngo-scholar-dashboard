@@ -9,6 +9,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+/* Nothing here connects; the limiter reads the service's settings, which
+   need the setting to load. */
+process.env.MONGODB_URI ||= "mongodb://localhost:27017/rate-limit-test";
+process.env.MONGODB_DB ||= "rate-limit-test";
+
 const {
   SERVICE_TOKEN_HEADER,
   SERVICE_NAME_HEADER,
@@ -123,11 +128,35 @@ test("the window resets", async () => {
   assert.equal(await run(limiter, fakeReq()), undefined, "a new window starts with a fresh budget");
 });
 
-test("a forwarded client address is used when present", async () => {
+/* As Cloud Run delivers a request: the socket's peer is Google's front end,
+   and the address it accepted the connection from is the LAST entry of
+   X-Forwarded-For. Anything before it is what the caller sent. */
+const behindProxy = (forwarded) => ({ socket: { remoteAddress: "169.254.1.1" }, headers: { "x-forwarded-for": forwarded } });
+
+test("the address our proxy appended is the budget, not the first forwarded entry", async () => {
   const limiter = limiterWith({ name: "t4", limit: 1, windowMs: 60_000 });
-  const behindProxy = (forwarded) => ({ ip: "10.0.0.1", headers: { "x-forwarded-for": forwarded } });
-  assert.equal(await run(limiter, behindProxy("203.0.113.9, 10.0.0.1")), undefined);
-  assert.ok(await run(limiter, behindProxy("203.0.113.9, 10.0.0.1")), "the same real client must share one budget behind a proxy");
+  assert.equal(await run(limiter, behindProxy("203.0.113.9")), undefined);
+  assert.ok(await run(limiter, behindProxy("203.0.113.9")), "the same real client must share one budget behind a proxy");
+});
+
+test("a made-up leading X-Forwarded-For entry does not buy a fresh budget", async () => {
+  // The bypass this closes: one caller, a different invented address in the
+  // header on every request, and every request counted as a new caller.
+  const limiter = limiterWith({ name: "t4b", limit: 2, windowMs: 60_000 });
+  assert.equal(await run(limiter, behindProxy("203.0.113.9")), undefined);
+  assert.equal(await run(limiter, behindProxy("1.1.1.1, 203.0.113.9")), undefined);
+  const refused = await run(limiter, behindProxy("2.2.2.2, 3.3.3.3, 203.0.113.9"));
+  assert.ok(refused, "the third request from 203.0.113.9 is refused whatever was written before it");
+  assert.equal(refused.statusCode ?? refused.status, 429);
+  assert.equal(await run(limiter, behindProxy("203.0.113.9, 198.51.100.4")), undefined, "a different real client still has its own budget");
+});
+
+test("a signed-in request spends the scholar's budget without being told to", async () => {
+  const limiter = limiterWith({ name: "t4c", limit: 1, windowMs: 60_000 });
+  const as = (profile, forwarded) => ({ ...behindProxy(forwarded), auth: { user: { profile_id: profile } } });
+  assert.equal(await run(limiter, as("scholar-a", "203.0.113.9")), undefined);
+  assert.equal(await run(limiter, as("scholar-b", "203.0.113.9")), undefined, "two scholars behind one address have two budgets");
+  assert.ok(await run(limiter, as("scholar-a", "198.51.100.4")), "one scholar from another address has the same budget");
 });
 
 test("a signed-in route's budget is the account's, not the address's", async () => {
