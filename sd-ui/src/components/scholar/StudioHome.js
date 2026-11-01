@@ -93,6 +93,11 @@ function buildTodos({ jobs, all, draftable, episodes, standing, inventory }) {
       todos.push({ tone: "warn", kind: "Outline", group: "outline", lead: "An outline is waiting for your approval", title: shortTitle(job.outline?.title || job.source?.title), meta: `${job.outline?.beats?.length || 0} sections proposed · ${timeAgo(job.createdAt)}`, detail: `“${shortTitle(job.outline?.title || job.source?.title)}” · ${job.outline?.beats?.length || 0} sections proposed · ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Review outline", remove: { kind: "job", jobId: job.id } });
     } else if (job.status === "awaiting_review" && !job.storyId) {
       todos.push({ tone: "warn", kind: "Draft", group: "job-draft", lead: "A draft is waiting for you", title: shortTitle(job.source?.title), meta: `Drafted from your paper · ${timeAgo(job.finishedAt)}`, detail: `From “${shortTitle(job.source?.title)}” · ${timeAgo(job.finishedAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Open", remove: { kind: "job", jobId: job.id } });
+    } else if ((job.status === "running" || job.status === "queued") && job.paused) {
+      /* Nothing is drafting it: the server stopped when the scholar left. It
+         keeps what it wrote and continues when they open it. */
+      const kept = job.progress && job.progress.sectionsTotal && job.progress.sectionsWritten ? ` · ${job.progress.sectionsWritten} of ${job.progress.sectionsTotal} sections written` : "";
+      todos.push({ tone: "info", kind: "Paused", group: "running", lead: "A draft is paused until you open it", title: shortTitle(job.source?.title), meta: `Paused — continues when you open it${kept}`, detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}${kept}`, href: `/editorial/new?job=${job.id}`, cta: "Continue", remove: job.status === "queued" ? { kind: "job", jobId: job.id } : null });
     } else if (job.status === "running" || job.status === "queued") {
       /* A job still running cannot be discarded; one still queued can. */
       todos.push({ tone: "info", kind: "In progress", group: "running", lead: "A draft is being written", title: shortTitle(job.source?.title), meta: `Started ${timeAgo(job.createdAt)}`, detail: `From “${shortTitle(job.source?.title)}” · started ${timeAgo(job.createdAt)}`, href: `/editorial/new?job=${job.id}`, cta: "Watch", remove: job.status === "queued" ? { kind: "job", jobId: job.id } : null });
@@ -156,6 +161,7 @@ const KIND_NOUN = {
   Outline: ["outline", "outlines"],
   Draft: ["draft", "drafts"],
   "In progress": ["draft being written", "drafts being written"],
+  Paused: ["paused draft", "paused drafts"],
   "Reading ages": ["reading level", "reading levels"],
   "A paper": ["paper to draft", "papers to draft"],
   Legacy: ["Legacy mark", "Legacy marks"],

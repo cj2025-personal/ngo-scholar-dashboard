@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { FaCheck, FaXmark } from "react-icons/fa6";
 import { HiOutlineArrowUp, HiOutlinePlus } from "react-icons/hi2";
 
-import { BRIEF_SOURCE, DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, converseWithAgent, createDraftJob, discardDraftJob, endConversation, getDraftJob, getDraftSources, latestConversation, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
+import { BRIEF_SOURCE, DEFAULT_AUDIENCE, DEFAULT_VOICE, DRAFT_AUDIENCES, DRAFT_VOICES, approveDraftOutline, converseWithAgent, createDraftJob, discardDraftJob, endConversation, getDraftJob, getDraftSources, latestConversation, pausedLine, proposeFromPaper, replanDraftOutline, watchDraftJob } from "@/lib/drafting";
 import Kivyn from "@/components/kivyn/Kivyn";
 import KivynButton from "@/components/kivyn/KivynButton";
 import TypedText, { TypingDots } from "@/components/kivyn/TypedText";
@@ -602,7 +602,9 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       if (settle(j, j.source)) return;
       if (j.terminal) { push({ role: "error", text: j.failure?.sentence || "That draft did not complete." }); return; }
       setBusy(true);
-      setProgress("Picking up where it left off…", "resume");
+      /* A job nobody was drafting while the scholar was away says so, and
+         how far it got; watching it is what starts it again. */
+      setProgress(j.paused ? pausedLine(j) : "Picking up where it left off…", j.paused ? "paused" : "resume");
       watch(j);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

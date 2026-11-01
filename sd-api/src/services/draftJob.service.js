@@ -2,12 +2,32 @@
  * The drafting queue: create, claim, run, watch, close.
  *
  * ── One job, one worker, one lease ──────────────────────────────────────────
- * A job is claimed by an atomic findOneAndUpdate that sets a lease; only the
- * holder advances it, and a heartbeat extends the lease while the graph runs.
- * A worker that dies mid-run leaves a lease that lapses, and the next poll
- * reclaims the job with a `lease_reclaimed` event so the record shows the
- * gap. After three attempts the job fails with a sentence rather than
- * looping.
+ * A job is claimed by an atomic findOneAndUpdate that sets a lease and a
+ * token unique to that claim; only the holder of the token advances it, and
+ * a heartbeat extends the lease while the graph runs. Every write the worker
+ * makes is conditional on the token, so a run that lost its lease — its
+ * container was frozen, another took the job over — finds out at its next
+ * write and stops without writing anything. (The token, not the worker id,
+ * is the fence: on Cloud Run every container is `localhost:1`.)
+ *
+ * ── Resuming rather than restarting ─────────────────────────────────────────
+ * On Cloud Run with CPU allocated only during requests, a draft gets CPU only
+ * while some request is open on its container — the scholar's event stream,
+ * in practice. Close the tab and the draft freezes; scale to zero and the
+ * container is gone. So the job keeps a checkpoint: the graph's state after
+ * every finished node and every accepted section, the story id before the
+ * story is made. A worker that reclaims the job — the instance serving the
+ * scholar's stream or long poll, as soon as the lease lapses; any worker's
+ * background poll once it has lapsed long enough to mean the container is
+ * gone — enters the graph where it stopped: nothing finished is paid for
+ * twice, nothing finished is lost. A run that hits a timeout or an unreachable model
+ * hands the job back to resume shortly instead of failing it. A job fails
+ * for interruptions only after MAX_STALLED_CLAIMS claims in a row get it no
+ * further; any checkpoint resets the count.
+ *
+ * What this cannot do is run with nobody connected: with no request open,
+ * no container has CPU. Such a job reads as paused and resumes the moment
+ * the scholar (or anyone whose request lands on a worker) comes back.
  *
  * ── Nothing here publishes ──────────────────────────────────────────────────
  * The worker leaves a job at `awaiting_review`. The scholar reads the draft
@@ -57,8 +77,18 @@ const { screenedPassages } = require("./sourceGuard.service");
 const PROPOSAL_BRIEF =
   "Propose the article this paper could become for a reader outside the field: what the work found, why it matters to them, and what it does not show.";
 
-const WORKER_ID = `${os.hostname()}:${process.pid}`;
-const MAX_ATTEMPTS = 3;
+/* Host and pid say which machine; on Cloud Run every container is
+   `localhost:1`, so a few random bytes say which container. For the record
+   only: the claim's token is what fences writes. */
+const WORKER_ID = `${os.hostname()}:${process.pid}:${crypto.randomBytes(3).toString("hex")}`;
+
+/** A run that no longer holds its job. It stops and writes nothing. */
+class LeaseLost extends Error {
+  constructor(message = "This run no longer holds the job's lease.") {
+    super(message);
+    this.name = "LeaseLost";
+  }
+}
 
 /* ── create ──────────────────────────────────────────────────────────────── */
 
@@ -208,8 +238,17 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
     status: job.STATUS.QUEUED,
     step: null,
     attempts: 0,
+    /* Claims since the job last got further; see MAX_STALLED_CLAIMS. */
+    stalled_claims: 0,
+    interruptions: 0,
+    last_interruption: null,
     lease_owner: null,
+    lease_token: null,
     lease_expires_at: null,
+    /* After a transient fault, the earliest a worker may claim it again. */
+    not_before: null,
+    /* What a resumed run starts from: see runClaimedJob. */
+    checkpoint: null,
     events: [job.nextEvent([], "job_created", { source: briefOnly ? "your brief alone" : source.title, audience: chosenAudience, retryOf: latest ? String(latest._id) : null }, now)],
     draft: null,
     warnings: [],
@@ -235,6 +274,10 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
   return { job: view(doc), reused: false };
 }
 
+/* The scholar sent the job on to a new phase: nothing of the last one is
+   carried into it, and its interruptions were not this phase's. */
+const FRESH_PHASE = { checkpoint: null, stalled_claims: 0, not_before: null };
+
 /* ── read ────────────────────────────────────────────────────────────────── */
 
 async function findOwnedJob(db, { jobId, profileId }) {
@@ -249,6 +292,46 @@ async function getDraftJob({ jobId, profileId }) {
   return { job: view(await findOwnedJob(db, { jobId, profileId })) };
 }
 
+/** The longest a status read may be held open. Well inside Cloud Run's 300s. */
+const MAX_WAIT_MS = 25_000;
+const WAIT_STEP_MS = 1000;
+
+/**
+ * The job, read as a long poll: answered once it has moved past
+ * `afterSequence` (or, with none given, past where it was when asked), or
+ * settled, or after `waitMs` regardless.
+ *
+ * This is the page's status polling doing the work of keeping the draft
+ * alive. On Cloud Run a container has CPU only while a request is open; a
+ * poll answered at once leaves the worker frozen between polls, while one
+ * held open keeps it running for as long as the scholar is watching. A job
+ * waiting for a worker is taken by this instance on the spot.
+ */
+async function waitForDraftJob({ jobId, profileId, afterSequence = null, waitMs = 0 }) {
+  const { db } = await getCollections();
+  const jobs = db.collection(COLLECTIONS.draftJobs);
+  let doc = await findOwnedJob(db, { jobId, profileId });
+  const wait = Math.min(Math.max(0, Number(waitMs) || 0), MAX_WAIT_MS);
+  if (!wait || job.isSettled(doc.status)) return { job: view(doc) };
+
+  const lastSeq = (d) => (Array.isArray(d.events) && d.events.length ? d.events[d.events.length - 1].sequence : 0);
+  const from = Number.isFinite(afterSequence) ? afterSequence : lastSeq(doc);
+  const waiting = (d) => d.status === job.STATUS.QUEUED || job.pausedState(d).paused;
+  const deadline = Date.now() + wait;
+  let light = doc;
+  while (!job.isSettled(light.status) && lastSeq(light) <= from && Date.now() < deadline) {
+    if (waiting(light)) nudgeDraftWorker({ jobId: doc._id });
+    await new Promise((resolve) => setTimeout(resolve, Math.min(WAIT_STEP_MS, Math.max(0, deadline - Date.now()))));
+    light = await jobs.findOne(
+      { _id: doc._id, profile_id: profileId },
+      { projection: { status: 1, lease_expires_at: 1, not_before: 1, updated_at: 1, "events.sequence": 1 } },
+    );
+    if (!light) throw new ApiError(404, "Draft job not found.");
+  }
+  doc = await findOwnedJob(db, { jobId, profileId });
+  return { job: view(doc) };
+}
+
 /** Events after a sequence number, for the stream. */
 async function listJobEvents({ jobId, profileId, afterSequence = 0 }) {
   const { db } = await getCollections();
@@ -261,7 +344,7 @@ async function listDraftJobs({ profileId, limit = 20 }) {
   const { db } = await getCollections();
   const rows = await db
     .collection(COLLECTIONS.draftJobs)
-    .find({ profile_id: profileId }, { projection: { source_text: 0, events: 0, draft: 0 } })
+    .find({ profile_id: profileId }, { projection: { source_text: 0, events: 0, draft: 0, "checkpoint.state": 0, "checkpoint.sections": 0 } })
     .sort({ created_at: -1 })
     .limit(Math.min(Math.max(1, limit), 50))
     .toArray();
@@ -330,7 +413,7 @@ async function approveOutline({ jobId, profileId, outline }) {
      should be told it was queued, not shown a job already running. */
   const after = await jobs.findOneAndUpdate(
     { _id: doc._id, status: doc.status },
-    { $set: { status: job.STATUS.QUEUED, outline_approved: approved, updated_at: now }, $push: { events: event } },
+    { $set: { status: job.STATUS.QUEUED, outline_approved: approved, updated_at: now, ...FRESH_PHASE }, $push: { events: event } },
     { returnDocument: "after" },
   );
   const row = after?.value ?? after;
@@ -361,173 +444,397 @@ async function replanOutline({ jobId, profileId, instruction }) {
   const event = job.nextEvent(doc.events, "outline_replanned", { instruction: ask.slice(0, 200), replans }, now);
   await jobs.updateOne(
     { _id: doc._id, status: doc.status },
-    { $set: { status: job.STATUS.QUEUED, brief: combined, outline: null, passages: null, replans, updated_at: now }, $push: { events: event } },
+    { $set: { status: job.STATUS.QUEUED, brief: combined, outline: null, passages: null, replans, updated_at: now, ...FRESH_PHASE }, $push: { events: event } },
   );
   return { job: view(await jobs.findOne({ _id: doc._id })) };
 }
 
 /* ── worker ──────────────────────────────────────────────────────────────── */
 
-async function claimNextJob(db) {
+/**
+ * Claim a job: the oldest queued one that is due, or one whose lease lapsed.
+ * With `jobId`, that job only — the scholar's own, when their request asked
+ * this instance to take it.
+ *
+ * The claim carries a fresh token; every write the run makes is conditional
+ * on it. `claimed_from` says what the job was before: a job taken from a
+ * lapsed lease was being held by a run that went quiet.
+ *
+ * A background poll leaves a freshly lapsed lease alone (RECLAIM_IDLE_MS):
+ * its holder is more likely frozen than gone. A claim for a named job comes
+ * from the scholar's own open request, and takes it as soon as it lapses.
+ */
+async function claimNextJob(db, { jobId = null } = {}) {
   const jobs = db.collection(COLLECTIONS.draftJobs);
+  if (jobId && !ObjectId.isValid(String(jobId))) return null;
   const now = new Date();
-  const claimed = await jobs.findOneAndUpdate(
+  const token = crypto.randomUUID();
+  const expires = new Date(now.getTime() + job.LOCK_MS);
+  const lapsedBefore = jobId ? now : new Date(now.getTime() - job.RECLAIM_IDLE_MS);
+  const before = await jobs.findOneAndUpdate(
     {
+      ...(jobId ? { _id: new ObjectId(String(jobId)) } : {}),
       $or: [
-        { status: job.STATUS.QUEUED },
-        { status: job.STATUS.RUNNING, lease_expires_at: { $lt: now } },
+        { status: job.STATUS.QUEUED, $or: [{ not_before: null }, { not_before: { $lte: now } }] },
+        { status: job.STATUS.RUNNING, lease_expires_at: { $lt: lapsedBefore } },
       ],
     },
     {
-      $set: { status: job.STATUS.RUNNING, lease_owner: WORKER_ID, lease_expires_at: new Date(now.getTime() + job.LOCK_MS), updated_at: now, started_at: now },
-      $inc: { attempts: 1 },
+      $set: { status: job.STATUS.RUNNING, lease_owner: WORKER_ID, lease_token: token, lease_expires_at: expires, not_before: null, updated_at: now, started_at: now },
+      $inc: { attempts: 1, stalled_claims: 1 },
     },
-    { sort: { created_at: 1 }, returnDocument: "after" },
+    { sort: { created_at: 1 }, returnDocument: "before" },
   );
-  return claimed || null;
+  if (!before) return null;
+  return {
+    ...before,
+    status: job.STATUS.RUNNING,
+    lease_owner: WORKER_ID,
+    lease_token: token,
+    lease_expires_at: expires,
+    not_before: null,
+    updated_at: now,
+    started_at: now,
+    attempts: (before.attempts || 0) + 1,
+    stalled_claims: (before.stalled_claims || 0) + 1,
+    claimed_from: { status: before.status, owner: before.lease_owner || null },
+  };
 }
 
-async function appendEvent(db, jobId, type, data = {}, extraSet = {}) {
-  const jobs = db.collection(COLLECTIONS.draftJobs);
-  const row = await jobs.findOne({ _id: jobId }, { projection: { events: 1 } });
-  const event = job.nextEvent(row?.events || [], type, data);
-  await jobs.updateOne({ _id: jobId }, { $push: { events: event }, $set: { updated_at: event.at, ...extraSet } });
-  return event;
+/**
+ * The checkpoint as stored.
+ *
+ * The graph's state and the sections in hand are kept as JSON text: they are
+ * model output, whose keys are not Mongo's business, and a value that is
+ * absent must come back absent rather than as null. The story id is kept as
+ * soon as it is chosen, before the story is made. The summary is what the
+ * job list reads, so nothing has to parse the rest to say how far it got.
+ */
+function storedCheckpoint(cp) {
+  const total = cp.state?.outline?.beats?.length ?? null;
+  const inHand = cp.sections?.done ? Object.keys(cp.sections.done).length : 0;
+  const past = cp.next === "assemble" || cp.next === "verify" || (cp.next === null && cp.state);
+  return {
+    graph_version: GRAPH_VERSION,
+    seq: cp.seq,
+    saved_at: cp.saved_at,
+    next: cp.next ?? null,
+    state: cp.state ? JSON.stringify(cp.state) : null,
+    sections: cp.sections ? JSON.stringify(cp.sections) : null,
+    story: cp.story || null,
+    summary: {
+      next: cp.next ?? null,
+      round: cp.state?.readabilityRounds || 0,
+      sections_total: total,
+      sections_written: past ? total : cp.next === "draft_blocks" ? inHand : 0,
+    },
+  };
 }
+
+/**
+ * The checkpoint a run resumes from, or null to start from the paper.
+ * One written by a different graph is not entered mid-way — the nodes it
+ * names may not mean the same thing — unless the graph had finished, in
+ * which case its result and its story stand.
+ */
+function loadCheckpoint(doc) {
+  const c = doc?.checkpoint;
+  if (!c || !c.state) return null;
+  if (c.graph_version !== GRAPH_VERSION && c.next) return null;
+  try {
+    return {
+      seq: c.seq || 0,
+      saved_at: c.saved_at || null,
+      next: c.next ?? null,
+      state: JSON.parse(c.state),
+      sections: c.sections ? JSON.parse(c.sections) : null,
+      story: c.story || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The run in hand in this process, so a shutdown can hand it back. */
+let current = null;
 
 async function runClaimedJob(db, doc) {
   const jobs = db.collection(COLLECTIONS.draftJobs);
   const startedAt = new Date();
-
-  if (doc.attempts > 1) {
-    await appendEvent(db, doc._id, "lease_reclaimed", { attempt: doc.attempts, previousOwner: doc.lease_owner });
-  }
-  if (doc.attempts > MAX_ATTEMPTS) {
-    const error = new Error(`gave up after ${MAX_ATTEMPTS} attempts`);
-    await failJob(db, doc, error, startedAt, []);
-    return;
-  }
-  await appendEvent(db, doc._id, "job_started", { attempt: doc.attempts, worker: WORKER_ID });
-
-  const heartbeat = setInterval(() => {
-    jobs.updateOne({ _id: doc._id, lease_owner: WORKER_ID }, { $set: { lease_expires_at: new Date(Date.now() + job.LOCK_MS) } }).catch(() => {});
-  }, job.HEARTBEAT_MS);
-
-  const generate = traced("draft.generateContent", (req) => vertex.generateContent(req), {
-    metadata: { jobId: String(doc._id), profileId: doc.profile_id, promptVersion: doc.prompt_version },
-  });
-  /* Every judge runs on its own route, with its own model and fallback; the
-     fact-checkers (fidelity, reach, context) on a model other than the
-     writer's, so no draft is marked by the model that wrote it. The retries
-     they may cause are policy. */
-  const router = await routerFor({ db });
-  const judges = {
-    voice: router.bound("drafting.voice"), band: router.bound("drafting.band"), review: router.bound("drafting.review"),
-    fidelity: router.bound("drafting.fidelity"), reach: router.bound("drafting.reach"), context: router.bound("drafting.context"),
+  const token = doc.lease_token;
+  const abort = new AbortController();
+  let lost = false;
+  const loseLease = () => {
+    if (lost) return;
+    lost = true;
+    abort.abort(new LeaseLost());
   };
-  const limits = await getPolicy("drafting", { db });
+  const held = { jobId: doc._id, token, loseLease, progressed: false };
+  current = held;
+
+  /* Every write this run makes holds only while the claim is still its own.
+     The first one refused stops the run: someone else has the job. */
+  const fenced = async (update) => {
+    if (lost) throw new LeaseLost();
+    const r = await jobs.updateOne({ _id: doc._id, lease_token: token, status: job.STATUS.RUNNING }, update);
+    if (r.matchedCount === 0) {
+      loseLease();
+      throw new LeaseLost();
+    }
+  };
+  const eventsNow = async () => (await jobs.findOne({ _id: doc._id }, { projection: { events: 1 } }))?.events || [];
+  const emit = async (type, data = {}, set = {}, at = new Date()) => {
+    const event = job.nextEvent(await eventsNow(), type, data, at);
+    await fenced({ $push: { events: event }, $set: { updated_at: at, ...set } });
+    return event;
+  };
+
+  /* The heartbeat renews only this claim. A run thawed after its container
+     was frozen renews it if nobody took the job meanwhile, and carries on;
+     if somebody did, it stops here. */
+  const heartbeat = setInterval(() => {
+    jobs.updateOne({ _id: doc._id, lease_token: token, status: job.STATUS.RUNNING }, { $set: { lease_expires_at: new Date(Date.now() + job.LOCK_MS) } })
+      .then((r) => { if (r.matchedCount === 0) loseLease(); })
+      .catch(() => {});
+  }, job.HEARTBEAT_MS);
+  heartbeat.unref?.();
+
+  const resumed = loadCheckpoint(doc);
+  let cp = resumed ? { ...resumed } : { seq: 0, next: "pick_source", state: null, sections: null, story: null };
+  let progressed = false;
+  /* Kept before the run goes on: a node finished, a section accepted, a
+     story id chosen or a story made. Getting this far resets the count of
+     claims that got nowhere. */
+  const keep = async (patch) => {
+    cp = { ...cp, ...patch, seq: (cp.seq || 0) + 1, saved_at: new Date() };
+    await fenced({ $set: { checkpoint: storedCheckpoint(cp), stalled_claims: 0, updated_at: cp.saved_at } });
+    progressed = true;
+    held.progressed = true;
+  };
 
   let calls = [];
-  const input = {
-    source: { id: doc.source.id, origin: doc.source.origin, title: doc.source.title, year: doc.source.year, use: USE.DRAFTABLE, reason: "draftable at creation" },
-    scholar: { name: doc.scholar_name, field: null },
-    audience: doc.audience,
-    voice: doc.voice || null,
-    brief: doc.brief || null,
-    outline: doc.outline_approved || null,
-    prepared: { text: doc.source_text, words: doc.source.prepared_words, totalWords: doc.source.words, truncated: doc.source.truncated },
-    setAside: doc.set_aside || [],
-  };
-  const onProgress = ({ step, message, detail }) => appendEvent(db, doc._id, "progress", { step, message, ...(detail || {}) }, { step });
-  const eventsNow = async () => (await jobs.findOne({ _id: doc._id }, { projection: { events: 1 } }))?.events || [];
-
   try {
-    /* Phase one, when asked for: read and outline, then wait for the scholar. */
+    if (doc.claimed_from?.status === job.STATUS.RUNNING) {
+      await emit("lease_reclaimed", { attempt: doc.attempts, previousOwner: doc.claimed_from.owner });
+    }
+    if (doc.stalled_claims > job.MAX_STALLED_CLAIMS) {
+      const last = doc.last_interruption?.detail;
+      throw Object.assign(new Error(last || `interrupted ${doc.stalled_claims - 1} times in a row without getting further`), { giveUp: true });
+    }
+    const summary = resumed ? storedCheckpoint(resumed).summary : null;
+    await emit("job_started", {
+      attempt: doc.attempts,
+      worker: WORKER_ID,
+      ...(summary ? { resumed: { next: summary.next, sectionsWritten: summary.sections_written, sectionsTotal: summary.sections_total } } : {}),
+    });
+
+    /* Every model call this run makes stops when the run loses the job. */
+    const guard = (fn) => (req) => (lost ? Promise.reject(new LeaseLost()) : fn({ ...req, signal: req?.signal || abort.signal }));
+    const generate = guard(traced("draft.generateContent", (req) => vertex.generateContent(req), {
+      metadata: { jobId: String(doc._id), profileId: doc.profile_id, promptVersion: doc.prompt_version },
+    }));
+    /* Every judge runs on its own route, with its own model and fallback; the
+       fact-checkers (fidelity, reach, context) on a model other than the
+       writer's, so no draft is marked by the model that wrote it. The retries
+       they may cause are policy. */
+    const router = await routerFor({ db });
+    const judges = {
+      voice: guard(router.bound("drafting.voice")), band: guard(router.bound("drafting.band")), review: guard(router.bound("drafting.review")),
+      fidelity: guard(router.bound("drafting.fidelity")), reach: guard(router.bound("drafting.reach")), context: guard(router.bound("drafting.context")),
+    };
+    const limits = await getPolicy("drafting", { db });
+
+    const input = {
+      source: { id: doc.source.id, origin: doc.source.origin, title: doc.source.title, year: doc.source.year, use: USE.DRAFTABLE, reason: "draftable at creation" },
+      scholar: { name: doc.scholar_name, field: null },
+      audience: doc.audience,
+      voice: doc.voice || null,
+      brief: doc.brief || null,
+      outline: doc.outline_approved || null,
+      prepared: { text: doc.source_text, words: doc.source.prepared_words, totalWords: doc.source.words, truncated: doc.source.truncated },
+      setAside: doc.set_aside || [],
+    };
+    const onProgress = ({ step, message, detail }) => emit("progress", { step, message, ...(detail || {}) }, { step });
+
+    /* Phase one, when asked for: read and outline, then wait for the scholar.
+       One model call; an interruption here simply plans again. */
     if (doc.approve_outline && !doc.outline_approved) {
       const planned = await runOutlineOnly(input, { generate, onProgress, judges, limits });
       calls = planned.calls;
       const finishedAt = new Date();
       const event = job.nextEvent(await eventsNow(), "outline_ready", { beats: planned.outline.beats.length }, finishedAt);
-      await jobs.updateOne(
-        { _id: doc._id, lease_owner: WORKER_ID },
-        {
-          $set: { status: job.STATUS.AWAITING_OUTLINE, step: null, outline: planned.outline, passages: planned.passages.map((p) => ({ id: p.id, words: p.words })), tokens: sumTokens(calls), updated_at: finishedAt, lease_owner: null, lease_expires_at: null },
-          $push: { events: event },
-        },
-      );
+      await fenced({
+        $set: { status: job.STATUS.AWAITING_OUTLINE, step: null, outline: planned.outline, passages: planned.passages.map((p) => ({ id: p.id, words: p.words })), tokens: sumTokens(calls), updated_at: finishedAt, lease_owner: null, lease_token: null, lease_expires_at: null, stalled_claims: 0 },
+        $push: { events: event },
+      });
       await recordJobRun(db, { doc, startedAt, finishedAt, calls, draft: null, outcome: "outline" });
       return;
     }
 
-    const result = await runDraftGraph(input, { generate, onProgress, judges, limits });
+    const result = await runDraftGraph(
+      { ...input, resume: resumed ? { next: resumed.next, state: resumed.state, sections: resumed.sections } : null },
+      {
+        generate, onProgress, judges, limits,
+        checkpoint: ({ next, state }) => keep({ next, state, sections: null }),
+        onSection: ({ round, index, section, warnings, calls: spent }) => {
+          const done = cp.sections && cp.sections.round === round ? cp.sections.done : {};
+          return keep({ sections: { round, done: { ...done, [index]: { section, warnings, calls: spent } } } });
+        },
+      },
+    );
     calls = result.calls;
-    const tokens = sumTokens([...calls, ...(doc.tokens ? [{ usage: doc.tokens }] : [])]);
     const { calls: _omit, ...draft } = result;
     const finishedAt = new Date();
 
     if (doc.create_story) {
       /* The draft becomes a draft story here, so the review workspace has a
-         URL the moment it is ready. Status "draft"; nothing is published. */
-      await onProgress({ step: "create_story", message: "Opening the draft in your workspace…" });
-      const { createStoryFromDraft } = require("./editorial.service");
-      const { storyId } = await createStoryFromDraft({ job: { ...doc, finished_at: finishedAt }, draft });
-      if (doc.levels_requested) {
+         URL the moment it is ready. Status "draft"; nothing is published.
+         Its id is kept before it is made, so a resumed run makes the same
+         story and never a second. */
+      let story = cp.story;
+      if (!story) {
+        story = { id: String(new ObjectId()), created: false, levels: null };
+        await keep({ story });
+      }
+      if (!story.created) {
+        await onProgress({ step: "create_story", message: "Opening the draft in your workspace…" });
+        const { createStoryFromDraft } = require("./editorial.service");
+        await createStoryFromDraft({ job: { ...doc, finished_at: finishedAt }, draft, storyId: story.id });
+        story = { ...story, created: true };
+        await keep({ story });
+      }
+      const storyId = new ObjectId(story.id);
+      if (doc.levels_requested && !story.levels) {
         /* The other reading ages, from the story just made. A failure here
            is a warning on the job, never a lost draft. */
+        let levels;
         try {
           const { generateLevelsForDoc } = require("./levels.service");
           const storyDoc = await db.collection(COLLECTIONS.scholarEditorials).findOne({ _id: storyId });
           const audiences = Array.isArray(doc.levels_requested) ? doc.levels_requested : null;
           const made = await generateLevelsForDoc(db, storyDoc, { audiences, actor: `drafter:${doc.graph_version || "draft-graph"}`, generate, judges, onProgress });
-          calls.push(...made.calls);
+          levels = { ok: true, calls: made.calls };
         } catch (error) {
+          if (lost || error instanceof LeaseLost) throw error;
           console.error(`[drafting] job ${doc._id}: reading levels failed:`, error?.message || error);
-          draft.warnings = [...(draft.warnings || []), "The other reading levels could not be written; you can write them from the workspace."];
+          levels = { ok: false, calls: [] };
         }
+        story = { ...story, levels };
+        await keep({ story });
       }
+      if (story.levels) {
+        calls.push(...(story.levels.calls || []));
+        if (!story.levels.ok) draft.warnings = [...(draft.warnings || []), "The other reading levels could not be written; you can write them from the workspace."];
+      }
+      const tokens = sumTokens([...calls, ...(doc.tokens ? [{ usage: doc.tokens }] : [])]);
       const event = job.nextEvent(await eventsNow(), "draft_ready", { words: draft.words, calls: calls.length, tokens, storyId: String(storyId) }, finishedAt);
-      await jobs.updateOne(
-        { _id: doc._id, lease_owner: WORKER_ID },
-        {
-          $set: { status: job.STATUS.PUBLISHED, step: null, draft, warnings: draft.warnings, tokens, story_id: storyId, finished_at: finishedAt, reviewed_at: finishedAt, updated_at: finishedAt, lease_owner: null, lease_expires_at: null },
-          $push: { events: event },
-        },
-      );
+      await fenced({
+        $set: { status: job.STATUS.PUBLISHED, step: null, draft, warnings: draft.warnings, tokens, story_id: storyId, finished_at: finishedAt, reviewed_at: finishedAt, updated_at: finishedAt, lease_owner: null, lease_token: null, lease_expires_at: null, checkpoint: null },
+        $push: { events: event },
+      });
     } else {
+      const tokens = sumTokens([...calls, ...(doc.tokens ? [{ usage: doc.tokens }] : [])]);
       const event = job.nextEvent(await eventsNow(), "draft_ready", { words: draft.words, calls: calls.length, tokens }, finishedAt);
-      await jobs.updateOne(
-        { _id: doc._id, lease_owner: WORKER_ID },
-        {
-          $set: { status: job.STATUS.AWAITING_REVIEW, step: null, draft, warnings: draft.warnings, tokens, finished_at: finishedAt, updated_at: finishedAt, lease_owner: null, lease_expires_at: null },
-          $push: { events: event },
-        },
-      );
+      await fenced({
+        $set: { status: job.STATUS.AWAITING_REVIEW, step: null, draft, warnings: draft.warnings, tokens, finished_at: finishedAt, updated_at: finishedAt, lease_owner: null, lease_token: null, lease_expires_at: null, checkpoint: null },
+        $push: { events: event },
+      });
     }
-    await recordJobRun(db, { doc, startedAt, finishedAt, calls, draft, outcome: "delivered" });
+    await recordJobRun(db, { doc, startedAt, finishedAt, calls, draft, outcome: "delivered", resumed });
   } catch (error) {
-    await failJob(db, doc, error, startedAt, calls);
+    if (lost || error instanceof LeaseLost) {
+      /* Another run holds the job now, or this instance is shutting down
+         and handed it back. Nothing more is written from here. */
+      console.warn(`[drafting] job ${doc._id}: this run no longer holds the job; stopping without writing (${error?.message || error})`);
+      return;
+    }
+    try {
+      if (!error?.giveUp && job.isTransient(error)) {
+        await handBack(error);
+      } else {
+        await failJob(error);
+      }
+    } catch (writeError) {
+      if (!(writeError instanceof LeaseLost)) throw writeError;
+    }
   } finally {
     clearInterval(heartbeat);
+    if (current === held) current = null;
+  }
+
+  /**
+   * The model was unreachable or timed out — on Cloud Run, typically a
+   * container thawed after a freeze, whose abort timers all fire at once.
+   * The job goes back to the queue, due again after a short wait, and the
+   * next claim resumes it from its checkpoint.
+   */
+  async function handBack(error) {
+    const at = new Date();
+    const backoff = job.retryBackoffMs(progressed ? 1 : doc.stalled_claims);
+    const detail = String(error?.message || error).slice(0, 300);
+    const event = job.nextEvent(await eventsNow(), "run_interrupted", {
+      reason: "transient",
+      sentence: "The drafting model didn't answer just now. The draft picks up from where it stopped in a few seconds.",
+      detail,
+      retryInMs: backoff,
+    }, at);
+    await fenced({
+      $set: { status: job.STATUS.QUEUED, step: null, lease_owner: null, lease_token: null, lease_expires_at: null, not_before: new Date(at.getTime() + backoff), last_interruption: { at, reason: "transient", detail }, updated_at: at },
+      $inc: { interruptions: 1 },
+      $push: { events: event },
+    });
+    console.warn(`[drafting] job ${doc._id}: handed back after a transient fault (${detail}); due again in ${backoff}ms`);
+    await recordJobRun(db, { doc, startedAt, finishedAt: at, calls, draft: null, outcome: "interrupted", error, resumed });
+  }
+
+  async function failJob(error) {
+    const finishedAt = new Date();
+    const sentence = job.failureSentence(error);
+    console.error(`[drafting] job ${doc._id} failed:`, error?.message || error);
+    const event = job.nextEvent(await eventsNow(), "job_failed", { sentence, detail: String(error?.message || error).slice(0, 300) }, finishedAt);
+    await fenced({
+      $set: { status: job.STATUS.FAILED, step: null, failure: { sentence, detail: String(error?.message || error).slice(0, 500) }, tokens: sumTokens(calls), finished_at: finishedAt, updated_at: finishedAt, lease_owner: null, lease_token: null, lease_expires_at: null },
+      $push: { events: event },
+    });
+    await recordJobRun(db, { doc, startedAt, finishedAt, calls, draft: null, outcome: "error", error, resumed });
   }
 }
 
-async function failJob(db, doc, error, startedAt, calls) {
+/**
+ * Hand the job this process is running back to the queue, now.
+ *
+ * For a shutdown: Cloud Run sends SIGTERM before it takes a container away,
+ * scaling to zero included. Waiting out the lease would leave the job looking
+ * stuck for a minute; handing it back lets the next instance with CPU resume
+ * it from its checkpoint at once. The run in hand is stopped first, so
+ * nothing it does afterwards is written. A shutdown is not the job's fault,
+ * so the claim it ends is not counted against it (one that got further has
+ * already reset the count).
+ */
+async function releaseHeldJob(reason = "instance_shutdown") {
+  const held = current;
+  if (!held) return false;
+  held.loseLease();
+  const { db } = await getCollections();
   const jobs = db.collection(COLLECTIONS.draftJobs);
-  const finishedAt = new Date();
-  const sentence = job.failureSentence(error);
-  console.error(`[drafting] job ${doc._id} failed:`, error?.message || error);
-  const event = job.nextEvent((await jobs.findOne({ _id: doc._id }, { projection: { events: 1 } }))?.events || [], "job_failed", { sentence, detail: String(error?.message || error).slice(0, 300) }, finishedAt);
-  await jobs.updateOne(
-    { _id: doc._id },
+  const at = new Date();
+  const row = await jobs.findOne({ _id: held.jobId }, { projection: { events: 1 } });
+  const event = job.nextEvent(row?.events || [], "run_interrupted", {
+    reason,
+    sentence: "The server writing this draft was shutting down. The draft picks up from where it stopped on the next one.",
+  }, at);
+  const r = await jobs.updateOne(
+    { _id: held.jobId, lease_token: held.token, status: job.STATUS.RUNNING },
     {
-      $set: { status: job.STATUS.FAILED, step: null, failure: { sentence, detail: String(error?.message || error).slice(0, 500) }, tokens: sumTokens(calls), finished_at: finishedAt, updated_at: finishedAt, lease_owner: null, lease_expires_at: null },
+      $set: { status: job.STATUS.QUEUED, step: null, lease_owner: null, lease_token: null, lease_expires_at: null, not_before: null, last_interruption: { at, reason, detail: null }, updated_at: at },
+      $inc: held.progressed ? { interruptions: 1 } : { interruptions: 1, stalled_claims: -1 },
       $push: { events: event },
     },
   );
-  await recordJobRun(db, { doc, startedAt, finishedAt, calls, draft: null, outcome: "error", error });
+  return r.matchedCount === 1;
 }
 
-async function recordJobRun(db, { doc, startedAt, finishedAt, calls, draft, outcome, error = null }) {
+async function recordJobRun(db, { doc, startedAt, finishedAt, calls, draft, outcome, error = null, resumed = null }) {
   try {
     await db.collection(COLLECTIONS.draftRuns).insertOne({
       profile_id: doc.profile_id,
@@ -545,6 +852,9 @@ async function recordJobRun(db, { doc, startedAt, finishedAt, calls, draft, outc
       worker: WORKER_ID,
       worker_versions: { graph: GRAPH_VERSION, prompt: composer.PROMPT_VERSION, engine: job.JOB_ENGINE_VERSION },
       attempt: doc.attempts,
+      /* Where this run entered the graph, when it took over from another;
+         its calls include the ones the earlier runs made and kept. */
+      resumed_from: resumed ? { next: resumed.next, seq: resumed.seq } : null,
       calls: calls.map((c) => ({ step: c.step, beat: c.beat ?? null, strictVoice: Boolean(c.strictVoice), usage: c.usage || null })),
       tokens: sumTokens(calls),
       outcome,
@@ -571,34 +881,59 @@ function sumTokens(calls) {
 
 let workerTimer = null;
 let inFlight = false;
+let stopping = false;
 
-/** Poll for work. One job at a time per process; the lease handles the rest. */
+const workerEnabled = () => env.drafting.enabled && env.drafting.worker;
+
+/** One claim and its run. One job at a time per process; the lease handles the rest. */
+async function tick({ jobId = null } = {}) {
+  if (inFlight || stopping) return false;
+  inFlight = true;
+  try {
+    const { db } = await getCollections();
+    const doc = await claimNextJob(db, { jobId });
+    if (doc) await runClaimedJob(db, doc);
+    return Boolean(doc);
+  } catch (error) {
+    console.error("[drafting] worker tick failed:", error);
+    return false;
+  } finally {
+    inFlight = false;
+  }
+}
+
+/** Poll for work. */
 function startDraftWorker() {
-  if (!env.drafting.enabled || !env.drafting.worker) {
+  if (!workerEnabled()) {
     console.log(`[drafting] worker not started (enabled=${env.drafting.enabled}, worker=${env.drafting.worker})`);
     return null;
   }
   if (workerTimer) return workerTimer;
-  const tick = async () => {
-    if (inFlight) return;
-    inFlight = true;
-    try {
-      const { db } = await getCollections();
-      const doc = await claimNextJob(db);
-      if (doc) await runClaimedJob(db, doc);
-    } catch (error) {
-      console.error("[drafting] worker tick failed:", error);
-    } finally {
-      inFlight = false;
-    }
-  };
-  workerTimer = setInterval(tick, Math.max(500, env.drafting.pollMs));
+  stopping = false;
+  workerTimer = setInterval(() => { tick(); }, Math.max(500, env.drafting.pollMs));
   workerTimer.unref();
   console.log(`[drafting] worker ${WORKER_ID} polling every ${env.drafting.pollMs}ms`);
   return workerTimer;
 }
 
+/**
+ * Take this scholar's job now, if it is waiting and this process is free.
+ *
+ * Called by requests that stay open while the scholar watches — the event
+ * stream, a long poll. On Cloud Run such a request is what gives this
+ * container CPU, so the instance serving the scholar is the one that should
+ * be drafting for them, and it should not wait for its next poll to start.
+ * Not called by short requests: a claim made as a request ends is a claim
+ * frozen a moment later. Never awaited; the request goes on serving.
+ */
+function nudgeDraftWorker({ jobId = null } = {}) {
+  if (!workerEnabled() || stopping || inFlight) return false;
+  tick({ jobId }).catch(() => {});
+  return true;
+}
+
 function stopDraftWorker() {
+  stopping = true;
   if (workerTimer) clearInterval(workerTimer);
   workerTimer = null;
 }
@@ -606,11 +941,20 @@ function stopDraftWorker() {
 /* ── the shape the composer sees ─────────────────────────────────────────── */
 
 function view(doc) {
+  /* Whether anything is drafting it right now, and how far it has got: a
+     job no worker has CPU for is paused, not "being written", and it
+     continues from where the summary says. */
+  const paused = job.pausedState(doc);
+  const kept = doc.checkpoint?.summary || null;
   return serializeMongoValue({
     id: doc._id,
     status: doc.status,
     step: doc.step,
     attempts: doc.attempts,
+    paused: paused.paused,
+    pausedSince: paused.since,
+    progress: kept ? { next: kept.next, round: kept.round || 0, sectionsWritten: kept.sections_written ?? 0, sectionsTotal: kept.sections_total ?? null } : null,
+    interruptions: doc.interruptions || 0,
     source: doc.source ? { origin: doc.source.origin, id: doc.source.id, title: doc.source.title, year: doc.source.year, words: doc.source.words, truncated: doc.source.truncated } : null,
     audience: doc.audience,
     voice: doc.voice || null,
@@ -646,8 +990,14 @@ module.exports = {
   listJobEvents,
   resumeJob,
   claimNextJob,
+  loadCheckpoint,
   runClaimedJob,
   startDraftWorker,
   stopDraftWorker,
+  nudgeDraftWorker,
+  releaseHeldJob,
+  waitForDraftJob,
+  view,
+  LeaseLost,
   WORKER_ID,
 };

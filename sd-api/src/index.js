@@ -21,7 +21,7 @@ const readerRoutes = require("./routes/reader.routes");
 const standingRoutes = require("./routes/standing.routes");
 const reviewRoutes = require("./routes/review.routes");
 const { ensureInviteIndexes } = require("./services/invite.service");
-const { startDraftWorker, stopDraftWorker } = require("./services/draftJob.service");
+const { startDraftWorker, stopDraftWorker, releaseHeldJob } = require("./services/draftJob.service");
 const profileRoutes = require("./routes/profile.routes");
 
 const app = express();
@@ -129,10 +129,12 @@ let shuttingDown = false;
 /**
  * Stop in an order that loses nothing.
  *
- *   1. Stop claiming jobs. A job already running is not waited for: it can
- *      take minutes, and it does not need to be. The worker holds a 120s
- *      lease, so an interrupted job is reclaimed and retried by whichever
- *      instance is alive — the recovery path the queue was built around.
+ *   1. Stop claiming jobs, and hand the one in hand back to the queue. It is
+ *      not waited for: it can take minutes, and it does not need to be. Its
+ *      checkpoint holds every step it finished, so whichever instance has a
+ *      request open next resumes it from there. Handing it back rather than
+ *      letting the 60s lease lapse means that instance need not wait. If the
+ *      hand-back cannot be written, the lease lapses and the same happens.
  *   2. Stop accepting connections, and let the ones in flight finish.
  *   3. Cut what is left. The job event stream holds a connection open for up
  *      to ten minutes by design, so waiting for every socket would hang the
@@ -146,6 +148,14 @@ async function shutdown(signal) {
   console.log(`[shutdown] ${signal} received; draining`);
 
   stopDraftWorker();
+  try {
+    await Promise.race([
+      releaseHeldJob("instance_shutdown"),
+      new Promise((resolve) => setTimeout(resolve, 3000).unref()),
+    ]);
+  } catch (error) {
+    console.warn("[shutdown] could not hand the draft in hand back:", error?.message || error);
+  }
 
   const closed = server
     ? new Promise((resolve) => server.close(resolve))

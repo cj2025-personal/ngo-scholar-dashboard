@@ -394,8 +394,26 @@ export async function getPublicStoryPassages(slug) {
   return request(`/api/editorial-stories/public/slug/${encodeURIComponent(slug)}/passages`, { method: "GET" });
 }
 
-export async function getDraftJob(jobId) {
-  return request(`/api/drafting/jobs/${encodeURIComponent(jobId)}`, { method: "GET" });
+/**
+ * The job. With `wait` (seconds) the server holds the read open until the
+ * job moves past `after` or settles — a long poll. Held open, it is what
+ * keeps the draft running on the server while the scholar watches.
+ */
+export async function getDraftJob(jobId, { wait = 0, after = null } = {}) {
+  const query = wait > 0 ? `?wait=${encodeURIComponent(wait)}${after !== null && after !== undefined ? `&after=${encodeURIComponent(after)}` : ""}` : "";
+  return request(`/api/drafting/jobs/${encodeURIComponent(jobId)}${query}`, { method: "GET" });
+}
+
+/**
+ * What to say about a job no worker is drafting right now: the scholar left
+ * and the server stopped with them. It continues from what it kept.
+ */
+export function pausedLine(job) {
+  const kept = job?.progress;
+  const where = kept && kept.sectionsTotal && kept.sectionsWritten
+    ? ` ${kept.sectionsWritten} of ${kept.sectionsTotal} sections are written and kept.`
+    : "";
+  return `This draft paused while you were away; it continues from where it stopped now that you are here.${where}`;
 }
 
 /** Record where the draft went: `publish` with the story id, or `discard`. */
@@ -417,8 +435,11 @@ export function isSettled(job) {
  *
  * Server-Sent Events with the session cookie; if the browser cannot hold the
  * stream open (a proxy that buffers, a corporate network), it falls back to
- * polling the job every two seconds. Either way the caller sees the same
- * two callbacks. Returns a function that stops watching.
+ * a long poll: each read is held open by the server until the job moves.
+ * Either way the caller sees the same two callbacks, and either way a
+ * request stays open while the scholar watches — on the server that is what
+ * keeps the draft running, and what resumes one that paused. Returns a
+ * function that stops watching.
  *
  * @param {string} jobId
  * @param {{ onProgress?: (e: {step: string, message: string}) => void, onSettled: (job: object) => void, onError?: (message: string) => void }} handlers
@@ -442,15 +463,25 @@ export function watchDraftJob(jobId, { onProgress = () => {}, onSettled, onError
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   };
 
+  let polledAfter = null;
+  let saidPaused = false;
   const poll = async () => {
     if (stopped) return;
-    const res = await getDraftJob(jobId);
+    const res = await getDraftJob(jobId, { wait: 20, after: polledAfter });
     if (stopped) return;
     if (!res.ok) { onError(res.error); stop(); return; }
     const job = res.data.job;
-    if (job.step) onProgress({ step: job.step, message: stepLabel(job.step) });
+    polledAfter = job.lastSequence ?? polledAfter;
     if (isSettled(job)) { settle(job); return; }
-    pollTimer = setTimeout(poll, 2000);
+    if (job.paused && !saidPaused) {
+      saidPaused = true;
+      onProgress({ step: "paused", message: pausedLine(job), detail: { paused: true } });
+    } else if (job.step) {
+      if (!job.paused) saidPaused = false;
+      onProgress({ step: job.step, message: stepLabel(job.step) });
+    }
+    /* The server answers as soon as the job moves, so ask again almost at once. */
+    pollTimer = setTimeout(poll, 250);
   };
 
   if (typeof EventSource === "undefined") {
@@ -493,6 +524,8 @@ export function watchDraftJob(jobId, { onProgress = () => {}, onSettled, onError
 }
 
 const STEP_LABELS = {
+  paused: "Paused while you were away; picking it up again…",
+  resume: "Picking up where it stopped…",
   draft_levels: "Writing it for every reading age…",
   pick_source: "Reading the paper…",
   plan_outline: "Planning the article's sections…",

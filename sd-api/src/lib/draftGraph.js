@@ -17,8 +17,18 @@
  * `awaiting_review` status, which survives a restart, is visible to the
  * composer, and is closed by the scholar through the resume endpoint. An
  * in-memory checkpointer would not survive a restart and a Mongo checkpointer
- * would be a second store of state this service already owns. The graph is
- * therefore stateless per run and ends where the scholar begins.
+ * would be a second store of state this service already owns.
+ *
+ * ── Resuming ────────────────────────────────────────────────────────────────
+ * A run can stop anywhere: on Cloud Run a container gets CPU only while a
+ * request is open, so a scholar who closes the tab freezes the draft, and a
+ * container scaled to zero takes it away. So the graph reports what it has
+ * finished — `deps.checkpoint` after every node, `deps.onSection` after every
+ * accepted section — and the job keeps it. A run handed `input.resume`
+ * enters the graph at the node that had not finished, with every section of
+ * the current round already accepted carried in rather than written again.
+ * The graph itself stays stateless: it reads what it is given and says what
+ * it did.
  *
  * ── The loops ───────────────────────────────────────────────────────────────
  * Inside `draft_blocks`, every section is judged before it is accepted. A
@@ -104,7 +114,40 @@ const State = Annotation.Root({
   caveats: Annotation(),
   warnings: Annotation({ reducer: (a, b) => [...(a || []), ...(b || [])], default: () => [] }),
   calls: Annotation({ reducer: (a, b) => [...(a || []), ...(b || [])], default: () => [] }),
+  /* resuming: the node to enter at, and the sections of the current round
+     already accepted, as `deps.onSection` reported them. */
+  resumeAt: Annotation(),
+  sectionsDone: Annotation(),
 });
+
+/** The keys that carry reducers; every other key is replaced by an update. */
+const REDUCED = new Set(["warnings", "calls"]);
+
+/** What a node produced, which is all a resumed run needs besides the job's own inputs. */
+const DURABLE = ["passages", "outline", "sections", "draft", "readability", "readabilityNote", "readabilityRounds", "checks", "headingChecks", "review", "caveats", "warnings", "calls"];
+
+/** The node after this one, as the edges below have it; null at the end. */
+const AFTER = { pick_source: "plan_outline", plan_outline: "draft_blocks", draft_blocks: "assemble", assemble: "verify" };
+function nextNode(node, state) {
+  if (node === "verify") return state.readabilityNote ? "draft_blocks" : null;
+  return AFTER[node] || null;
+}
+
+/** The state after a node's update, with the reducers the State declares. */
+function applyUpdate(state, update) {
+  const out = { ...state };
+  for (const [k, v] of Object.entries(update || {})) {
+    if (v === undefined) continue;
+    out[k] = REDUCED.has(k) ? [...(out[k] || []), ...(v || [])] : v;
+  }
+  return out;
+}
+
+function durableState(state) {
+  const out = {};
+  for (const k of DURABLE) if (state[k] !== undefined) out[k] = state[k];
+  return out;
+}
 
 /**
  * @param {object} deps
@@ -112,8 +155,9 @@ const State = Annotation.Root({
  * @param {(event: {step: string, message: string, detail?: object}) => (void|Promise<void>)} [deps.onProgress]
  * @param {{voice?: Function, band?: Function, review?: Function, fidelity?: Function, reach?: Function, context?: Function}} [deps.judges]   each judge's model; the writer's when not given. In production the fidelity, reach and context judges run on their own routes, so no draft is marked by the model that wrote it.
  * @param {{sectionVoiceRetries?: number, fidelityRetries?: number, bandRetries?: number}} [deps.limits]   from the drafting policy
+ * @param {(s: {round: number, index: number, section: object, warnings: string[], calls: object[]}) => Promise<void>} [deps.onSection]   after each section is accepted, before the next is written: what a resumed run carries in
  */
-function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, limits = {} }) {
+function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, limits = {}, onSection = async () => {} }) {
   if (typeof generate !== "function") throw new TypeError("buildDraftGraph requires generate()");
   const L = { ...defaultsFor("drafting"), ...limits };
   const judgeVoice = judges.voice || generate;
@@ -198,7 +242,25 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
     const calls = [];
     const warnings = [];
     const total = s.outline.beats.length;
+    /* A resumed run: the sections this round already accepted are carried
+       in exactly as they were, with what they cost and what they warned.
+       A rewrite for the reading level is a new round, and starts clean. */
+    const round = s.readabilityRounds || 0;
+    const carried = s.sectionsDone && s.sectionsDone.round === round && s.sectionsDone.done ? s.sectionsDone.done : {};
+    const carriedCount = s.outline.beats.filter((b) => carried[b.index]).length;
+    if (carriedCount) {
+      await progress("resume", `Picking up where it stopped: ${carriedCount} of ${total} section${total === 1 ? "" : "s"} already written.`, { resumed: carriedCount, total });
+    }
     for (const beat of s.outline.beats) {
+      const prior = carried[beat.index];
+      if (prior) {
+        sections[beat.index] = prior.section;
+        warnings.push(...(prior.warnings || []));
+        calls.push(...(prior.calls || []));
+        continue;
+      }
+      const warningsBefore = warnings.length;
+      const callsBefore = calls.length;
       const extension = beat.kind === plan.BEAT_KIND.EXTENSION;
       const contextBeat = beat.kind === plan.BEAT_KIND.CONTEXT;
       const briefOnly = isBriefOnly(s.source);
@@ -373,6 +435,9 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
         index: beat.index, total, heading: beat.heading, kind: beat.kind || plan.BEAT_KIND.PAPER,
         blocks: accepted.blocks.map((b) => ({ type: b.type, html: b.html })),
       });
+      /* Kept before the next section starts, so an interruption from here
+         on costs at most the section in hand. */
+      await onSection({ round, index: beat.index, section: accepted, warnings: warnings.slice(warningsBefore), calls: calls.slice(callsBefore) });
     }
     return { sections, calls, warnings };
   }
@@ -669,15 +734,32 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
   return { pick_source, plan_outline, draft_blocks, assemble, verify };
 }
 
+/**
+ * @param {object} deps   as buildDraftNodes, and:
+ * @param {(c: {node: string, next: string|null, state: object}) => Promise<void>} [deps.checkpoint]
+ *   after each node, inside it, with the state it leaves and the node that
+ *   runs next (null when the graph is done). Inside the node, so a refusal to
+ *   keep it — the job was taken over — stops the run before the next node.
+ */
 function buildDraftGraph(deps) {
   const n = buildDraftNodes(deps);
+  const keep = deps.checkpoint;
+  const node = (name) => (keep
+    ? async (s) => {
+      const update = await n[name](s);
+      const after = applyUpdate(s, update);
+      await keep({ node: name, next: nextNode(name, after), state: durableState(after) });
+      return update;
+    }
+    : n[name]);
   const graph = new StateGraph(State)
-    .addNode("pick_source", n.pick_source)
-    .addNode("plan_outline", n.plan_outline)
-    .addNode("draft_blocks", n.draft_blocks)
-    .addNode("assemble", n.assemble)
-    .addNode("verify", n.verify)
-    .addEdge(START, "pick_source")
+    .addNode("pick_source", node("pick_source"))
+    .addNode("plan_outline", node("plan_outline"))
+    .addNode("draft_blocks", node("draft_blocks"))
+    .addNode("assemble", node("assemble"))
+    .addNode("verify", node("verify"))
+    /* A fresh run reads the paper first; a resumed one enters where it stopped. */
+    .addConditionalEdges(START, (s) => s.resumeAt || "pick_source", ["pick_source", "plan_outline", "draft_blocks", "assemble", "verify"])
     .addEdge("pick_source", "plan_outline")
     .addEdge("plan_outline", "draft_blocks")
     .addEdge("draft_blocks", "assemble")
@@ -764,12 +846,23 @@ function normaliseApprovedOutline(proposed, approved, passages, { briefOnly = fa
 /**
  * Run the graph and shape the result for the job.
  *
- * @param {object} input   { source, scholar, audience, prepared, brief?, outline? }
- * @param {object} deps    { generate, onProgress }
+ * @param {object} input   { source, scholar, audience, prepared, brief?, outline?, resume? }
+ *   `resume` is the last checkpoint: { next, state, sections }. `next` null
+ *   means the graph had finished, and its state is the result.
+ * @param {object} deps    { generate, onProgress, judges, limits, checkpoint?, onSection? }
  */
 async function runDraftGraph(input, deps) {
-  const graph = buildDraftGraph(deps);
-  const final = await graph.invoke({ ...input, voice: composer.normaliseVoice(input.voice) }, { recursionLimit: 12 });
+  const { resume, ...given } = input;
+  const start = { ...given, voice: composer.normaliseVoice(given.voice) };
+  const resuming = resume && resume.state && typeof resume.state === "object";
+  let final;
+  if (resuming && !resume.next) {
+    final = { ...start, ...resume.state };
+  } else {
+    const graph = buildDraftGraph(deps);
+    const initial = resuming ? { ...start, ...resume.state, resumeAt: resume.next, sectionsDone: resume.sections || null } : start;
+    final = await graph.invoke(initial, { recursionLimit: 12 });
+  }
   const warnings = dedupe(final.warnings || []);
   return {
     title: final.outline.title,
@@ -794,4 +887,4 @@ function dedupe(list) {
   return [...new Set(list)];
 }
 
-module.exports = { GRAPH_VERSION, buildDraftNodes, buildDraftGraph, runDraftGraph, runOutlineOnly, normaliseApprovedOutline };
+module.exports = { GRAPH_VERSION, buildDraftNodes, buildDraftGraph, runDraftGraph, runOutlineOnly, normaliseApprovedOutline, nextNode, applyUpdate, durableState };

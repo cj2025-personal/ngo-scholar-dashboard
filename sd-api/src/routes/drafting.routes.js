@@ -7,8 +7,8 @@ const { requireAuth } = require("../middleware/auth.middleware");
 const { canonicalScholarId } = require("../lib/identity");
 const { rateLimit } = require("../middleware/rate-limit.middleware");
 const { listDraftSources, draftFromSource } = require("../services/drafting.service");
-const { createDraftJob, approveOutline, replanOutline, getDraftJob, listDraftJobs, listJobEvents, resumeJob } = require("../services/draftJob.service");
-const { STATUS, TERMINAL } = require("../lib/draftJob");
+const { createDraftJob, approveOutline, replanOutline, getDraftJob, waitForDraftJob, listDraftJobs, listJobEvents, resumeJob, nudgeDraftWorker } = require("../services/draftJob.service");
+const { STATUS, isSettled } = require("../lib/draftJob");
 const { isAudience } = require("../lib/audiences");
 const { VOICE } = require("../lib/draftComposer");
 const { getAiTerms } = require("../services/aiTerms.service");
@@ -291,11 +291,24 @@ router.get(
   }),
 );
 
+/**
+ * The job. With `?wait=<seconds>` (up to 25) it is a long poll, answered when
+ * the job moves past `?after=<sequence>`, settles, or the wait runs out — the
+ * composer's fallback when it cannot hold the event stream open. Held open,
+ * the poll keeps this container's CPU on while the scholar watches, and a
+ * job waiting for a worker is taken here; answered at once, it would not.
+ */
 router.get(
   "/jobs/:jobId",
   requireAuth,
   asyncHandler(async (req, res) => {
     const profileId = requireProfile(req);
+    const wait = Number(req.query.wait);
+    if (Number.isFinite(wait) && wait > 0) {
+      const after = Number(req.query.after);
+      res.status(200).json(await waitForDraftJob({ jobId: req.params.jobId, profileId, waitMs: wait * 1000, afterSequence: Number.isFinite(after) && req.query.after !== undefined ? after : null }));
+      return;
+    }
     res.status(200).json(await getDraftJob({ jobId: req.params.jobId, profileId }));
   }),
 );
@@ -314,6 +327,15 @@ const STREAM_MAX_MS = 10 * 60 * 1000;
  * "poll" is one indexed read a second per open stream — fine at 65
  * scholars, and the place to put a change stream if that ever stops being
  * true.
+ *
+ * The stream is also what keeps the draft going. On Cloud Run a container
+ * has CPU only while a request is open, and this is the request that stays
+ * open while the scholar watches; so while the job waits for a worker —
+ * queued, or its lease lapsed because the container holding it was frozen
+ * or taken away — this instance takes it, and it resumes from its
+ * checkpoint here. A `progress` frame with step `paused` says so once, so
+ * the page shows where things stand rather than a spinner. Cloud Run ends
+ * the request at 300s; the browser reconnects with Last-Event-ID.
  */
 router.get(
   "/jobs/:jobId/events",
@@ -343,7 +365,19 @@ router.get(
       res.write(`event: ${type}\n`);
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
-    const settled = (status) => status === STATUS.AWAITING_REVIEW || status === STATUS.AWAITING_OUTLINE || TERMINAL.has(status);
+    const settled = isSettled;
+    let saidPaused = false;
+    const keepGoing = (snapshot) => {
+      if (settled(snapshot.status)) return;
+      if (snapshot.status !== STATUS.QUEUED && !snapshot.job.paused) { saidPaused = false; return; }
+      nudgeDraftWorker({ jobId });
+      if (snapshot.job.paused && !saidPaused) {
+        saidPaused = true;
+        const kept = snapshot.job.progress;
+        const where = kept && kept.sectionsTotal ? ` ${kept.sectionsWritten} of ${kept.sectionsTotal} sections are written and kept.` : "";
+        send("progress", { step: "paused", message: `This draft had paused; picking it up again now.${where}`, paused: true, pausedSince: snapshot.job.pausedSince, ...(kept ? { sectionsWritten: kept.sectionsWritten, sectionsTotal: kept.sectionsTotal } : {}) });
+      }
+    };
     const finish = (snapshot) => {
       send("done", snapshot.job);
       closed = true;
@@ -371,6 +405,7 @@ router.get(
         const next = await listJobEvents({ jobId, profileId, afterSequence: after });
         emit(next);
         if (settled(next.status)) finish(next);
+        else keepGoing(next);
       } catch (error) {
         send("error", { message: error.message });
         closed = true;
@@ -384,6 +419,7 @@ router.get(
     }, STREAM_POLL_MS);
 
     if (settled(first.status)) finish(first);
+    else keepGoing(first);
 
     req.on("close", () => {
       closed = true;

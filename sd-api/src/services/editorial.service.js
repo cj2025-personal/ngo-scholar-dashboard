@@ -2189,11 +2189,22 @@ async function applyStoryRevision({ storyId, scholarId, profileId, user, fields 
  * first draft where the scholar will find it, not a publication. The byline
  * still resolves from the curated record at read time; `published_by` stays
  * empty until a person publishes.
+ *
+ * `storyId` is chosen by the job before this is called and kept on its
+ * checkpoint, so a run that resumes after an interruption makes the same
+ * story rather than a second one: the story already there is the answer.
  */
-async function createStoryFromDraft({ job, draft }) {
+async function createStoryFromDraft({ job, draft, storyId: chosenId = null }) {
   const db = await getDb();
   const collection = getStoryCollection(db);
-  const storyId = new ObjectId();
+  const storyId = chosenId ? new ObjectId(String(chosenId)) : new ObjectId();
+  if (chosenId) {
+    const existing = await collection.findOne({ _id: storyId }, { projection: { _id: 1, slug: 1 } });
+    if (existing) {
+      await ensureFirstRevision(db, { storyId, job });
+      return { storyId, slug: existing.slug, reused: true };
+    }
+  }
   const title = normalizeString(draft.title) || "Untitled draft";
   const slug = await buildUniqueSlug(collection, title);
   const rawBlocks = normalizeRawBodyBlocks(
@@ -2210,7 +2221,7 @@ async function createStoryFromDraft({ job, draft }) {
   const { bodyBlocks } = resolveBodyBlocksWithImages({ rawBlocks, existingImages: [], uploadedInlineByKey: new Map() });
   const plainTextContent = buildPlainTextContentFromBlocks(bodyBlocks);
   const now = new Date();
-  await collection.insertOne({
+  const story = {
     _id: storyId,
     scholar_id: job.profile_id,
     profile_id: job.profile_id,
@@ -2239,7 +2250,20 @@ async function createStoryFromDraft({ job, draft }) {
     source: "drafter",
     editor_version: 4,
     version: 1,
-  });
+  };
+  try {
+    await collection.insertOne(story);
+  } catch (error) {
+    /* Two runs of one job reached here at once; the first one's story stands. */
+    if (chosenId && error?.code === 11000) {
+      const existing = await collection.findOne({ _id: storyId }, { projection: { _id: 1, slug: 1 } });
+      if (existing) {
+        await ensureFirstRevision(db, { storyId, job });
+        return { storyId, slug: existing.slug, reused: true };
+      }
+    }
+    throw error;
+  }
   await appendRevision(db, {
     storyId,
     profileId: job.profile_id,
@@ -2252,7 +2276,36 @@ async function createStoryFromDraft({ job, draft }) {
     jobId: job._id || null,
     at: now,
   });
-  return { storyId, slug };
+  return { storyId, slug, reused: false };
+}
+
+/**
+ * The machine's first version of a drafted story, written if a run stopped
+ * between inserting the story and recording it. Read from the story itself,
+ * which nobody has edited yet if it has no history.
+ */
+async function ensureFirstRevision(db, { storyId, job }) {
+  const revisions = db.collection(COLLECTIONS.storyRevisions);
+  if (await revisions.findOne({ story_id: storyId }, { projection: { _id: 1 } })) return;
+  const story = await getStoryCollection(db).findOne({ _id: storyId });
+  if (!story) return;
+  try {
+    await appendRevision(db, {
+      storyId,
+      profileId: job.profile_id,
+      story: { title: story.title, subtitle: story.subtitle, excerpt: story.excerpt, content: story.content, body_blocks: story.body_blocks, status: story.status },
+      version: story.version || 1,
+      source: storyVersion.SOURCE.DRAFTER,
+      actor: `drafter:${job.graph_version || "draft-graph"}`,
+      note: "The draft as the machine wrote it",
+      turnId: null,
+      jobId: job._id || null,
+      at: story.createdAt || new Date(),
+    });
+  } catch (error) {
+    /* The other run wrote it a moment ago. */
+    if (error?.code !== 11000) throw error;
+  }
 }
 
 module.exports = {
