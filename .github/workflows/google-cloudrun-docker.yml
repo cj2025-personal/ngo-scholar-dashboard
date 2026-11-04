@@ -393,6 +393,7 @@ jobs:
             --allow-unauthenticated
             --port=8080
             --cpu=1
+            --service-account=scholar-ui-runtime@ngo-application-services.iam.gserviceaccount.com
             --memory=512Mi
             --min-instances=${{ vars.SCHOLAR_UI_MIN_INSTANCES || '0' }}
             --max-instances=10
