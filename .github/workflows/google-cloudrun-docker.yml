@@ -38,6 +38,8 @@ on:
   push:
     branches:
       - 'main'
+    tags:
+      - 'release-*'
     paths:
       - 'sd-api/**'
       - 'sd-ui/**'
@@ -109,7 +111,7 @@ jobs:
   api:
     name: 'Build and Deploy sd-api'
     needs: 'test'
-    if: ${{ github.event_name == 'push' || inputs.deploy_api }}
+    if: ${{ startsWith(github.ref, 'refs/tags/release-') || (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch && inputs.deploy_api) }}
     runs-on: 'ubuntu-latest'
     environment: 'dev'
     permissions:
@@ -120,6 +122,18 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
+
+      # A release tag deploys only a commit already on the default branch.
+      - name: 'Release commit is on the default branch'
+        if: startsWith(github.ref, 'refs/tags/release-')
+        env:
+          DEFAULT_BRANCH: '${{ github.event.repository.default_branch }}'
+        run: |-
+          git fetch --no-tags --depth=500 origin "${DEFAULT_BRANCH}"
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" FETCH_HEAD; then
+            echo "::error::${GITHUB_REF_NAME} is not on ${DEFAULT_BRANCH}. Tag a commit that is." >&2
+            exit 1
+          fi
 
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
@@ -285,7 +299,7 @@ jobs:
   ui:
     name: 'Build and Deploy sd-ui'
     needs: ['test', 'api']
-    if: ${{ always() && needs.api.result != 'failure' && needs.test.result == 'success' && (github.event_name == 'push' || inputs.deploy_ui) }}
+    if: ${{ always() && needs.api.result != 'failure' && needs.test.result == 'success' && (startsWith(github.ref, 'refs/tags/release-') || (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch && inputs.deploy_ui)) }}
     runs-on: 'ubuntu-latest'
     environment: 'dev'
     permissions:
@@ -294,6 +308,18 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
+
+      # A release tag deploys only a commit already on the default branch.
+      - name: 'Release commit is on the default branch'
+        if: startsWith(github.ref, 'refs/tags/release-')
+        env:
+          DEFAULT_BRANCH: '${{ github.event.repository.default_branch }}'
+        run: |-
+          git fetch --no-tags --depth=500 origin "${DEFAULT_BRANCH}"
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" FETCH_HEAD; then
+            echo "::error::${GITHUB_REF_NAME} is not on ${DEFAULT_BRANCH}. Tag a commit that is." >&2
+            exit 1
+          fi
 
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
