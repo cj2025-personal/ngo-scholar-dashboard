@@ -73,6 +73,7 @@ test("a missing address, a 404, a refusal and no answer each say what happened",
   await withEnv({ isProduction: false, learnerApiUrl: "http://localhost:4000", learnerApiStudioToken: null }, async () => {
     await assert.rejects(callLearnerApi("GET", "/x", { profileId: "p", fetcher: recorder({ status: 404, body: { message: "Not found." } }).fetcher }), (e) => e.statusCode === 404);
     await assert.rejects(callLearnerApi("GET", "/x", { profileId: "p", fetcher: recorder({ status: 401, body: { code: "STUDIO_CALLER_REFUSED" } }).fetcher }), (e) => e.statusCode === 502 && /STUDIO_CALLER_REFUSED/.test(e.message));
+    await assert.rejects(callLearnerApi("POST", "/circles", { profileId: "p", fetcher: recorder({ status: 409, body: { code: "TOO_MANY_CIRCLES", message: "You can lead up to 10 open circles." } }).fetcher }), (e) => e.statusCode === 409 && /up to 10/.test(e.message), "a refusal of the scholar's request is passed on in its words");
     const down = async () => { throw new TypeError("fetch failed"); };
     await assert.rejects(callLearnerApi("GET", "/x", { profileId: "p", fetcher: down }), (e) => e.statusCode === 502);
   });

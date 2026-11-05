@@ -42,10 +42,12 @@ async function authHeaders(fetcher) {
 }
 
 /**
- * One call. Returns the parsed body; a 404 from the learner API is passed on
- * as 404, anything else it refuses or fails as 502 (it failed, not the
- * scholar's request), and an unset address as 503.
+ * One call. Returns the parsed body. What the learner API refuses about the
+ * scholar's request (400, 403, 404, 409) is passed on with its words; a
+ * refusal of this service (401) or a failure is 502, since it is not the
+ * scholar's doing; an unset address is 503.
  */
+const PASSED_ON = new Set([400, 403, 404, 409]);
 async function callLearnerApi(method, path, { profileId, body = null, fetcher = fetch } = {}) {
   if (!env.learnerApiUrl) throw new ApiError(503, "The learner app is not connected on this deployment (LEARNER_API_URL unset).");
   let res;
@@ -65,7 +67,7 @@ async function callLearnerApi(method, path, { profileId, body = null, fetcher = 
     throw new ApiError(502, `The learner app did not answer (${error.name || "error"}).`);
   }
   const payload = await res.json().catch(() => ({}));
-  if (res.status === 404) throw new ApiError(404, payload.message || "Not found.");
+  if (PASSED_ON.has(res.status)) throw new ApiError(res.status, payload.message || "Not found.");
   if (!res.ok) throw new ApiError(502, `The learner app refused (${res.status}${payload.code ? ` ${payload.code}` : ""}).`);
   return payload;
 }

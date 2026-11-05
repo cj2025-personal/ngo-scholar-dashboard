@@ -12,6 +12,7 @@ import {
   HiOutlineMicrophone,
   HiOutlinePencilSquare,
   HiOutlineUser,
+  HiOutlineUserGroup,
 } from "react-icons/hi2";
 
 import WriteWithKivyn from "@/components/kivyn/WriteWithKivyn";
@@ -56,8 +57,9 @@ import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
 
-/* Four areas, in the order a scholar meets them: what needs me, what we hold
-   of my work, what I have written, what has been recorded. Who I am is the
+/* Five areas, in the order a scholar meets them: what needs me, what we hold
+   of my work, what I have written, who reads it with me, what has been
+   recorded. Who I am is the
    account menu's: the avatar is already the scholar, and a pill saying so
    beside it was the same thing twice. "What this platform already says about
    me" (/content) is reached from the Profile, so the bar stays about the work. */
@@ -65,6 +67,7 @@ const NAV = [
   { label: "Studio", href: "/", icon: HiOutlineHome, hint: "What needs you today" },
   { label: "Papers", href: "/papers", icon: HiOutlineDocumentText, hint: "The work we hold of yours" },
   { label: "Stories", href: "/editorial", icon: HiOutlineBookOpen, hint: "What you have written" },
+  { label: "Circles", href: "/circles", icon: HiOutlineUserGroup, hint: "The classes that read with you" },
   { label: "Podcasts", href: "/podcasts", icon: HiOutlineMicrophone, hint: "What has been recorded" },
 ];
 

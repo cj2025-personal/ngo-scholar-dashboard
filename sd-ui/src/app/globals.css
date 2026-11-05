@@ -5649,3 +5649,25 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .rc-why, .rc-note { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-faint); }
 .rc-error { margin: 0; font-size: var(--fs-xs); color: var(--ark-danger, #b42318); }
 .rc-questions .ck-act { justify-self: start; }
+
+/* Learning circles (app/(protected)/circles, components/circles). */
+.cc-page { display: grid; gap: 16px; max-width: 920px; }
+.cc-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.cc-bar p { margin: 0; max-width: 620px; }
+.cc-list { display: grid; gap: 12px; }
+.cc-card { display: grid; gap: 8px; }
+.cc-card p { margin: 0; line-height: 1.5; }
+.cc-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.cc-card__head a { color: inherit; text-decoration: none; }
+.cc-card__head a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.cc-findings { margin: 0; padding-left: 18px; font-size: var(--fs-sm); line-height: 1.5; color: var(--ark-warning); }
+.cc-code { font-size: var(--fs-sm); color: var(--sd-faint); }
+.cc-code b, .cc-code-big { font-variant-numeric: tabular-nums; letter-spacing: 0.08em; color: var(--sd-heading); }
+.cc-code-big { margin: 0; font-size: var(--fs-xl, 1.5rem); font-weight: var(--weight-semibold); }
+.cc-form { display: grid; gap: 12px; }
+.cc-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0; padding: 0; border: 0; }
+.cc-checks legend { margin-bottom: 4px; }
+.cc-check { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+.cc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cc-rows { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.cc-rows li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--ark-card-line-soft); }
