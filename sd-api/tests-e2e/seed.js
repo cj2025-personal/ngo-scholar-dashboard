@@ -14,6 +14,8 @@ const PROFILE_ID = "e2e-profile-0001";
 const EMAIL = "e2e.scholar@example.edu";
 const SYSTEM_PROFILE = "e2e-system-0002";
 const SYSTEM_EMAIL = "system-legend-conversation-regeneration";
+/* A directory scholar with no account yet: the one an invitation is for. */
+const CLAIMABLE_PROFILE = "e2e-claim-0003";
 
 const PAPER = [
   "Adaptive antenna arrays reduce interference by steering nulls toward unwanted sources. The method updates weights with a least-mean-squares rule every two milliseconds, which is fast enough for fixed interferers. Four patch elements were spaced at half a wavelength.",
@@ -40,6 +42,7 @@ async function seedScholar(target) {
   await target.collection("scholars").insertMany([
     { _id: PROFILE_ID, profile_id: PROFILE_ID, status: "legacy", name: { display: "Test Scholar", full: "Test Scholar" }, about: { current_position: "Professor", institution: "Example University", avatar_initial: "T" } },
     { _id: SYSTEM_PROFILE, profile_id: SYSTEM_PROFILE, status: "legacy", name: { display: "System Actor" } },
+    { _id: CLAIMABLE_PROFILE, profile_id: CLAIMABLE_PROFILE, status: "legacy", name: { display: "Invited Scholar", full: "Invited Scholar" }, about: { current_position: "Professor", institution: "Example College", avatar_initial: "I" } },
   ]);
   await target.collection("scholar_credentials").insertMany([
     { scholar_id: PROFILE_ID, profile_id: PROFILE_ID, login_email: EMAIL, is_active: true, session_version: 0, password_hash: "x" },
@@ -67,4 +70,4 @@ async function seedScholar(target) {
   return { token, systemToken };
 }
 
-module.exports = { PROFILE_ID, EMAIL, SYSTEM_PROFILE, SYSTEM_EMAIL, PAPER, seedScholar };
+module.exports = { PROFILE_ID, EMAIL, SYSTEM_PROFILE, SYSTEM_EMAIL, CLAIMABLE_PROFILE, PAPER, seedScholar };

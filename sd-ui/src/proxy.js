@@ -5,8 +5,10 @@ const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || "sd_session";
 export function proxy(request) {
   const { pathname } = request.nextUrl;
 
-  // Public routes: the login screen and publicly-readable story pages.
-  if (pathname === "/login" || pathname.startsWith("/stories/")) {
+  // Public routes: the login screen, publicly-readable story pages, and the
+  // claim page. Whoever opens a claim link has no account yet, so it cannot
+  // ask for a session; the one-time token in the path is what it checks.
+  if (pathname === "/login" || pathname.startsWith("/stories/") || pathname.startsWith("/claim/")) {
     return NextResponse.next();
   }
 

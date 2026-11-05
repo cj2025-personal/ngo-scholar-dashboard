@@ -69,6 +69,9 @@ async function start() {
       FAKE_MODEL_SPECIFIC: "1",
       RECORD_FAKE: JSON.stringify({ "10.1000/src-e2e-1": { "updated-by": [{ type: "retraction", DOI: "10.1000/notice-1", label: "Retraction", updated: { "date-time": "2026-09-01T00:00:00Z" } }] } }),
       RECORD_SWEEP_TOKEN: "sweep-test-token",
+      /* The admin portal's secret for issuing invitations, so the claim spec
+         can mint a real one the way an admin does. */
+      SERVICE_TOKEN: "e2e-service-token",
       CORS_ORIGIN: `http://localhost:${process.env.E2E_UI_PORT || 3103},http://127.0.0.1:${process.env.E2E_UI_PORT || 3103}`,
       GCP_PROJECT_ID: "",
       GCP_SERVICE_ACCOUNT_JSON: "",
