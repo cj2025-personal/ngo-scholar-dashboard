@@ -288,6 +288,7 @@ jobs:
             GCS_EDITORIAL_IMAGES_BUCKET=${{ vars.GCS_EDITORIAL_IMAGES_BUCKET || secrets.GCS_EDITORIAL_IMAGES_BUCKET || 'editorial-images' }}
             DRAFTING_ENABLED=${{ vars.DRAFTING_ENABLED || '1' }}
             DRAFTING_WORKER=${{ vars.DRAFTING_WORKER || '1' }}
+            LEARNER_API_URL=${{ vars.LEARNER_API_URL || 'https://user-dashboard-api-ishg7jtqbq-uc.a.run.app' }}
 
       - name: 'Show sd-api URL'
         run: 'echo "sd-api: ${{ steps.deploy.outputs.url }}"'

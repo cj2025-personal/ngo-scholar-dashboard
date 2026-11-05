@@ -5630,3 +5630,22 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
   .sc-write-bar-right .sc-write-secondary { padding: 0 12px; }
   .sc-write-bar-right .sc-write-publish { padding: 0 14px; }
 }
+
+/* Reading checks in the Checks rail (components/editorial/ReadingChecks): the questions learners answer, per reading age. */
+.rc-card { display: grid; gap: 8px; padding: 12px 14px; margin: 0 0 10px; border-radius: 12px; background: var(--ark-card-wash); border: 1px solid var(--ark-card-line-soft); }
+.rc-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rc-card__head b { color: var(--sd-heading); font-weight: var(--weight-semibold); }
+.rc-status { font-size: var(--fs-xs); padding: 3px 9px; border-radius: 999px; background: var(--ark-navy-soft); color: var(--navy); white-space: nowrap; }
+.rc-status.is-ready { background: var(--ark-success-soft); color: var(--ark-success-strong); }
+.rc-status.is-pending { background: var(--ark-warning-soft); color: var(--ark-warning); }
+.rc-questions { display: grid; gap: 12px; margin: 0; padding-left: 18px; }
+.rc-questions > li { display: grid; gap: 4px; }
+.rc-questions > li.is-dropped { opacity: 0.55; }
+.rc-questions > li.is-dropped .rc-q { text-decoration: line-through; }
+.rc-q { margin: 0; color: var(--sd-heading); line-height: 1.45; }
+.rc-options { margin: 0; padding-left: 16px; font-size: var(--fs-sm); line-height: 1.5; color: var(--sd-faint); }
+.rc-options li.is-key { color: var(--ark-success-strong); font-weight: var(--weight-medium); }
+.rc-options li.is-key::after { content: " ✓"; }
+.rc-why, .rc-note { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-faint); }
+.rc-error { margin: 0; font-size: var(--fs-xs); color: var(--ark-danger, #b42318); }
+.rc-questions .ck-act { justify-self: start; }

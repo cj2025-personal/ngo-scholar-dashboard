@@ -16,7 +16,9 @@ const {
   streamEditorialImage,
   streamPublishedEditorialImage,
   updateEditorialStory,
+  findOwnedStory,
 } = require("../services/editorial.service");
+const { callLearnerApi } = require("../lib/learnerApi");
 const { askStoryAgent, listStoryTurns, resolveStoryTurn, streamProposalImage, storyPassages, publicStoryPassages } = require("../services/storyAgent.service");
 const evidence = require("../services/evidence.service");
 const { generateLevels, approveLevels, discardLevels } = require("../services/levels.service");
@@ -347,6 +349,40 @@ router.post(
       user: req.auth.user,
       audiences: Array.isArray(req.body?.audiences) ? req.body.audiences.map(String) : null,
       baseVersion: req.body?.baseVersion ?? null,
+    }));
+  }),
+);
+
+/**
+ * Reading checks: the questions learners answer after reading this story at
+ * each band readers can see it at. They are written and kept by the learner
+ * app (its services/scholarStoryChecks); the scholar sees them here, keys
+ * included, and can take a question out or put it back. Only for the
+ * scholar's own story: findOwnedStory answers 404 for anyone else's.
+ */
+router.get(
+  "/:storyId/reading-checks",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const story = await findOwnedStory({ storyId: req.params.storyId, scholarId: req.auth.user.scholar_id, profileId: req.auth.user.profile_id });
+    res.status(200).json(await callLearnerApi("GET", `/stories/${encodeURIComponent(String(story._id))}/reading-checks`, { profileId: story.profile_id }));
+  }),
+);
+
+router.post(
+  "/:storyId/reading-checks/:checkId/questions",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const question = typeof req.body?.question === "string" ? req.body.question : "";
+    if (!question || typeof req.body?.dropped !== "boolean") {
+      throw new ApiError(400, "Say which question, and whether to take it out (dropped: true or false).");
+    }
+    const story = await findOwnedStory({ storyId: req.params.storyId, scholarId: req.auth.user.scholar_id, profileId: req.auth.user.profile_id });
+    const checkId = String(req.params.checkId || "");
+    if (!/^[a-f0-9]{24}$/i.test(checkId)) throw new ApiError(404, "Not found.");
+    res.status(200).json(await callLearnerApi("POST", `/reading-checks/${checkId}/questions`, {
+      profileId: story.profile_id,
+      body: { question, dropped: req.body.dropped },
     }));
   }),
 );

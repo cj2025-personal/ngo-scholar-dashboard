@@ -272,6 +272,22 @@ export async function approveStoryLevels(storyId, { audiences = null, baseVersio
   });
 }
 
+/**
+ * The reading checks learners answer after this story, one per reading age
+ * readers can see it at, with each question's key and whether it was taken out.
+ * Written by the learner app once the story is published.
+ */
+export async function getReadingChecks(storyId) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/reading-checks`, { method: "GET" });
+}
+
+/** Take a question out of a reading check, or put it back. */
+export async function setReadingCheckQuestion(storyId, checkId, question, dropped) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/reading-checks/${encodeURIComponent(checkId)}/questions`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, dropped }),
+  });
+}
+
 /** Ask now whether the record has moved against this story's source. */
 export async function checkStoryRecord(storyId) {
   return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/record/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });

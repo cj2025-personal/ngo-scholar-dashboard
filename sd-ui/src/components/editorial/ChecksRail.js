@@ -7,6 +7,7 @@ import { FaCheck, FaCircleInfo, FaTriangleExclamation } from "react-icons/fa6";
 
 import { DRAFT_AUDIENCES, checkStoryRecord, getStoryReadingLevel } from "@/lib/drafting";
 import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
+import ReadingChecks from "./ReadingChecks";
 
 /**
  * The checks on this draft, as it stands right now.
@@ -258,6 +259,9 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
           </>
         ) : <p className="st-muted" id="ck-level-title">Reading level: nothing to measure yet.</p>}
       </section>
+
+      {/* The questions learners answer after reading it, per reading age: the scholar's to review. */}
+      <ReadingChecks storyId={storyId} />
 
       <details className="ck-fold is-clear">
         <summary><span>Clear · {clearCount} check{clearCount === 1 ? "" : "s"}</span></summary>

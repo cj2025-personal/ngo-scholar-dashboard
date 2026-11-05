@@ -16,7 +16,7 @@ const storyVersion = require("../lib/storyVersion");
 const levelsLib = require("../lib/levels");
 const recordLib = require("../lib/record");
 const ledger = require("../lib/evidenceLedger");
-const { AUDIENCES: AUDIENCE_TABLE } = require("../lib/audiences");
+const { AUDIENCES: AUDIENCE_TABLE, normaliseAudience } = require("../lib/audiences");
 const { readsForStories, readsByDay } = require("./reads.service");
 const { questionsForStories } = require("./readerQuestions.service");
 const {
@@ -858,6 +858,11 @@ async function resolveStoryAuthor(db, profileId) {
  * unresolvable source yields no line at all — a "drawn from" claim that
  * cannot name what it was drawn from is not one worth printing.
  */
+/* The grade the article itself is written at, as each level carries its own
+   (mapStoryDocument): the learner app writes reading checks for the article
+   at this grade. A story with no recorded band is the adults'. */
+const audienceGradeOf = (provenance) => AUDIENCE_TABLE[normaliseAudience(provenance?.audience)]?.grade ?? null;
+
 async function resolveStoryProvenance(db, provenance) {
   if (!provenance) return null;
   /* Written from the scholar's brief alone: theirs, machine-drafted, checked
@@ -865,7 +870,7 @@ async function resolveStoryProvenance(db, provenance) {
      which readers are told under the byline. */
   if (isBriefOnly(provenance)) {
     return {
-      origin: provenance.origin, sourceId: null, audience: provenance.audience || null, voice: provenance.voice || null,
+      origin: provenance.origin, sourceId: null, audience: provenance.audience || null, audienceGrade: audienceGradeOf(provenance), voice: provenance.voice || null,
       draftedAt: provenance.drafted_at || null, promptVersion: provenance.prompt_version || null,
       title: null, year: null, url: null, line: BRIEF_LINE, briefOnly: true,
     };
@@ -875,6 +880,7 @@ async function resolveStoryProvenance(db, provenance) {
     origin: provenance.origin,
     sourceId: provenance.source_id,
     audience: provenance.audience || null,
+    audienceGrade: audienceGradeOf(provenance),
     /* Whose account it is. The levels service and the agent read it to keep
        editing in the voice the draft was written in. */
     voice: provenance.voice || null,
@@ -2309,6 +2315,7 @@ async function ensureFirstRevision(db, { storyId, job }) {
 }
 
 module.exports = {
+  audienceGradeOf,
   buildExcerpt,
   /* Exported for the ownership-scope tests: the composition below is what
      leaked one scholar's stories to another. */

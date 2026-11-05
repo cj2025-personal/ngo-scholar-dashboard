@@ -41,6 +41,12 @@ const env = {
   /* The shared secret our own services present to issue invitations. Absent
      means invitation issuing is DISABLED, not open — see invite.routes.js. */
   serviceToken: process.env.SERVICE_TOKEN || null,
+  /* The learner app's API (user-dashboard-api), for what a scholar sees there
+     of their own stories: the reading checks learners answer (lib/learnerApi).
+     In production this service proves itself with its own Google ID token;
+     outside it, with LEARNER_API_STUDIO_TOKEN (the API's STUDIO_INTERNAL_TOKEN). */
+  learnerApiUrl: (process.env.LEARNER_API_URL || "").trim().replace(/\/+$/, "") || null,
+  learnerApiStudioToken: process.env.LEARNER_API_STUDIO_TOKEN || null,
   authCookieName: process.env.AUTH_COOKIE_NAME || "sd_session",
   /* Unset in development. At deploy, the shared parent domain — e.g.
      ".archivyn.example" — so sibling subdomains share one scholar session. */

@@ -15,6 +15,9 @@ const { spawn } = require("child_process");
 const API_DIR = path.resolve(__dirname, "..", "..", "sd-api");
 const STATE_FILE = path.join(__dirname, ".state.json");
 const API_PORT = Number(process.env.E2E_API_PORT || 4103);
+/* Where the reading-checks spec stands in for the learner app's API, and the token the studio sends it. */
+const LEARNER_STUB_PORT = Number(process.env.E2E_LEARNER_STUB_PORT || 4104);
+const LEARNER_STUB_TOKEN = "e2e-learner-studio-token-000000000000";
 const DB_NAME = "sd_ui_e2e";
 
 const fromApi = (mod) => require(require.resolve(mod, { paths: [API_DIR] }));
@@ -72,6 +75,10 @@ async function start() {
       /* The admin portal's secret for issuing invitations, so the claim spec
          can mint a real one the way an admin does. */
       SERVICE_TOKEN: "e2e-service-token",
+      /* The learner app's API, stood in for by the reading-checks spec on this
+         port (it holds the reading checks a scholar reviews). */
+      LEARNER_API_URL: `http://localhost:${LEARNER_STUB_PORT}`,
+      LEARNER_API_STUDIO_TOKEN: LEARNER_STUB_TOKEN,
       CORS_ORIGIN: `http://localhost:${process.env.E2E_UI_PORT || 3103},http://127.0.0.1:${process.env.E2E_UI_PORT || 3103}`,
       GCP_PROJECT_ID: "",
       GCP_SERVICE_ACCOUNT_JSON: "",
@@ -116,4 +123,4 @@ function readState() {
   return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
 }
 
-module.exports = { start, stop, readState, STATE_FILE, API_PORT };
+module.exports = { start, stop, readState, STATE_FILE, API_PORT, LEARNER_STUB_PORT, LEARNER_STUB_TOKEN };
