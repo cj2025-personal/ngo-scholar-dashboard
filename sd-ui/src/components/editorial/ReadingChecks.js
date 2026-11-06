@@ -11,9 +11,52 @@ import { DRAFT_AUDIENCES, getReadingChecks, setReadingCheckQuestion } from "@/li
  * judge ruled its answer right - and the scholar can take any question out,
  * or put it back. With too few left, a set stops being asked until more are
  * written.
+ *
+ * Where readers got lost: beside each question, how many readers answered it
+ * and how many got it right, the wrong answer most of them chose, and the
+ * place in the story it is answered. Counts only, and only once enough
+ * readers stand behind them (the learner app's floor, 5): under it the
+ * scholar is told "fewer than 5", never the number.
  */
 
 const bandLabel = (band) => DRAFT_AUDIENCES.find((a) => a.value === band)?.label ?? band;
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/* The questions most readers missed, hardest first; none when nobody missed. */
+const missedMost = (questions) =>
+  questions
+    .filter((q) => typeof q.results?.answered === "number" && q.results.right < q.results.answered)
+    .map((q) => ({ question: q.question, missed: q.results.answered - q.results.right, answered: q.results.answered }))
+    .sort((a, b) => b.missed / b.answered - a.missed / a.answered)
+    .slice(0, 3);
+
+function QuestionResults({ q, check }) {
+  const r = q.results;
+  return (
+    <>
+      {typeof check.readers === "number" ? (
+        typeof r?.answered === "number" ? (
+          <p className="rck-result">
+            <b>{r.right} of {r.answered}</b> readers got it right
+            {r.commonWrong ? <> · most who missed it chose “{r.commonWrong}”</> : null}
+          </p>
+        ) : (
+          <p className="rck-result is-quiet">Fewer than {check.floor} readers have answered this one</p>
+        )
+      ) : null}
+      {q.passage?.quote ? (
+        <p className="rck-passage">
+          <span>Answered in your story:</span> “{q.passage.quote}”
+        </p>
+      ) : q.passage?.whole ? (
+        <p className="rck-passage">
+          <span>About the story as a whole</span>
+        </p>
+      ) : null}
+    </>
+  );
+}
 
 function CheckCard({ storyId, check, onChanged }) {
   const [busy, setBusy] = useState(null);
@@ -32,6 +75,7 @@ function CheckCard({ storyId, check, onChanged }) {
   };
 
   const live = check.questions.filter((q) => !q.dropped).length;
+  const lost = typeof check.readers === "number" ? missedMost(check.questions) : [];
   return (
     <article className="rc-card">
       <header className="rc-card__head">
@@ -41,6 +85,24 @@ function CheckCard({ storyId, check, onChanged }) {
         </span>
       </header>
       {check.waiting ? <p className="rc-note">{check.waiting}</p> : null}
+      {typeof check.readers === "number" ? (
+        <div className="rck-lost">
+          <p className="rck-lost__head">{plural(check.readers, "reader has", "readers have")} answered</p>
+          {lost.length ? (
+            <ol className="rck-lost__list" aria-label="Missed most often">
+              {lost.map((item) => (
+                <li key={item.question}>
+                  <span className="rck-lost__q">{item.question}</span> <span className="rck-lost__n">{item.missed} of {item.answered} missed it</span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="rc-note">Every reader got every question right.</p>
+          )}
+        </div>
+      ) : check.status === "ready" ? (
+        <p className="rc-note">Fewer than {check.floor ?? 5} readers have answered yet. How they did shows here once {check.floor ?? 5} have.</p>
+      ) : null}
       <ol className="rc-questions">
         {check.questions.map((q) => (
           <li key={q.question} className={q.dropped ? "is-dropped" : undefined}>
@@ -54,6 +116,7 @@ function CheckCard({ storyId, check, onChanged }) {
               ))}
             </ul>
             {q.rationale ? <p className="rc-why">{q.rationale}</p> : null}
+            <QuestionResults q={q} check={check} />
             <button type="button" className="ck-act" disabled={busy !== null} onClick={() => toggle(q.question, !q.dropped)}>
               {busy === q.question ? "Saving…" : q.dropped ? "Put it back" : "Leave it out"}
             </button>

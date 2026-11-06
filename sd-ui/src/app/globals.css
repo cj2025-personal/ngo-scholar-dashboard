@@ -5649,6 +5649,16 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .rc-why, .rc-note { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-faint); }
 .rc-error { margin: 0; font-size: var(--fs-xs); color: var(--ark-danger, #b42318); }
 .rc-questions .ck-act { justify-self: start; }
+/* Where readers got lost: the readers who answered, the questions missed most, and how each question went. */
+.rck-lost { display: grid; gap: 4px; padding: 8px 10px; border-radius: 10px; background: var(--ark-navy-soft); }
+.rck-lost__head { margin: 0; font-size: var(--fs-sm); font-weight: var(--weight-medium); color: var(--sd-heading); }
+.rck-lost__list { display: grid; gap: 2px; margin: 0; padding-left: 18px; font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-heading); }
+.rck-lost__n { color: var(--ark-warning); white-space: nowrap; }
+.rck-result { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-heading); }
+.rck-result b { font-weight: var(--weight-semibold); }
+.rck-result.is-quiet { color: var(--sd-faint); }
+.rck-passage { margin: 0; padding-left: 8px; border-left: 2px solid var(--ark-card-line-soft); font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-faint); }
+.rck-passage span { color: var(--sd-heading); }
 
 /* Learning circles (app/(protected)/circles, components/circles). */
 .cc-page { display: grid; gap: 16px; max-width: 920px; }

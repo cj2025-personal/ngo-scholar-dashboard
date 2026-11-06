@@ -23,11 +23,42 @@ const check = {
   waiting: null,
   judgedOut: 1,
   updatedAt: "2026-11-05T12:00:00.000Z",
+  readers: 12,
+  floor: 5,
   questions: [
-    { question: "What do the arrays steer toward noise?", options: ["Nulls", "Beams", "Wires", "Lights"], answerIndex: 0, rationale: "The first paragraph says so.", skill: "literal_detail", dropped: false },
-    { question: "How much better was the signal?", options: ["Two decibels", "Eleven decibels", "Forty", "None"], answerIndex: 1, rationale: null, skill: "literal_detail", dropped: false },
-    { question: "Why test in a chamber?", options: ["No echoes", "Cheaper", "Warmer", "Faster"], answerIndex: 0, rationale: null, skill: "inference", dropped: false },
+    {
+      question: "What do the arrays steer toward noise?", options: ["Nulls", "Beams", "Wires", "Lights"], answerIndex: 0, rationale: "The first paragraph says so.", skill: "literal_detail", dropped: false,
+      results: { answered: 12, right: 12, commonWrong: null },
+      passage: { quote: "Adaptive arrays steer nulls toward noise.", whole: false },
+    },
+    {
+      question: "How much better was the signal?", options: ["Two decibels", "Eleven decibels", "Forty", "None"], answerIndex: 1, rationale: null, skill: "literal_detail", dropped: false,
+      results: { answered: 12, right: 5, commonWrong: "Two decibels" },
+      passage: { quote: "Field trials improved the signal by eleven decibels.", whole: false },
+    },
+    {
+      question: "Why test in a chamber?", options: ["No echoes", "Cheaper", "Warmer", "Faster"], answerIndex: 0, rationale: null, skill: "inference", dropped: false,
+      results: { answered: null, right: null, commonWrong: null },
+      passage: { quote: null, whole: true },
+    },
   ],
+};
+/* An older reading age with only a few readers so far: no numbers. */
+const fewReaders = {
+  id: "64b0000000000000000000c2",
+  band: "ages_12_14",
+  status: "ready",
+  textGrade: 7,
+  waiting: null,
+  judgedOut: 0,
+  updatedAt: "2026-11-05T12:00:00.000Z",
+  readers: null,
+  floor: 5,
+  questions: [1, 2, 3, 4].map((n) => ({
+    question: `Older readers' question ${n}?`, options: ["a", "b", "c", "d"], answerIndex: 0, rationale: null, skill: "literal_detail", dropped: false,
+    results: { answered: null, right: null, commonWrong: null },
+    passage: null,
+  })),
 };
 
 test.beforeAll(async () => {
@@ -43,7 +74,7 @@ test.beforeAll(async () => {
         return res.end(JSON.stringify({ code: "STUDIO_CALLER_REFUSED" }));
       }
       if (req.method === "GET" && /\/internal\/studio\/stories\/[^/]+\/reading-checks$/.test(req.url)) {
-        return res.end(JSON.stringify({ checks: [check] }));
+        return res.end(JSON.stringify({ checks: [check, fewReaders] }));
       }
       if (req.method === "POST" && req.url === `/internal/studio/reading-checks/${check.id}/questions`) {
         const { question, dropped } = JSON.parse(body || "{}");
@@ -93,6 +124,19 @@ test("a scholar sees the questions learners answer after their story, with the k
   await expect(page.locator(".rc-options li.is-key").first()).toHaveText(/Nulls/);
   await expect(page.getByText(/1 more was written and left out/)).toBeVisible();
 
+  /* Where readers got lost: counts above the floor, the question missed most, the wrong answer they chose, and where the story answers it. */
+  const card = page.locator(".rc-card").first();
+  await expect(card.getByText("12 readers have answered")).toBeVisible();
+  await expect(card.getByRole("list", { name: "Missed most often" })).toHaveText(/How much better was the signal\?\s*7 of 12 missed it/);
+  await expect(card.getByText(/5 of 12 readers got it right · most who missed it chose “Two decibels”/)).toBeVisible();
+  await expect(card.getByText(/12 of 12 readers got it right/)).toBeVisible();
+  await expect(card.getByText("“Field trials improved the signal by eleven decibels.”", { exact: false })).toBeVisible();
+  await expect(card.getByText("About the story as a whole")).toBeVisible();
+  await expect(card.getByText("Fewer than 5 readers have answered this one")).toBeVisible();
+  const older = page.locator(".rc-card").nth(1);
+  await expect(older.getByText("Fewer than 5 readers have answered yet", { exact: false })).toBeVisible();
+  await expect(older.locator(".rck-result")).toHaveCount(0);
+
   const lookup = seen.find((s) => s.method === "GET");
   expect(lookup.url).toBe(`/internal/studio/stories/${storyId}/reading-checks`);
   expect(lookup.scholar).toBe("e2e-profile-0001");
@@ -102,9 +146,9 @@ test("a scholar sees the questions learners answer after their story, with the k
   await expect(page.getByRole("button", { name: "Put it back" })).toBeVisible();
   const review = seen.find((s) => s.method === "POST");
   expect(JSON.parse(review.body)).toEqual({ question: "What do the arrays steer toward noise?", dropped: true });
-  /* For a person to look at: the rail with one question left out. */
+  /* For a person to look at: the rail with how readers did, and one question left out. */
   await page.setViewportSize({ width: 1366, height: 607 });
-  await page.locator(".rc-card").first().scrollIntoViewIfNeeded();
+  await page.locator(".rck-lost").first().scrollIntoViewIfNeeded();
   await page.screenshot({ path: test.info().outputPath("reading-checks-1366x607.png") });
 });
 
