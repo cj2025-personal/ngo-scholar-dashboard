@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import CircleForm from "@/components/circles/CircleForm";
 import { Findings, STATUS_WORDS } from "@/components/circles/CirclesView";
-import { archiveCircle, bandLabel, changeCircleCode, getCircle, updateCircle } from "@/lib/circles";
+import { CONCERN_WORDS, archiveCircle, bandLabel, changeCircleCode, getCircle, requestPlacement, updateCircle, withdrawPlacement } from "@/lib/circles";
 
 /*
  * One circle: who joined (schools and classes), how many read each story, and
@@ -13,6 +13,101 @@ import { archiveCircle, bandLabel, changeCircleCode, getCircle, updateCircle } f
  * no reader can be singled out; no reader is ever named.
  */
 const count = (n, min) => (n === null || n === undefined ? `fewer than ${min}` : String(n));
+
+/*
+ * Its place in a community's portal. A model reads what the circle is about,
+ * never who leads it, and places it, says why not, or asks Proj Arch to look
+ * (the learner app's services/circles/communityFit). The scholar may take it
+ * out; asking again with nothing changed gets the same answer.
+ */
+function PortalPlacement({ circle, busy, apply }) {
+  const p = circle.placement;
+  const portals = circle.portals || [];
+  if (!p && portals.length === 0) return null;
+  const asking = busy === "placement";
+  const ask = (community) => apply("placement", () => requestPlacement(circle.id, community));
+  const takeOut = () => apply("placement", () => withdrawPlacement(circle.id));
+  const askLabel = (name) => (asking ? "Reading the circle…" : `Show it in the ${name} portal`);
+
+  let state = null;
+  if (!p) {
+    state =
+      circle.status === "open" ? (
+        <div className="cc-actions">
+          {portals.map((portal) => (
+            <button key={portal.community} type="button" className="ck-act" disabled={busy !== null} onClick={() => ask(portal.community)}>
+              {askLabel(portal.name)}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="st-muted">Once the circle is open, you can show it in a community&rsquo;s portal.</p>
+      );
+  } else if (p.withdrawn) {
+    state = (
+      <>
+        <p>You took it out of the {p.communityName} portal.</p>
+        {circle.status === "open" ? (
+          <div className="cc-actions">
+            <button type="button" className="ck-act" disabled={busy !== null} onClick={() => ask(p.community)}>
+              {askLabel(p.communityName)}
+            </button>
+          </div>
+        ) : null}
+      </>
+    );
+  } else {
+    const concerns = p.concerns.map((k) => CONCERN_WORDS[k] ?? k);
+    const words =
+      p.status === "placed"
+        ? p.shown
+          ? `Shown in the ${p.communityName} portal.`
+          : `Placed in the ${p.communityName} portal, and hidden while the circle isn't open.`
+        : p.status === "declined"
+          ? p.byArchivyn
+            ? `Not shown in the ${p.communityName} portal. Proj Arch decided:`
+            : `Not shown in the ${p.communityName} portal.`
+          : p.unjudged
+            ? "The check couldn't be reached after your last change, so it's out of the portal for now. Ask again, or Proj Arch will look."
+            : `Proj Arch is looking at it before it's shown in the ${p.communityName} portal.`;
+    state = (
+      <>
+        <p>
+          <span className={`ck-chip ${p.shown ? "is-ok" : p.status === "declined" ? "" : "is-warn"}`}>
+            {p.shown ? "In the portal" : p.status === "declined" ? "Not shown" : p.status === "review" ? "Waiting for Proj Arch" : "Hidden"}
+          </span>
+        </p>
+        <p>{words}</p>
+        {p.reason ? <p className="dash-muted">{p.reason}</p> : null}
+        {concerns.length ? <p className="dash-muted">What it noticed: it {concerns.join("; it ")}.</p> : null}
+        {p.status === "declined" ? <p className="st-muted">Change the circle&rsquo;s purpose or stories, then ask again: the same circle gets the same answer.</p> : null}
+        <div className="cc-actions">
+          {circle.status === "open" && (p.status === "declined" || p.unjudged) ? (
+            <button type="button" className="ck-act" disabled={busy !== null} onClick={() => ask(p.community)}>
+              {asking ? "Reading the circle…" : "Ask again"}
+            </button>
+          ) : null}
+          {p.status !== "declined" ? (
+            <button type="button" className="ck-act" disabled={busy !== null} onClick={takeOut}>
+              Take it out
+            </button>
+          ) : null}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <section className="st-card dash-card cc-card" aria-labelledby="cc-portal-title">
+      <h2 className="dash-h2" id="cc-portal-title">Community portal</h2>
+      <p className="dash-muted">
+        A community&rsquo;s portal is where its learners find reading about its people, history and culture. Whether a circle belongs there is judged on what it is
+        about, never on who leads it.
+      </p>
+      {state}
+    </section>
+  );
+}
 
 export default function CircleDetail({ id }) {
   const [state, setState] = useState({ status: "loading", circle: null, error: null });
@@ -96,6 +191,8 @@ export default function CircleDetail({ id }) {
         )}
         {error && !editing ? <p className="auth-error" role="alert">{error}</p> : null}
       </section>
+
+      <PortalPlacement circle={c} busy={busy} apply={apply} />
 
       {c.status === "open" ? (
         <section className="st-card dash-card cc-card" aria-labelledby="cc-code-title">

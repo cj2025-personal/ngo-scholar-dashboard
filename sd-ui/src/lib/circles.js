@@ -48,7 +48,17 @@ export const FINDING_WORDS = {
   unclear: "young readers could not tell what it is about",
 };
 
+/** What a concern from the community-fit check means, in the scholar's words. */
+export const CONCERN_WORDS = {
+  suffering_only: "shows the community mainly through suffering",
+  all_the_same: "treats the community as one voice",
+  stereotype: "leans on a stereotype",
+  outsider_gaze: "looks at the community from outside, as exotic or other",
+};
+
 export const listCircles = () => request("/api/circles");
+export const requestPlacement = (id, community) => request(`/api/circles/${encodeURIComponent(id)}/placement`, { method: "POST", body: JSON.stringify({ community }) });
+export const withdrawPlacement = (id) => request(`/api/circles/${encodeURIComponent(id)}/placement`, { method: "DELETE" });
 export const getCircle = (id) => request(`/api/circles/${encodeURIComponent(id)}`);
 export const createCircle = (input) => request("/api/circles", { method: "POST", body: JSON.stringify(input) });
 export const updateCircle = (id, input) => request(`/api/circles/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });

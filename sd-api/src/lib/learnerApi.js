@@ -43,12 +43,18 @@ async function authHeaders(fetcher) {
 
 /**
  * One call. Returns the parsed body. What the learner API refuses about the
- * scholar's request (400, 403, 404, 409) is passed on with its words; a
- * refusal of this service (401) or a failure is 502, since it is not the
- * scholar's doing; an unset address is 503.
+ * scholar's request (400, 403, 404, 409) is passed on with its words, and so
+ * is a 503 it explains (a judge it could not reach: try again); a refusal of
+ * this service (401) or another failure is 502, since it is not the scholar's
+ * doing; an unset address is 503.
+ *
+ * timeoutMs: a call the learner API answers only once a model has judged (a
+ * circle's text, its place in a portal) passes JUDGED_CALL_MS: its judges
+ * have 30 seconds (modelGateway JUDGE_DEADLINE_MS there).
  */
 const PASSED_ON = new Set([400, 403, 404, 409]);
-async function callLearnerApi(method, path, { profileId, body = null, fetcher = fetch } = {}) {
+const JUDGED_CALL_MS = 40_000;
+async function callLearnerApi(method, path, { profileId, body = null, fetcher = fetch, timeoutMs = TIMEOUT_MS } = {}) {
   if (!env.learnerApiUrl) throw new ApiError(503, "The learner app is not connected on this deployment (LEARNER_API_URL unset).");
   let res;
   try {
@@ -61,15 +67,16 @@ async function callLearnerApi(method, path, { profileId, body = null, fetcher = 
         ...(await authHeaders(fetcher)),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     throw new ApiError(502, `The learner app did not answer (${error.name || "error"}).`);
   }
   const payload = await res.json().catch(() => ({}));
   if (PASSED_ON.has(res.status)) throw new ApiError(res.status, payload.message || "Not found.");
+  if (res.status === 503 && payload.code && payload.message) throw new ApiError(503, payload.message);
   if (!res.ok) throw new ApiError(502, `The learner app refused (${res.status}${payload.code ? ` ${payload.code}` : ""}).`);
   return payload;
 }
 
-module.exports = { callLearnerApi, _resetLearnerApiToken: () => { cachedToken = null; } };
+module.exports = { callLearnerApi, JUDGED_CALL_MS, _resetLearnerApiToken: () => { cachedToken = null; } };

@@ -43,6 +43,7 @@ test.beforeAll(async () => {
             ? { fit: false, unreachable: false, findings: [{ kind: "contact_outside", quote: "email me", explanation: "It asks learners to write to you." }] }
             : { fit: true, unreachable: false, findings: [] },
           suspendedReason: null, createdAt: new Date().toISOString(),
+          placement: null, portals: [{ community: "black", name: "Black" }],
           minReport: 5, members: 23,
           connections: [
             { id: "l1", school: "Lincoln Elementary", className: "Room 12", grade: 4, status: "active", members: 23, since: new Date().toISOString() },
@@ -53,6 +54,26 @@ test.beforeAll(async () => {
         circles.unshift(circle);
         res.statusCode = 201;
         return res.end(JSON.stringify({ circle: view(circle) }));
+      }
+      /* A community's portal: the judge, stood in for, places a circle about Black inventors and declines one about antennas. */
+      const placing = /^\/internal\/studio\/circles\/([^/]+)\/placement$/.exec(req.url);
+      const placed = placing && circles.find((c) => c.id === placing[1]);
+      if (placed && req.method === "POST") {
+        if (body.community !== "black") {
+          res.statusCode = 400;
+          return res.end(JSON.stringify({ code: "NOT_A_PORTAL", message: "That community has no portal yet." }));
+        }
+        const fits = /inventors/i.test(placed.purpose);
+        placed.placement = {
+          community: "black", communityName: "Black", status: fits ? "placed" : "declined", shown: fits, withdrawn: false,
+          reason: fits ? "It reads Black inventors' own work and lives." : "It is about antennas, with nothing particular to the Black community in it.",
+          concerns: [], byArchivyn: false, unjudged: false, requestedAt: new Date().toISOString(), judgedAt: new Date().toISOString(),
+        };
+        return res.end(JSON.stringify({ circle: view(placed) }));
+      }
+      if (placed && req.method === "DELETE") {
+        placed.placement = { ...placed.placement, withdrawn: true, shown: false };
+        return res.end(JSON.stringify({ circle: view(placed) }));
       }
       const one = /^\/internal\/studio\/circles\/([^/]+)(\/code)?$/.exec(req.url);
       const circle = one && circles.find((c) => c.id === one[1]);
@@ -114,4 +135,39 @@ test("a scholar starts a circle, is told what the check found, and shares an ope
 
   await page.getByRole("button", { name: "Switch it off" }).click();
   await expect(page.getByText(/Switched off: no new class can join/)).toBeVisible();
+});
+
+test("a scholar shows a circle in a community's portal, is told why another doesn't belong, and takes one out", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 607 });
+  const start = async (name, purpose) => {
+    await page.goto("/circles");
+    await page.getByRole("button", { name: "Start a circle" }).click();
+    await page.getByLabel("Name").fill(name);
+    await page.getByLabel("What the circle reads about").fill(purpose);
+    await page.getByRole("button", { name: "Start the circle" }).click();
+    await page.getByRole("link", { name }).click();
+    await expect(page.getByRole("heading", { name: "Community portal" })).toBeVisible();
+  };
+
+  await start("Inventors of the South Side", "Classes read about Black inventors in Chicago and the workshops they built.");
+  await expect(page.getByText(/judged on what it is about, never on who leads it/)).toBeVisible();
+  await page.getByRole("button", { name: "Show it in the Black portal" }).click();
+  await expect(page.getByText("Shown in the Black portal.")).toBeVisible();
+  await expect(page.getByText("It reads Black inventors' own work and lives.")).toBeVisible();
+  const asked = seen.filter((s) => s.method === "POST" && /\/placement$/.test(s.url));
+  expect(asked.at(-1).body).toEqual({ community: "black" });
+  expect(asked.at(-1).scholar).toBe("e2e-profile-0001");
+  await page.screenshot({ path: test.info().outputPath("circle-portal-1366x607.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "Take it out" }).click();
+  await expect(page.getByText("You took it out of the Black portal.")).toBeVisible();
+  expect(seen.some((s) => s.method === "DELETE" && /\/placement$/.test(s.url))).toBe(true);
+
+  await start("Radio waves", "Classes read how antennas pick one voice out of a crowd.");
+  await page.getByRole("button", { name: "Show it in the Black portal" }).click();
+  await expect(page.getByText("Not shown in the Black portal.")).toBeVisible();
+  await expect(page.getByText(/It is about antennas/)).toBeVisible();
+  await expect(page.getByText(/the same circle gets the same answer/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ask again" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Take it out" })).toHaveCount(0);
 });

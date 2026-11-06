@@ -76,5 +76,25 @@ test("a missing address, a 404, a refusal and no answer each say what happened",
     await assert.rejects(callLearnerApi("POST", "/circles", { profileId: "p", fetcher: recorder({ status: 409, body: { code: "TOO_MANY_CIRCLES", message: "You can lead up to 10 open circles." } }).fetcher }), (e) => e.statusCode === 409 && /up to 10/.test(e.message), "a refusal of the scholar's request is passed on in its words");
     const down = async () => { throw new TypeError("fetch failed"); };
     await assert.rejects(callLearnerApi("GET", "/x", { profileId: "p", fetcher: down }), (e) => e.statusCode === 502);
+    await assert.rejects(
+      callLearnerApi("POST", "/circles/c/placement", { profileId: "p", fetcher: recorder({ status: 503, body: { code: "JUDGE_UNAVAILABLE", message: "The check couldn't be reached, so nothing changed. Try again in a minute." } }).fetcher }),
+      (e) => e.statusCode === 503 && /Try again/.test(e.message),
+      "a 503 the learner API explains is passed on in its words"
+    );
+    await assert.rejects(callLearnerApi("GET", "/x", { profileId: "p", fetcher: recorder({ status: 503, body: {} }).fetcher }), (e) => e.statusCode === 502, "one it does not explain is not the scholar's doing");
   });
+});
+
+test("a call waiting on a judge may take longer than a read", async () => {
+  const { JUDGED_CALL_MS } = require("../src/lib/learnerApi");
+  const signals = [];
+  const fetcher = async (_url, init = {}) => {
+    signals.push(init.signal);
+    return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  await withEnv({ isProduction: false, learnerApiUrl: "http://localhost:4000", learnerApiStudioToken: "dev-studio-token-0000000000000000" }, async () => {
+    await callLearnerApi("POST", "/circles/c/placement", { profileId: "p", fetcher, timeoutMs: JUDGED_CALL_MS });
+  });
+  assert.ok(JUDGED_CALL_MS > 30_000, "longer than the judges' own deadline there");
+  assert.ok(signals[0] instanceof AbortSignal);
 });
