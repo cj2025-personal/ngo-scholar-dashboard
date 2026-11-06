@@ -21,6 +21,7 @@ const storyVersion = require("../lib/storyVersion");
 const vertex = require("../lib/vertex");
 const { traced } = require("../lib/tracing");
 const { serializeMongoValue } = require("../lib/serialize");
+const { recordContribution } = require("../lib/contributions");
 const { passagesFor } = require("./passages.service");
 const { getPolicy } = require("./policy.service");
 const { routerFor } = require("./models.service");
@@ -267,6 +268,11 @@ async function approveLevels({ storyId, scholarId, profileId, user, audiences = 
     baseVersion: storyVersion.parseBaseVersion(baseVersion),
   });
   await editorial.refreshEvidenceAfterWrite(db, storyDoc._id);
+  /* Each level approved is the scholar's contribution, once per level as written (lib/contributions). */
+  for (const a of wanted) {
+    const written = have[a].generated_at ? new Date(have[a].generated_at).toISOString() : String(have[a].source_version ?? "");
+    await recordContribution(db, { profileId: storyDoc.profile_id, kind: "level_approved", ref: `${storyDoc._id}:${a}:${written}`, at: now, detail: { audience: a } });
+  }
   const story = await editorial.getEditorialStory({ storyId, scholarId, profileId });
   return serializeMongoValue({ ...story, approved: wanted });
 }

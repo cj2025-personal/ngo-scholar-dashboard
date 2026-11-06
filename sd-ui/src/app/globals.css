@@ -5689,3 +5689,45 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .cc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .cc-rows { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .cc-rows li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--ark-card-line-soft); }
+
+/* Impact: the scholar's signed record (components/impact), on their page and on a shared link. */
+.imp-page { display: grid; gap: 16px; }
+.imp-card { display: grid; gap: 16px; }
+.imp-record { display: grid; gap: 20px; }
+.imp-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.imp-total { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--ark-card-wash); border: 1px solid var(--ark-card-line-soft); }
+.imp-total__value { font-size: var(--fs-xl, 1.5rem); font-weight: var(--weight-semibold); color: var(--sd-heading); line-height: 1.2; }
+.imp-total__label { font-size: var(--fs-sm); color: var(--sd-heading); }
+.imp-total__note { font-size: var(--fs-xs); color: var(--sd-faint); }
+.imp-section { display: grid; gap: 8px; }
+.imp-h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--weight-semibold); color: var(--sd-heading); }
+.imp-stories, .imp-contrib, .imp-shares { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.imp-story { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--ark-card-line-soft); }
+.imp-story__title { color: var(--sd-heading); font-weight: var(--weight-medium); }
+.imp-story__meta { grid-column: 1; font-size: var(--fs-xs); color: var(--sd-faint); }
+.imp-story__reach { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: var(--fs-sm); color: var(--sd-heading); text-align: right; }
+.imp-contrib li { padding: 4px 0; font-size: var(--fs-sm); color: var(--sd-heading); }
+.imp-terms { display: grid; gap: 2px; font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-faint); }
+.imp-terms p, .imp-quiet { margin: 0; font-size: var(--fs-sm); color: var(--sd-faint); }
+.imp-signed { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid var(--ark-card-line-soft); font-size: var(--fs-xs); color: var(--sd-faint); }
+.imp-share-new { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.imp-share-label { display: grid; gap: 4px; font-size: var(--fs-sm); color: var(--sd-heading); flex: 1 1 240px; }
+.imp-share-label input { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--sd-line); font: inherit; }
+.imp-fresh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--ark-success-soft); }
+.imp-fresh p { margin: 0; flex-basis: 100%; font-size: var(--fs-sm); color: var(--sd-heading); }
+.imp-fresh__url { font-size: var(--fs-xs); word-break: break-all; }
+.imp-shares li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--ark-card-line-soft); }
+.imp-shares li.is-off { opacity: 0.6; }
+.imp-shares__label { color: var(--sd-heading); font-weight: var(--weight-medium); }
+.imp-shares li .ck-act { margin-left: auto; }
+.imp-public { max-width: 880px; margin: 0 auto; padding: 32px 20px 48px; display: grid; gap: 16px; }
+.imp-public__head { display: grid; gap: 6px; }
+.imp-check { margin: 0; padding: 8px 12px; border-radius: 10px; font-size: var(--fs-sm); }
+.imp-check.is-valid { background: var(--ark-success-soft); color: var(--ark-success-strong); }
+.imp-check.is-invalid { background: var(--ark-warning-soft); color: var(--ark-warning); }
+.imp-verify { font-size: var(--fs-sm); color: var(--sd-faint); }
+.imp-verify__json { max-height: 320px; overflow: auto; padding: 12px; border-radius: 10px; background: var(--ark-card-wash); font-size: var(--fs-xs); }
+@media (max-width: 640px) {
+  .imp-story { grid-template-columns: 1fr; }
+  .imp-story__reach { grid-column: 1; grid-row: auto; text-align: left; }
+}

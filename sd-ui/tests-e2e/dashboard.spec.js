@@ -169,7 +169,7 @@ test("writing has one door: the nudge on the Studio, the bar on Stories, and now
   await expect(page.getByRole("link", { name: /Write a story with Kivyn/ })).toHaveCount(1);
 
   /* Starting from a paper's own row, or not about writing at all. */
-  for (const route of ["/papers", "/circles", "/podcasts", "/profile", "/content", "/standing"]) {
+  for (const route of ["/papers", "/circles", "/impact", "/podcasts", "/profile", "/content", "/standing"]) {
     await page.goto(route);
     await expect(page.locator(".nb-bar"), route).toBeVisible();
     await expect(page.getByRole("link", { name: /Write a story with Kivyn/ }), route).toHaveCount(0);
@@ -184,7 +184,7 @@ test("writing has one door: the nudge on the Studio, the bar on Stories, and now
     await expect(page.locator(".sc-write-bar"), route).toBeVisible();
     await expect(page.getByRole("link", { name: /Write a story with Kivyn/ }), route).toHaveCount(0);
     await page.locator(".nb-sections__btn").click();
-    await expect(page.locator(".nb-sections__menu").getByRole("menuitem"), route).toHaveText(["Studio", "Papers", "Stories", "Circles", "Podcasts", "Profile"]);
+    await expect(page.locator(".nb-sections__menu").getByRole("menuitem"), route).toHaveText(["Studio", "Papers", "Stories", "Circles", "Impact", "Podcasts", "Profile"]);
     await expect(page.locator(".nb-sections__menu").getByRole("menuitem", { name: "Stories" }), route).toHaveAttribute("aria-current", "page");
     await page.keyboard.press("Escape");
   }
@@ -206,7 +206,7 @@ test("the bar's logo is the vector lockup, and it draws", async ({ page }) => {
 test("the bar's places are the work; who you are is the account menu", async ({ page }) => {
   await page.goto("/");
   const nav = page.getByRole("navigation", { name: "Sections" });
-  await expect(nav.getByRole("link")).toHaveText(["Studio", "Papers", "Stories", "Circles", "Podcasts"]);
+  await expect(nav.getByRole("link")).toHaveText(["Studio", "Papers", "Stories", "Circles", "Impact", "Podcasts"]);
   await expect(nav.getByRole("link", { name: "Profile" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Account menu" }).click();

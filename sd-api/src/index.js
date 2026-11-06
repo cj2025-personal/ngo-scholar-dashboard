@@ -15,6 +15,7 @@ const draftingRoutes = require("./routes/drafting.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const editorialRoutes = require("./routes/editorial.routes");
 const circleRoutes = require("./routes/circle.routes");
+const impactRoutes = require("./routes/impact.routes");
 const imageRoutes = require("./routes/images");
 const inviteRoutes = require("./routes/invite.routes");
 const podcastRoutes = require("./routes/podcasts.routes");
@@ -101,6 +102,8 @@ app.use("/api/content", contentRoutes);
 app.use("/api/drafting", draftingRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/editorial-stories", editorialRoutes);
+/* The scholar's signed impact record, and the share links they make for it (routes/impact.routes). */
+app.use("/api/impact", impactRoutes);
 /* Learning circles: held by the learner app, asked through its studio door (routes/circle.routes). */
 app.use("/api/circles", circleRoutes);
 app.use("/api/images", imageRoutes);

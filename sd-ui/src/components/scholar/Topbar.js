@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   HiOutlineBell,
   HiOutlineBookOpen,
+  HiOutlineChartBar,
   HiOutlineDocumentText,
   HiOutlineHome,
   HiOutlineMagnifyingGlass,
@@ -68,6 +69,7 @@ const NAV = [
   { label: "Papers", href: "/papers", icon: HiOutlineDocumentText, hint: "The work we hold of yours" },
   { label: "Stories", href: "/editorial", icon: HiOutlineBookOpen, hint: "What you have written" },
   { label: "Circles", href: "/circles", icon: HiOutlineUserGroup, hint: "The classes that read with you" },
+  { label: "Impact", href: "/impact", icon: HiOutlineChartBar, hint: "What your work reached, signed, yours to share" },
   { label: "Podcasts", href: "/podcasts", icon: HiOutlineMicrophone, hint: "What has been recorded" },
 ];
 

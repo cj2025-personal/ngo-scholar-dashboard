@@ -19,6 +19,7 @@ const ledger = require("../lib/evidenceLedger");
 const { AUDIENCES: AUDIENCE_TABLE, normaliseAudience } = require("../lib/audiences");
 const { readsForStories, readsByDay } = require("./reads.service");
 const { questionsForStories } = require("./readerQuestions.service");
+const { recordContribution } = require("../lib/contributions");
 const {
   normalizeBlockProvenance,
   presentBlockProvenance,
@@ -1793,6 +1794,9 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
   }
 
   const created = await collection.findOne({ _id: storyId });
+  if (created?.status === "published") {
+    await recordContribution(db, { profileId: created.profile_id, kind: "story_published", ref: String(created._id), at: created.published_at || new Date() });
+  }
 
   return serializeMongoValue({
     story: mapStoryDocument(created),
@@ -2024,6 +2028,10 @@ async function updateEditorialStory({
   }
 
   const updated = await collection.findOne({ _id: existingStory._id });
+  /* Published for readers for the first time: the scholar's contribution (lib/contributions; once per story). */
+  if (updated?.status === "published") {
+    await recordContribution(db, { profileId: updated.profile_id, kind: "story_published", ref: String(updated._id), at: updated.published_at || new Date() });
+  }
 
   return serializeMongoValue({
     story: mapStoryDocument(updated),
