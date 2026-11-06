@@ -64,8 +64,12 @@ async function buildImpactRecord(db, profileId, { learnerApi = callLearnerApi } 
     db.collection("scholars").findOne({ profile_id: profileId }, { projection: { name: 1 } }),
     db
       .collection("scholar_editorials")
-      .find({ profile_id: profileId, status: "published" }, { projection: { title: 1, slug: 1, published_at: 1, provenance: 1, levels: 1 } })
-      .sort({ published_at: -1 })
+      /* Public now, as readers see it: published, or scheduled and its time come (editorial.service buildPublicStoryQuery). */
+      .find(
+        { profile_id: profileId, $or: [{ status: "published" }, { status: "scheduled", scheduled_for: { $lte: new Date() } }] },
+        { projection: { title: 1, slug: 1, published_at: 1, scheduled_for: 1, provenance: 1, levels: 1 } },
+      )
+      .sort({ published_at: -1, scheduled_for: -1 })
       .toArray(),
     contributionSummary(db, profileId),
   ]);
@@ -92,7 +96,7 @@ async function buildImpactRecord(db, profileId, { learnerApi = callLearnerApi } 
       return {
         title: story.title || "Untitled",
         slug: story.slug || null,
-        published_at: story.published_at ? new Date(story.published_at).toISOString() : null,
+        published_at: story.published_at || story.scheduled_for ? new Date(story.published_at || story.scheduled_for).toISOString() : null,
         reading_ages: readingAgesOf(story),
         readers: reached?.readers ?? null,
         understood: reached?.understood ?? null,

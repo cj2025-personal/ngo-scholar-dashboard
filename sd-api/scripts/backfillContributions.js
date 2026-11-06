@@ -6,24 +6,45 @@
  * (profileId, kind, ref) the live code gives it, so running this twice, or
  * after the live code has written some, adds nothing twice.
  *
- *   node scripts/backfillContributions.js           count what would be written (dry run)
- *   node scripts/backfillContributions.js --apply   write it
+ *   node scripts/backfillContributions.js                    count what would be written (dry run)
+ *   node scripts/backfillContributions.js --apply            write it
+ *   node scripts/backfillContributions.js --env <file> ...   read MONGODB_URI / MONGODB_DB from that file
  *
- * Reads MONGODB_URI and MONGODB_DB from the environment (.env). Touches only
+ * Reads MONGODB_URI and MONGODB_DB from the environment, the .env in the
+ * folder it is run from, or the file named by --env; says which database it
+ * is about to use before anything else, and stops if it has none. Touches only
  * scholar_contributions.
  */
-require("dotenv").config();
+const envAt = process.argv.indexOf("--env");
+require("dotenv").config(envAt > -1 && process.argv[envAt + 1] ? { path: process.argv[envAt + 1] } : {});
 const crypto = require("crypto");
 const { MongoClient } = require("mongodb");
 
 const { recordContribution, CONTRIBUTIONS } = require("../src/lib/contributions");
 
 const apply = process.argv.includes("--apply");
+
+if (!process.env.MONGODB_URI || !process.env.MONGODB_DB) {
+  console.error("No database to use: MONGODB_URI and MONGODB_DB are not set. Run it from a folder whose .env has them, or name the file with --env <path to .env>.");
+  process.exit(1);
+}
+
+/* Where it is about to write, without the credentials in the address. */
+const where = (() => {
+  try {
+    const url = new URL(process.env.MONGODB_URI);
+    return `${process.env.MONGODB_DB} on ${url.host}`;
+  } catch {
+    return process.env.MONGODB_DB;
+  }
+})();
 const sha256 = (text) => crypto.createHash("sha256").update(String(text)).digest("hex");
 
 async function* found(db) {
-  for await (const s of db.collection("scholar_editorials").find({ status: "published" }, { projection: { profile_id: 1, published_at: 1, created_at: 1, levels: 1 } })) {
-    yield { profileId: s.profile_id, kind: "story_published", ref: String(s._id), at: s.published_at || s.created_at || new Date() };
+  /* Public now: published, or scheduled and its time come (editorial.service buildPublicStoryQuery). */
+  const publicNow = { $or: [{ status: "published" }, { status: "scheduled", scheduled_for: { $lte: new Date() } }] };
+  for await (const s of db.collection("scholar_editorials").find(publicNow, { projection: { profile_id: 1, published_at: 1, scheduled_for: 1, created_at: 1, levels: 1 } })) {
+    yield { profileId: s.profile_id, kind: "story_published", ref: String(s._id), at: s.published_at || s.scheduled_for || s.created_at || new Date() };
     for (const [band, level] of Object.entries(s.levels || {})) {
       if (!level?.approved) continue;
       const written = level.generated_at ? new Date(level.generated_at).toISOString() : String(level.source_version ?? "");
@@ -47,6 +68,7 @@ async function* found(db) {
 }
 
 (async () => {
+  console.log(`${apply ? "Writing to" : "Dry run against"} ${where}`);
   const client = await MongoClient.connect(process.env.MONGODB_URI);
   const db = client.db(process.env.MONGODB_DB);
   try {

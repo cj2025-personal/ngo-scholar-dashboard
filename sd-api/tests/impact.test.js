@@ -57,6 +57,9 @@ test.before(async () => {
     { _id: storyB, profile_id: P, status: "published", title: "Radio in the rain", slug: "radio-rain", published_at: new Date("2026-10-05T00:00:00Z"), provenance: { audience: "ages_8_11" } },
     { _id: new ObjectId(), profile_id: P, status: "draft", title: "Not yet", slug: "not-yet" },
     { _id: new ObjectId(), profile_id: "someone-else", status: "published", title: "Theirs", slug: "theirs" },
+    /* Scheduled: public once its time has come, its status never changing. */
+    { _id: new ObjectId(), profile_id: P, status: "scheduled", scheduled_for: new Date("2026-10-10T00:00:00Z"), title: "Out on the tenth", slug: "scheduled-due" },
+    { _id: new ObjectId(), profile_id: P, status: "scheduled", scheduled_for: new Date(Date.now() + 86400000), title: "Out tomorrow", slug: "scheduled-later" },
   ]);
 });
 
@@ -82,7 +85,9 @@ test("the record says what the stories reached, counts only, and is signed", asy
   const { record, signature } = issued;
   assert.equal(record.record_version, impact.RECORD_VERSION);
   assert.equal(record.scholar.name, "Dr Ada Field");
-  assert.deepEqual(record.totals, { stories_published: 2, readers: 12, understood: 9, circles_led: 1, classes_in_circles: 2, schools_in_circles: 1 });
+  assert.deepEqual(record.totals, { stories_published: 3, readers: 12, understood: 9, circles_led: 1, classes_in_circles: 2, schools_in_circles: 1 }, "two published and one scheduled whose time has come");
+  assert.equal(record.stories.find((s) => s.slug === "scheduled-due").published_at, "2026-10-10T00:00:00.000Z", "dated when it went public");
+  assert.ok(!record.stories.some((s) => s.slug === "scheduled-later"), "not one still to come");
   const a = record.stories.find((s) => s.slug === "small-antennas");
   assert.deepEqual(a.reading_ages, ["adults", "ages_8_11"], "its own reading age and the approved level, not one waiting");
   assert.equal(a.readers, 12);
