@@ -37,8 +37,9 @@ const { routerFor } = require("./models.service");
  * @param {Function} [p.generate]         a model call, for the worker to pass its traced one
  * @param {{voice?: Function, band?: Function, fidelity?: Function, reach?: Function}} [p.judges]   the voice, reading-level, fidelity and reach judges; their policy routes when not given
  * @param {Function} [p.onProgress]
+ * @param {string|null} [p.guidance]  what readers of an earlier version got lost on, to make plain (the reading checks' ask)
  */
-async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, baseVersion = null, generate = null, judges = null, onProgress = async () => {} }) {
+async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, baseVersion = null, generate = null, judges = null, onProgress = async () => {}, guidance = null }) {
   const editorial = require("./editorial.service");
   const gen = generate || traced("levels.generateContent", (req) => vertex.generateContent(req), { metadata: { storyId: String(storyDoc._id) } });
 
@@ -96,7 +97,7 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
     const warnings = [];
 
     const write = async (index, { voiceNote = null } = {}) => {
-      const prompt = levels.buildLevelPrompt({ scholar: { name: author?.name }, title: mapped.title, block: mapped.bodyBlocks[index], passages, audience, sourceAudience, voice, strictVoice: Boolean(voiceNote), voiceNote, selfGrounded });
+      const prompt = levels.buildLevelPrompt({ scholar: { name: author?.name }, title: mapped.title, block: mapped.bodyBlocks[index], passages, audience, sourceAudience, voice, strictVoice: Boolean(voiceNote), voiceNote, selfGrounded, readerNote: guidance });
       const r = await gen({ prompt, systemInstruction: system, responseSchema: levels.LEVEL_SCHEMA, temperature: voiceNote ? 0.2 : 0.4, maxOutputTokens: 1024 });
       calls.push({ step: "draft_levels", audience, block: index + 1, usage: r.usage || null, model: r.modelVersion || null, strictVoice: Boolean(voiceNote) });
       return levels.parseLevelResponse(r.text).text;
@@ -227,13 +228,13 @@ async function generateLevelsForDoc(db, storyDoc, { audiences = null, actor, bas
   return { written: targets, version, calls };
 }
 
-async function generateLevels({ storyId, scholarId, profileId, user, audiences = null, baseVersion = null }) {
+async function generateLevels({ storyId, scholarId, profileId, user, audiences = null, baseVersion = null, guidance = null }) {
   const editorial = require("./editorial.service");
   const { getDb } = require("../db/mongo");
   const db = await getDb();
   const storyDoc = await editorial.findOwnedStory({ storyId, scholarId, profileId });
   const actor = user?.login_email || scholarId;
-  const result = await generateLevelsForDoc(db, storyDoc, { audiences, actor, baseVersion: storyVersion.parseBaseVersion(baseVersion) });
+  const result = await generateLevelsForDoc(db, storyDoc, { audiences, actor, baseVersion: storyVersion.parseBaseVersion(baseVersion), guidance });
   const story = await editorial.getEditorialStory({ storyId, scholarId, profileId });
   return serializeMongoValue({ ...story, written: result.written, calls: result.calls.length });
 }

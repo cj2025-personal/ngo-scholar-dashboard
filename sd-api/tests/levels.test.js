@@ -57,6 +57,17 @@ test("a level keeps the voice the article was written in", () => {
   assert.ok(!/Never refer to the author/.test(about));
 });
 
+test("a level written again after readers got lost is told where, and still adds no fact", () => {
+  const args = { scholar: { name: "Test Scholar" }, title: "T", block: blocks[1], passages, audience: "ages_8_11", sourceAudience: "adults" };
+  const plain = levels.buildLevelPrompt(args);
+  assert.ok(!/got lost/.test(plain), "no note unless one is given");
+  const guided = levels.buildLevelPrompt({ ...args, readerNote: "Say plainly that it is the quiet spot that is steered, not the antenna." });
+  assert.match(guided, /Readers of an earlier version of this level got lost: Say plainly that it is the quiet spot that is steered/);
+  assert.match(guided, /If it does not, ignore this note\. Keep every fact and add none\./);
+  assert.ok(guided.indexOf("got lost") < guided.indexOf(levels.LEVEL_MARKER), "the note sits with the rules, before the paragraph");
+  assert.ok(guided.endsWith("The array improved the signal by eleven decibels."), "the paragraph itself is unchanged");
+});
+
 test("a level lines up block for block, rewritten paragraphs keep their passages, and everything else is carried", () => {
   const rewrites = new Map([[1, { text: "The array made the signal eleven decibels clearer.", fidelity: { verdict: "supported", claims: [] } }]]);
   const level = levels.assembleLevel({ blocks, rewrites });

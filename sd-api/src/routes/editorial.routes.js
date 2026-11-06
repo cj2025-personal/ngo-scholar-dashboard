@@ -119,6 +119,19 @@ router.get(
   }),
 );
 
+/**
+ * The scholar's stories where readers got lost and they are asked something
+ * (the learner app's services/scholarCheckAsks): { stories: [{ editorialId, open }] }.
+ * Before "/:storyId", which would otherwise take the path.
+ */
+router.get(
+  "/reading-asks",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.status(200).json(await callLearnerApi("GET", "/asks", { profileId: req.auth.user.profile_id }));
+  }),
+);
+
 router.get(
   "/public/slug/:slug",
   asyncHandler(async (req, res) => {
@@ -301,12 +314,19 @@ router.get(
 
 /* ── reading levels ──────────────────────────────────────────────────────── */
 
-/** Write the story for other reading ages. A version of the story like any write. */
+/**
+ * Write the story for other reading ages. A version of the story like any
+ * write. `guidance`, when given, is what readers of an earlier version got
+ * lost on (the reading checks' ask): the writer makes that part plain, and
+ * adds no fact.
+ */
 router.post(
   "/:storyId/levels",
   requireAuth,
   agentLimiter,
   asyncHandler(async (req, res) => {
+    const guidance = typeof req.body?.guidance === "string" ? req.body.guidance.replace(/\s+/g, " ").trim() : "";
+    if (guidance.length > 600) throw new ApiError(400, "Keep the guidance under 600 characters.");
     res.status(200).json(await generateLevels({
       storyId: req.params.storyId,
       scholarId: req.auth.user.scholar_id,
@@ -314,6 +334,7 @@ router.post(
       user: req.auth.user,
       audiences: Array.isArray(req.body?.audiences) ? req.body.audiences.map(String) : null,
       baseVersion: req.body?.baseVersion ?? null,
+      guidance: guidance || null,
     }));
   }),
 );
@@ -383,6 +404,26 @@ router.post(
     res.status(200).json(await callLearnerApi("POST", `/reading-checks/${checkId}/questions`, {
       profileId: story.profile_id,
       body: { question, dropped: req.body.dropped },
+    }));
+  }),
+);
+
+/** The scholar answers what they were asked about a question many readers got wrong: "dismiss" or "acted". */
+router.post(
+  "/:storyId/reading-checks/:checkId/asks",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const question = typeof req.body?.question === "string" ? req.body.question : "";
+    const action = req.body?.action;
+    if (!question || (action !== "dismiss" && action !== "acted")) {
+      throw new ApiError(400, "Say which question, and action: \"dismiss\" or \"acted\".");
+    }
+    const story = await findOwnedStory({ storyId: req.params.storyId, scholarId: req.auth.user.scholar_id, profileId: req.auth.user.profile_id });
+    const checkId = String(req.params.checkId || "");
+    if (!/^[a-f0-9]{24}$/i.test(checkId)) throw new ApiError(404, "Not found.");
+    res.status(200).json(await callLearnerApi("POST", `/reading-checks/${checkId}/asks`, {
+      profileId: story.profile_id,
+      body: { question, action },
     }));
   }),
 );

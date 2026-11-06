@@ -14,6 +14,7 @@ import {
 } from "react-icons/hi2";
 
 import DeleteStoryButton from "@/components/editorial/DeleteStoryButton";
+import { getReadingAsks } from "@/lib/drafting";
 import { STORY_GROUPS } from "@/lib/storyRows";
 
 /**
@@ -82,7 +83,20 @@ const COMPACT_ROWS = 6;
 
 export default function StoriesTable({ rows, total = rows.length, variant = "compact", initialTab = "all" }) {
   const full = variant === "full";
-  const counts = Object.fromEntries([["all", rows.length], ["needs", rows.filter((r) => r.next?.needsYou).length], ...STORY_GROUPS.map((g) => [g.key, rows.filter((r) => r.group === g.key).length])]);
+  /* Stories where many readers got a question wrong and the scholar is asked
+     something (the learner app's reading checks): they need the scholar too.
+     Nothing shows if the learner app cannot be reached. */
+  const [asks, setAsks] = useState({});
+  useEffect(() => {
+    let live = true;
+    getReadingAsks().then((r) => {
+      if (live && r.ok) setAsks(Object.fromEntries((r.data?.stories ?? []).map((s) => [s.editorialId, s.open])));
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const counts = Object.fromEntries([["all", rows.length], ["needs", rows.filter((r) => r.next?.needsYou || asks[r.id] > 0).length], ...STORY_GROUPS.map((g) => [g.key, rows.filter((r) => r.group === g.key).length])]);
   /* "Needs you" first among the filters on the Stories page: the rows waiting on a decision. */
   const tabs = [{ key: "all", label: "All" }, ...(full && counts.needs > 0 ? [{ key: "needs", label: "Needs you" }] : []), ...STORY_GROUPS.filter((g) => counts[g.key] > 0)];
   const [tab, setTab] = useState(tabs.some((t) => t.key === initialTab) ? initialTab : "all");
@@ -91,11 +105,11 @@ export default function StoriesTable({ rows, total = rows.length, variant = "com
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const inTab = (r) => tab === "all" || (tab === "needs" ? r.next?.needsYou : r.group === tab);
+    const inTab = (r) => tab === "all" || (tab === "needs" ? r.next?.needsYou || asks[r.id] > 0 : r.group === tab);
     const filtered = rows.filter((r) => inTab(r) && (!q || `${r.title} ${r.from || ""}`.toLowerCase().includes(q)));
     const ordered = full ? [...filtered].sort(SORTS.find((s) => s.key === sort).by) : filtered;
     return full ? ordered : ordered.slice(0, COMPACT_ROWS);
-  }, [rows, tab, query, sort, full]);
+  }, [rows, tab, query, sort, full, asks]);
   const mostReads = Math.max(1, ...rows.map((r) => r.reads?.total || 0));
 
   return (
@@ -175,6 +189,11 @@ export default function StoriesTable({ rows, total = rows.length, variant = "com
                 {r.recordMoved ? (
                   <span className="dash-pill is-grave" title="The paper behind this story has changed on the record">
                     <HiOutlineExclamationTriangle size={12} aria-hidden /> Record moved
+                  </span>
+                ) : null}
+                {asks[r.id] > 0 ? (
+                  <span className="dash-pill is-warn" title="Many readers got a question wrong. See Reading checks under Checks.">
+                    Readers got lost
                   </span>
                 ) : null}
               </span>

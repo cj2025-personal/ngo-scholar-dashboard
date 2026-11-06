@@ -261,7 +261,7 @@ export default function ChecksRail({ blocks, assessment, audience, warnings, dra
       </section>
 
       {/* The questions learners answer after reading it, per reading age: the scholar's to review. */}
-      <ReadingChecks storyId={storyId} />
+      <ReadingChecks storyId={storyId} ownBand={audience} version={version} dirty={dirty} onAskAgent={onAskAgent} onStoryChanged={onStoryChanged} />
 
       <details className="ck-fold is-clear">
         <summary><span>Clear · {clearCount} check{clearCount === 1 ? "" : "s"}</span></summary>

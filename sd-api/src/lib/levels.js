@@ -120,8 +120,9 @@ function groundInSelf(blocks) {
  * @param {string} p.sourceAudience   the band the article was written for
  * @param {boolean} [p.strictVoice]
  * @param {string|null} [p.voiceNote]   what the voice judge found, on a retry
+ * @param {string|null} [p.readerNote]  what readers of an earlier version got lost on (the reading checks' ask)
  */
-function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sourceAudience, strictVoice = false, voiceNote = null, voice = composer.DEFAULT_VOICE, selfGrounded = false }) {
+function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sourceAudience, strictVoice = false, voiceNote = null, voice = composer.DEFAULT_VOICE, selfGrounded = false, readerNote = null }) {
   const to = AUDIENCES[normaliseAudience(audience)];
   const from = AUDIENCES[normaliseAudience(sourceAudience)];
   const name = scholar.name || "the scholar";
@@ -166,6 +167,15 @@ function buildLevelPrompt({ scholar = {}, title, block, passages, audience, sour
     );
   }
   if (voiceNote) lines.push(voiceNote);
+  /* Readers of an earlier version of this level got lost here: the writer
+     makes it plain if this paragraph covers it. The facts rule above still
+     holds, and the fidelity judge still reads the result. */
+  if (readerNote) {
+    lines.push(
+      `- Readers of an earlier version of this level got lost: ${readerNote}`,
+      "  If this paragraph covers that, write it so a reader of this age cannot take it the wrong way. If it does not, ignore this note. Keep every fact and add none.",
+    );
+  }
   lines.push("", PASSAGES_MARKER, ...cited.map((p) => `[${p.id}] ${p.text}`), "", LEVEL_MARKER, plain(block.html));
   return lines.join("\n");
 }

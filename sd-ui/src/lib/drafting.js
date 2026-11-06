@@ -232,10 +232,14 @@ export function publicEvidenceUrl(slug) {
   return `${AUTH_API_URL}/api/editorial-stories/public/slug/${encodeURIComponent(slug)}/evidence`;
 }
 
-/** Write the story for other reading ages. A version of the story. */
-export async function generateStoryLevels(storyId, { audiences = null, baseVersion = null } = {}) {
+/**
+ * Write the story for other reading ages. A version of the story. `guidance`
+ * is what readers of an earlier version got lost on, for the writer to make
+ * plain (a reading check's ask).
+ */
+export async function generateStoryLevels(storyId, { audiences = null, baseVersion = null, guidance = null } = {}) {
   return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/levels`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiences, baseVersion }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audiences, baseVersion, ...(guidance ? { guidance } : {}) }),
   });
 }
 
@@ -286,6 +290,22 @@ export async function setReadingCheckQuestion(storyId, checkId, question, droppe
   return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/reading-checks/${encodeURIComponent(checkId)}/questions`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, dropped }),
   });
+}
+
+/**
+ * Answer what the scholar was asked about a question many readers got wrong:
+ * "dismiss" (it is fine as it is) or "acted" (they asked Kivyn, or wrote the
+ * reading age again).
+ */
+export async function answerReadingAsk(storyId, checkId, question, action) {
+  return request(`/api/editorial-stories/${encodeURIComponent(storyId)}/reading-checks/${encodeURIComponent(checkId)}/asks`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, action }),
+  });
+}
+
+/** The scholar's stories where readers got lost and they are asked something: { stories: [{ editorialId, open }] }. */
+export async function getReadingAsks() {
+  return request("/api/editorial-stories/reading-asks", { method: "GET" });
 }
 
 /** Ask now whether the record has moved against this story's source. */

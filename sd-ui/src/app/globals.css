@@ -5659,6 +5659,14 @@ html.rc-open .public-story-shell { padding-right: calc(var(--rc-width) + var(--r
 .rck-result.is-quiet { color: var(--sd-faint); }
 .rck-passage { margin: 0; padding-left: 8px; border-left: 2px solid var(--ark-card-line-soft); font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-faint); }
 .rck-passage span { color: var(--sd-heading); }
+/* Asked: readers got lost here, or the question may not be fair. */
+.rck-ask { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--ark-warning-soft); border: 1px solid var(--ark-card-line-soft); }
+.rck-ask__head { margin: 0; font-size: var(--fs-sm); font-weight: var(--weight-semibold); color: var(--sd-heading); }
+.rck-ask__note { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--sd-heading); }
+.rck-ask__label { font-weight: var(--weight-medium); }
+.rck-ask__acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.rck-ask__hint { margin: 0; font-size: var(--fs-xs); color: var(--sd-faint); }
+.rck-ask-done { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--ark-success-strong); }
 
 /* Learning circles (app/(protected)/circles, components/circles). */
 .cc-page { display: grid; gap: 16px; max-width: 920px; }
