@@ -47,6 +47,13 @@ const PAPERS = [
   { key: BRIEF_KEY, title: BRIEF_TITLE },
 ];
 
+/* The learning circles the scholar leads, as the service offers them (lib/scholarCircles), for every row:
+   rows that say nothing of a circle show it is not set by default. */
+const CIRCLES = [
+  { id: "64b000000000000000000c01", name: "Listening machines", purpose: "Classes read how antennas pick one voice out of a crowd.", bands: ["ages_8_11", "ages_12_14"] },
+  { id: "64b000000000000000000c02", name: "Radio for grown-ups", purpose: "Adult learners read how radio reaches us and what limits it.", bands: ["adults"] },
+];
+
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
   const i = args.indexOf(name);
@@ -82,7 +89,7 @@ const main = async () => {
     let d = null;
     let error = null;
     try {
-      d = (await converse.decide({ messages, papers: PAPERS, audiences: converse.AUDIENCE_LIST, voices: converse.VOICES, state: row.state || {}, scholarName: "Inder Gupta", generate })).decision;
+      d = (await converse.decide({ messages, papers: PAPERS, circles: CIRCLES, audiences: converse.AUDIENCE_LIST, voices: converse.VOICES, state: row.state || {}, scholarName: "Inder Gupta", generate })).decision;
     } catch (e) {
       error = e.message;
     }
@@ -95,6 +102,9 @@ const main = async () => {
     if ("paperIn" in e) fields.push(["paper∈", e.paperIn.includes(d?.paperKey ?? null)]);
     if ("paperNot" in e) fields.push(["paper≠", d?.paperKey !== e.paperNot]);
     if ("audience" in e) fields.push(["audience", e.audience.includes(d?.audience ?? null)]);
+    /* The circle named (null for none, which keeps one set on the page), or cleared. */
+    if ("circle" in e) fields.push(["circle", e.circle.includes(d?.circleId ?? null)]);
+    if ("circleCleared" in e) fields.push(["circleCleared", Boolean(d?.circleCleared) === e.circleCleared]);
     for (const w of e.briefHas || []) fields.push([`brief~${w}`, new RegExp(w, "i").test(d?.brief || "")]);
     for (const w of e.replyHas || []) fields.push([`reply~${w}`, new RegExp(w, "i").test(d?.reply || "")]);
     for (const w of e.replyLacks || []) fields.push([`reply!~${w}`, !new RegExp(w, "i").test(d?.reply || "")]);

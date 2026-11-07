@@ -88,9 +88,9 @@ test("an illegible decision is retried, and with only one paper a plan needs non
 
 test("the prompt says what is set, and whether the paper came from the shelf", () => {
   const p = converse.buildPrompt({ ...base, messages: said("Keep it short."), state: { paperKey: "pmc:1", paperFrom: "shelf", audience: "adults", stage: "start" } });
-  assert.match(p, /paper: pmc:1 \(chosen on their Papers shelf, before this conversation\); reader: adults/);
+  assert.match(p, /paper: pmc:1 \(chosen on their Papers shelf, before this conversation\); circle: \(none\); reader: adults/);
   const q = converse.buildPrompt({ ...base, messages: said("Keep it short."), state: { stage: "outline_waiting", outlineTitle: "What the paper found" } });
-  assert.match(q, /paper: \(none\); reader: \(not said\)/);
+  assert.match(q, /paper: \(none\); circle: \(none\); reader: \(not said\)/);
   assert.match(q, /stage: outline_waiting — the waiting outline is titled "What the paper found"/);
   assert.ok(q.trim().endsWith(`${converse.MARKER} Keep it short.`));
 });

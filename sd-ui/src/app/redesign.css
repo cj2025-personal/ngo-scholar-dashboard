@@ -152,6 +152,10 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
 }
 .ns-pick select:disabled { cursor: default; opacity: 0.7; }
+/* The learning circle a new story is written for (NewStoryAgent), above the pickers: its name, and the way to write it for none. */
+.ns-circle-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 6px; font-size: 12.5px; line-height: 1.4; color: var(--sd-muted); }
+.ns-circle-line b { font-weight: var(--weight-semibold); color: var(--ark-navy-ink); overflow-wrap: anywhere; }
+.ns-circle-line .st-link { font-size: 12.5px; }
 .ns-pick-more { position: relative; flex: 0 0 auto; display: flex; }
 .ns-pick-more > summary {
   position: relative; display: grid; place-items: center; width: 36px; box-sizing: border-box;

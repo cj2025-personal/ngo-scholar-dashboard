@@ -103,11 +103,14 @@ export async function draftFromSource({ origin, sourceId, audience }) {
  */
 export const BRIEF_SOURCE = { origin: "brief", id: "only", title: "No paper — write from my brief", brief: true };
 
-export async function createDraftJob({ origin, sourceId, audience, voice = DEFAULT_VOICE, brief = null, approveOutline = false, createStory = true, levels = false }) {
+/* `circleId`: a learning circle of the scholar's it is written for. The server
+   checks it is theirs and that the reader is one of its ages; the story joins
+   the circle when it is published. */
+export async function createDraftJob({ origin, sourceId, audience, voice = DEFAULT_VOICE, brief = null, approveOutline = false, createStory = true, levels = false, circleId = null }) {
   return request("/api/drafting/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ origin, sourceId, audience, voice, brief, approveOutline, createStory, levels }),
+    body: JSON.stringify({ origin, sourceId, audience, voice, brief, approveOutline, createStory, levels, ...(circleId ? { circleId } : {}) }),
   });
 }
 

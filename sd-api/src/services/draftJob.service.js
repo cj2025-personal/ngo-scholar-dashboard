@@ -63,6 +63,7 @@ const { listDraftSources, loadSourceText } = require("./drafting.service");
 const { getPolicy } = require("./policy.service");
 const { routerFor } = require("./models.service");
 const { screenedPassages } = require("./sourceGuard.service");
+const { circleFor } = require("../lib/scholarCircles");
 
 /**
  * The brief a proposal carries when the scholar has not written one.
@@ -101,8 +102,11 @@ class LeaseLost extends Error {
  * @param {boolean|string[]} [p.levels] once the story exists, write it for every other reading
  *                                      age (true) or for the bands named; each is written and
  *                                      judged on its own
+ * @param {string} [p.circleId]        a learning circle of theirs it is written for: the outline is
+ *                                      told who reads it, the reader must be one of its ages, and the
+ *                                      story joins the circle when it is published
  */
-async function createDraftJob({ profileId, origin, sourceId, audience, voice, brief = null, approveOutline = false, createStory = true, levels = false, kind = "draft" }) {
+async function createDraftJob({ profileId, origin, sourceId, audience, voice, brief = null, approveOutline = false, createStory = true, levels = false, kind = "draft", circleId = null, circleLookup = circleFor }) {
   if (!profileId) throw new TypeError("createDraftJob requires a profile id");
   if (!env.drafting.enabled) {
     throw new ApiError(503, "Drafting is switched off on this deployment.");
@@ -169,6 +173,12 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
   }
 
   const chosenAudience = composer.normaliseAudience(audience);
+  /* Written for a circle: one of theirs, still open (or not yet), and for one of its reading ages. */
+  const circle = circleId && !isProposal ? await circleLookup(profileId, circleId) : null;
+  if (circle && !circle.bands.includes(chosenAudience)) {
+    const ages = circle.bands.map((b) => composer.AUDIENCES[b]?.label || b).join(", ");
+    throw new ApiError(400, `The circle “${circle.name}” is for ${ages}. Choose one of those readers, or write it without the circle.`);
+  }
   const chosenVoice = briefOnly ? composer.VOICE.AUTHOR : composer.normaliseVoice(voice);
   const asked = typeof brief === "string" && brief.trim() ? brief.trim().slice(0, 1000) : null;
   /* A proposal is the agent being asked what a paper could become, so it
@@ -195,7 +205,7 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
        Appended only for proposals, so every key already issued for a draft
        stays exactly what it was and in-flight jobs are still reused. */
     promptVersion: `${composer.PROMPT_VERSION}:${chosenVoice}${kind === "proposal" ? ":proposal" : ""}`,
-    corpusHash: job.corpusHash(`${prepared.text}\u0000${cleanBrief || ""}\u0000${approveOutline ? "outline" : "full"}\u0000${createStory ? "story" : "draft"}\u0000${Array.isArray(levelsRequested) ? `levels:${levelsRequested.join(",")}` : levelsRequested ? "levels" : ""}`),
+    corpusHash: job.corpusHash(`${prepared.text}\u0000${cleanBrief || ""}\u0000${approveOutline ? "outline" : "full"}\u0000${createStory ? "story" : "draft"}\u0000${Array.isArray(levelsRequested) ? `levels:${levelsRequested.join(",")}` : levelsRequested ? "levels" : ""}${circle ? `\u0000circle:${circle.id}` : ""}`),
   });
 
   /* The same request twice is the same job — unless the first one failed, in
@@ -224,6 +234,10 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
        papers this pipeline drafts from are theirs. See draftComposer.VOICE. */
     voice: chosenVoice,
     brief: cleanBrief,
+    /* The learning circle it is written for, as it stood when the draft began
+       (lib/scholarCircles): the outline reads it, and the story carries its
+       id and name until it is published into it. */
+    circle,
     approve_outline: Boolean(approveOutline),
     create_story: Boolean(createStory),
     /* Write other reading ages once the story exists: true for every other
@@ -249,7 +263,7 @@ async function createDraftJob({ profileId, origin, sourceId, audience, voice, br
     not_before: null,
     /* What a resumed run starts from: see runClaimedJob. */
     checkpoint: null,
-    events: [job.nextEvent([], "job_created", { source: briefOnly ? "your brief alone" : source.title, audience: chosenAudience, retryOf: latest ? String(latest._id) : null }, now)],
+    events: [job.nextEvent([], "job_created", { source: briefOnly ? "your brief alone" : source.title, audience: chosenAudience, ...(circle ? { circle: circle.name } : {}), retryOf: latest ? String(latest._id) : null }, now)],
     draft: null,
     warnings: [],
     tokens: { input: 0, output: 0 },
@@ -650,6 +664,7 @@ async function runClaimedJob(db, doc) {
       audience: doc.audience,
       voice: doc.voice || null,
       brief: doc.brief || null,
+      circle: doc.circle || null,
       outline: doc.outline_approved || null,
       prepared: { text: doc.source_text, words: doc.source.prepared_words, totalWords: doc.source.words, truncated: doc.source.truncated },
       setAside: doc.set_aside || [],
@@ -959,6 +974,7 @@ function view(doc) {
     audience: doc.audience,
     voice: doc.voice || null,
     brief: doc.brief || null,
+    circle: doc.circle ? { id: doc.circle.id, name: doc.circle.name } : null,
     replans: doc.replans || 0,
     approveOutline: Boolean(doc.approve_outline),
     levelsRequested: Array.isArray(doc.levels_requested) ? doc.levels_requested : Boolean(doc.levels_requested),

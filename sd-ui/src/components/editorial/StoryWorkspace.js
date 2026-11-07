@@ -232,8 +232,9 @@ function sectionsOf(blocks) {
  * @param {boolean} autoPropose         ask the agent for an angle on the paper
  *                                      in `initialSource`, once the terms allow it
  * @param {boolean} paneClosed          the scholar closed Kivyn's pane last time, in this browser
+ * @param {string|null} initialCircle   a learning circle of theirs to write for (its page's "Write a story for this circle")
  */
-export default function StoryWorkspace({ initialStory = null, me = null, aiTerms = null, initialSource = null, resumeJobId = null, autoPropose = false, paneClosed = false }) {
+export default function StoryWorkspace({ initialStory = null, me = null, aiTerms = null, initialSource = null, initialCircle = null, resumeJobId = null, autoPropose = false, paneClosed = false }) {
   const router = useRouter();
   const [form, setForm] = useState(() => (initialStory ? storyToForm(initialStory) : createEmptyForm()));
   const [activeBlockId, setActiveBlockId] = useState(() => (initialStory?.id ? `story-${initialStory.id}-0` : "draft-0"));
@@ -303,11 +304,11 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
      only if the scholar closed it last time — remembered in a cookie, so the
      server renders it closed — or before the terms are agreed. A page opened
      with a paper or a job in hand opens it whatever was remembered. */
-  const handedWork = Boolean(initialSource || resumeJobId || autoPropose);
+  const handedWork = Boolean(initialSource || initialCircle || resumeJobId || autoPropose);
   const [railOpen, setRailOpen] = useState(() => Boolean(aiTerms?.current) && (handedWork || !paneClosed));
   /* Open because it is the default, rather than because it was asked for. */
   const [railByDefault, setRailByDefault] = useState(() => Boolean(aiTerms?.current) && !handedWork && !paneClosed);
-  const [consentOpen, setConsentOpen] = useState(() => Boolean(!aiTerms?.current && (initialSource || resumeJobId)));
+  const [consentOpen, setConsentOpen] = useState(() => Boolean(!aiTerms?.current && (initialSource || initialCircle || resumeJobId)));
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState("");
   /* A draft the rail just landed, waiting for the save that makes it a
@@ -776,7 +777,19 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
       savedSignatureRef.current = null;
       setForm(nextForm);
       setActiveBlockId((current) => (nextForm.bodyBlocks.some((b) => b.id === current) ? current : nextForm.bodyBlocks[0]?.id || null));
-      setFeedback(nextStatus === "published" ? "Story published." : nextStatus === "scheduled" ? "Story scheduled." : "Draft saved.");
+      /* Written for a learning circle: published, it joins the circle (the API does it, once); scheduled, it can be added on the circle's page once it is out. */
+      const circle = savedStory.circle || null;
+      const inCircle = circle?.name ? ` “${circle.name}”` : "";
+      setFeedback(
+        nextStatus === "published"
+          ? circle?.joinedAt ? `Story published. It joins your circle${inCircle}.` : "Story published."
+          : nextStatus === "scheduled"
+            ? circle && !circle.joinedAt ? `Story scheduled. Once it's out, add it to your circle${inCircle} on the circle's page.` : "Story scheduled."
+            : "Draft saved."
+      );
+      if (nextStatus === "published" && circle && !circle.joinedAt && circle.problem) {
+        setError(`The story is published, but it could not join your circle${inCircle}: ${circle.problem} Add it on the circle's page.`);
+      }
       if (pendingDraftJob) setPendingDraftJob(null);
       if (!form.id && pendingLevelsRef.current?.length) {
         /* Asked for with the draft; written from the story now that there
@@ -1021,7 +1034,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
                 {/* The agent is asked for an angle only once the terms are
                     settled — `terms`, which the consent sheet updates, not the
                     `aiTerms` this page was rendered with. */}
-                <NewStoryAgent me={me} initialSource={initialSource} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} prefill={newPrefill} onPrefillTaken={() => setNewPrefill("")} proposeNow={proposeNow} onStatus={setAgentStatus} onPaperChange={setNewPaper} onDraftingStart={handleDraftingStart} onSection={handleSection} onDraftStep={handleDraftStep} planSlot={outlineStage ? planSlot : null} />
+                <NewStoryAgent me={me} initialSource={initialSource} initialCircle={initialCircle} resumeJobId={resumeJobId} autoPropose={autoPropose && Boolean(terms?.current)} hasText={totalWords > 0} onDraftReady={landDraft} onStoryReady={(id) => router.push(`/editorial/${id}`)} onStageChange={handleStageChange} prefill={newPrefill} onPrefillTaken={() => setNewPrefill("")} proposeNow={proposeNow} onStatus={setAgentStatus} onPaperChange={setNewPaper} onDraftingStart={handleDraftingStart} onSection={handleSection} onDraftStep={handleDraftStep} planSlot={outlineStage ? planSlot : null} />
               </div>
               {newAbout ? (
                 <AgentAbout onClose={() => setNewAbout(false)} permissions={STUDIO_PERMISSIONS} termsVersion={terms?.version || null} onTerms={() => { setConsentError(""); setConsentOpen(true); }} activity={<p className="st-muted">Nothing yet: this story is not saved. Once a draft lands, every version and who made it is listed here.</p>} />

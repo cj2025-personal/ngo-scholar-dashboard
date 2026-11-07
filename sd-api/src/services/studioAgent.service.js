@@ -17,6 +17,7 @@ const editorial = require("./editorial.service");
 const { getPolicy } = require("./policy.service");
 const { routerFor } = require("./models.service");
 const { recordDecision } = require("./agentAudit.service");
+const { circlesFor } = require("../lib/scholarCircles");
 
 const { VOICES, AUDIENCE_LIST } = converse;
 
@@ -97,14 +98,19 @@ async function converseWith({ profileId, scholarName = null, conversationId = nu
   const noted = (Array.isArray(notes) ? notes : []).map(cleanLine).filter(Boolean).slice(0, Number(policy.converse.maxNotes) || 0).map((text) => ({ role: "page", text, at: now }));
   const lines = [...(conversation.lines || []), ...noted, { role: "scholar", text: spoken, at: now }];
   const clean = lines.filter((l) => l.text).map((l) => ({ role: l.role === "scholar" ? "scholar" : "agent", text: l.text })).slice(-policy.converse.historyMessages);
-  const { papers } = await papersFor(profileId);
-  /* What the page says is set, kept to values that exist for this scholar. */
   const s = state && typeof state === "object" ? state : {};
+  const [{ papers }, kept] = await Promise.all([papersFor(profileId), circlesFor(profileId)]);
+  /* A circle the page names that was made since the list was kept: read it again. */
+  const circles = s.circleId && !kept.some((c) => c.id === s.circleId) ? await circlesFor(profileId, { fresh: true }) : kept;
+  /* What the page says is set, kept to values that exist for this scholar. */
   const known = (list, v) => (list.some((x) => x.value === v) ? v : null);
   const paperKeySet = papers.some((p) => p.key === s.paperKey) ? s.paperKey : null;
+  const circleSet = circles.some((c) => c.id === s.circleId) ? s.circleId : null;
   const said = {
     paperKey: paperKeySet,
     paperFrom: paperKeySet ? (s.paperFrom === "shelf" ? "shelf" : "conversation") : null,
+    circleId: circleSet,
+    circleFrom: circleSet ? (s.circleFrom === "page" ? "page" : "conversation") : null,
     audience: known(AUDIENCE_LIST, s.audience),
     voice: known(VOICES, s.voice),
     extraAudiences: (Array.isArray(s.extraAudiences) ? s.extraAudiences : []).filter((a) => known(AUDIENCE_LIST, a)),
@@ -112,10 +118,12 @@ async function converseWith({ profileId, scholarName = null, conversationId = nu
     outlineTitle: typeof s.outlineTitle === "string" ? s.outlineTitle.slice(0, 200) : null,
   };
   const router = await routerFor({ db });
-  const out = await converse.decide({ messages: clean, papers, audiences: AUDIENCE_LIST, voices: VOICES, state: said, scholarName, generate: router.bound("studio.converse") });
+  const out = await converse.decide({ messages: clean, papers, circles, audiences: AUDIENCE_LIST, voices: VOICES, state: said, scholarName, generate: router.bound("studio.converse") });
   if (!out.decision) throw new ApiError(502, "The agent could not make sense of that just now. Try saying it another way.");
-  void recordDecision({ agent: "studio.converse", subject: { kind: "scholar", id: profileId }, decision: { action: out.decision.action, paperKey: out.decision.paperKey, audience: out.decision.audience, voice: out.decision.voice, stage: said.stage, conversationId: String(conversation._id) }, rationale: out.decision.rationale, model: out.model, promptVersion: converse.CONVERSE_VERSION, usage: out.usage[0] || null }, { db });
-  const { rationale, paperKnown, ...decision } = out.decision;
+  void recordDecision({ agent: "studio.converse", subject: { kind: "scholar", id: profileId }, decision: { action: out.decision.action, paperKey: out.decision.paperKey, circleId: out.decision.circleId, circleCleared: out.decision.circleCleared, audience: out.decision.audience, voice: out.decision.voice, stage: said.stage, conversationId: String(conversation._id) }, rationale: out.decision.rationale, model: out.model, promptVersion: converse.CONVERSE_VERSION, usage: out.usage[0] || null }, { db });
+  const { rationale, paperKnown, circleKnown, ...decision } = out.decision;
+  /* The circle named, for the page to show beside the paper; its id alone for the job. */
+  if (decision.circleId) decision.circle = { id: decision.circleId, name: circles.find((c) => c.id === decision.circleId)?.name || null };
   /* The reply joins the thread before the page sees it, with the action it
      carried; an action with no words is still a line in the record. */
   await db.collection(COLLECTIONS.studioConversations).updateOne(

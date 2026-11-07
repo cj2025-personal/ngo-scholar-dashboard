@@ -10,6 +10,7 @@ import Kivyn from "@/components/kivyn/Kivyn";
 import KivynButton from "@/components/kivyn/KivynButton";
 import TypedText, { TypingDots } from "@/components/kivyn/TypedText";
 import { useKivynMoment } from "@/components/kivyn/useKivynMoment";
+import { listCircles } from "@/lib/circles";
 import { AGENT_NAME, poseForStep } from "@/lib/kivyn/pose.mjs";
 
 /* Kivyn beside each message: still, so the thread does not blink from every line. */
@@ -291,9 +292,15 @@ function OutlineMessage({ msg, latest, busy, onApprove, onDiscard, onKept, momen
  * @param {boolean} [p.autoPropose]   the scholar asked the agent for an angle on
  *                                    `initialSource` rather than describing one
  * @param {(stage: "outline"|null) => void} [p.onStageChange]   what the rail is asking for, so the page can give it the room it needs
+ * @param {string|null} [p.initialCircle]   a learning circle of theirs to write for, from the circle's page
  */
-export default function NewStoryAgent({ me, initialSource = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, onStatus, onPaperChange, onDraftingStart, onSection, onDraftStep, planSlot = null }) {
+export default function NewStoryAgent({ me, initialSource = null, initialCircle = null, resumeJobId = null, autoPropose = false, hasText = false, onDraftReady, onStoryReady, onStageChange, prefill = "", onPrefillTaken, proposeNow = 0, onStatus, onPaperChange, onDraftingStart, onSection, onDraftStep, planSlot = null }) {
   const [inventory, setInventory] = useState(null);
+  /* The learning circle it is written for: set on the circle's page, or named
+     to Kivyn. Its name, once the scholar's circles have been read. The draft
+     is written for one of its ages and joins it when published. */
+  const [circle, setCircle] = useState(initialCircle ? { id: initialCircle, name: null } : null);
+  const [circleInfo, setCircleInfo] = useState({});
   /* The draft under way, as the checklist in this pane shows it: the
      sections approved, the ones written, and the step the drafter is on. */
   const [draftRun, setDrafting] = useState({ beats: [], written: [], step: null, index: null });
@@ -354,6 +361,14 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
      arrived after the answer. So the composer waits to be ready. */
   const ready = Boolean(inventory);
   const extraBands = levelBands.filter((v) => v !== audience);
+  /* The circle it is written for, by name, and the reading ages it may be written at: the circle's. */
+  const circleName = circle ? circle.name || circleInfo[circle.id]?.name || null : null;
+  const circleBands = circle ? circleInfo[circle.id]?.bands || [] : [];
+  const readerChoices = circleBands.length ? DRAFT_AUDIENCES.filter((a) => circleBands.includes(a.value)) : DRAFT_AUDIENCES;
+  /* A circle set with the reader outside its ages: the circle's youngest age. */
+  const fitReaderTo = (bands) => {
+    if (bands?.length) setAudience((cur) => (bands.includes(cur) ? cur : bands[0]));
+  };
 
   /* An outline waiting for approval is the only thing the scholar is here to
      read: the page beside us is still empty, and nothing has been written to
@@ -381,7 +396,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   const clearProgress = useCallback(() => setMessages((cur) => cur.filter((m) => m.role !== "progress")), []);
 
   /* The opening line, once we know what the scholar holds. */
-  const greet = useCallback((inv) => {
+  const greet = useCallback((inv, circleName = null) => {
     /* Nothing to ask when the scholar has already said what they want: a job
        to pick up, or a paper they asked for an angle on. Greeting them with
        "tell me what the article should be" in either case answers a question
@@ -390,6 +405,14 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     const first = (me?.name || "").split(/\s+/)[0];
     if (!inv.eligible) {
       push({ role: "agent", text: `${first ? `${first}, ` : ""}drafting is not open to you yet. ${inv.gateReason || ""}`.trim() });
+      return;
+    }
+    /* From a circle's page: the readers are the circle's; what to write, and from what, is still theirs to say. */
+    if (initialCircle && circleName) {
+      push({
+        role: "agent",
+        text: `What shall we write for your circle “${circleName}”${first ? `, ${first}` : ""}? Tell me what it's about, and from which paper or your brief alone. It joins the circle when you publish it.`,
+      });
       return;
     }
     if ((inv.draftable || []).length === 0) {
@@ -423,8 +446,16 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
        record, instead of greeting the scholar as if nothing had been said.
        Not when the page already knows what the scholar wants: a job to
        resume, or a paper to propose from. */
-    const pickUp = resumeJobId || autoPropose ? Promise.resolve(null) : latestConversation().then((c) => (c.ok ? c.data?.conversation : null)).catch(() => null);
-    Promise.all([getDraftSources(), pickUp]).then(([r, found]) => {
+    const pickUp = resumeJobId || autoPropose || initialCircle ? Promise.resolve(null) : latestConversation().then((c) => (c.ok ? c.data?.conversation : null)).catch(() => null);
+    /* The scholar's circles, for the name of the one being written for. Never
+       in the way: without them the circle is still set, by its id. */
+    const circlesRead = listCircles().then((c) => (c.ok ? c.data?.circles || [] : null)).catch(() => null);
+    circlesRead.then((list) => {
+      if (!alive || !list) return;
+      setCircleInfo(Object.fromEntries(list.map((c) => [c.id, { name: c.name, bands: c.bands || [] }])));
+      if (initialCircle) fitReaderTo(list.find((c) => c.id === initialCircle)?.bands);
+    });
+    Promise.all([getDraftSources(), pickUp, initialCircle ? circlesRead : Promise.resolve(null)]).then(([r, found, list]) => {
       if (!alive || !r.ok) return;
       setInventory(r.data);
       if (found && found.lines.some((l) => l.role === "scholar")) {
@@ -433,11 +464,19 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
         kept.forEach((m) => reportedRef.current.add(m.id));
         setMessages(kept);
         if (found.state?.paperKey && (found.state.paperKey === paperKey(BRIEF_SOURCE) || (r.data.draftable || []).some((p) => paperKey(p) === found.state.paperKey))) setPaper(found.state.paperKey);
+        if (found.state?.circleId) setCircle({ id: found.state.circleId, name: null });
         if (found.state?.audience) { setAudience(found.state.audience); setAudienceSet(true); }
         if (found.state?.voice) setVoice(found.state.voice);
         return;
       }
-      greet(r.data);
+      /* A circle from the page that is not one of theirs, or is closed: written for no circle, said once.
+         When the circles could not be read (list null), it stays set and the server checks it. */
+      const fromPage = initialCircle && list ? list.find((c) => c.id === initialCircle && (c.status === "open" || c.status === "draft")) || null : null;
+      if (initialCircle && list && !fromPage) {
+        setCircle(null);
+        push({ role: "agent", text: "That circle is closed or isn't one of yours, so this story won't be written for it." });
+      }
+      greet(r.data, fromPage?.name || null);
     });
     return () => { alive = false; if (stopRef.current) stopRef.current(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -629,14 +668,14 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
   }
 
   /** Plan the article from a brief, with the paper, reader and voice given or as set. */
-  async function startJob(brief, { from = selectedPaper, forAudience = audience, forVoice = voice, extras = levelBands } = {}) {
+  async function startJob(brief, { from = selectedPaper, forAudience = audience, forVoice = voice, extras = levelBands, forCircle = circle?.id || null } = {}) {
     if (!from) return;
     setBusy(true);
     setProgress(from.brief ? "Planning from your brief…" : "Reading the paper…", "pick_source");
     wantedLevelsRef.current = extras.filter((a) => a !== forAudience);
     /* No story from the job: the page beside us is the story. The brief
        alone names no source, and is always the scholar's own account. */
-    const r = await createDraftJob({ origin: from.origin, sourceId: from.brief ? null : from.id, audience: forAudience, voice: forVoice, brief, approveOutline: true, createStory: false, levels: false });
+    const r = await createDraftJob({ origin: from.origin, sourceId: from.brief ? null : from.id, audience: forAudience, voice: forVoice, brief, approveOutline: true, createStory: false, levels: false, circleId: forCircle });
     if (!r.ok) { setBusy(false); clearProgress(); push({ role: "error", text: r.error }); return; }
     const j = r.data.job;
     if (r.data.reused && j.terminal) {
@@ -685,6 +724,8 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
       state: {
         paperKey: now.paperKey || null,
         paperFrom: now.paperKey ? (now.paperKey === initialSource ? "shelf" : "conversation") : null,
+        circleId: circle?.id || null,
+        circleFrom: circle ? (circle.id === initialCircle ? "page" : "conversation") : null,
         audience: now.audienceSet ? now.audience : null,
         voice,
         extraAudiences: extraBands,
@@ -706,6 +747,10 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
     if (d.audience) { setAudience(d.audience); setAudienceSet(true); }
     if (d.voice) setVoice(d.voice);
     if (d.extraAudiences?.length) setLevelBands(d.extraAudiences);
+    /* A circle named, or "not for a circle"; saying nothing about it keeps the one set. */
+    const nextCircle = d.circleCleared ? null : d.circleId ? { id: d.circleId, name: d.circle?.name || circleInfo[d.circleId]?.name || null } : circle;
+    if (d.circleCleared || d.circleId) setCircle(nextCircle);
+    if (d.circleId && !d.audience) fitReaderTo(circleInfo[d.circleId]?.bands);
     const forAudience = d.audience || now.audience;
     const forVoice = d.voice || voice;
     const extras = d.extraAudiences?.length ? d.extraAudiences : levelBands;
@@ -720,7 +765,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
         return;
       case "plan":
         if (d.reply) push({ role: "agent", text: d.reply, spoken: true });
-        startJob(d.brief, { from, forAudience, forVoice, extras });
+        startJob(d.brief, { from, forAudience, forVoice, extras, forCircle: nextCircle?.id || null });
         return;
       case "propose":
         if (!from || from.brief) { askWhichPaper(d.reply); return; }
@@ -910,11 +955,20 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
         {locked ? (
           <div className="ch-context ns-pickers is-locked">
             <span className="ch-locked">
-              <b>Set for this draft:</b> {fromBrief ? "your brief alone, no paper" : <>“{selectedPaper?.title || "your paper"}”</>} · for {DRAFT_AUDIENCES.find((a) => a.value === audience)?.label.toLowerCase() || "adults"} · {DRAFT_VOICES.find((v) => v.value === voice)?.label.toLowerCase() || "my own account"}{extraBands.length ? ` · also for ${extraBands.length} more ${extraBands.length === 1 ? "age" : "ages"}` : ""}
+              <b>Set for this draft:</b> {fromBrief ? "your brief alone, no paper" : <>“{selectedPaper?.title || "your paper"}”</>}{circle ? <> · for your circle “{circleName || "your circle"}”</> : null} · for {DRAFT_AUDIENCES.find((a) => a.value === audience)?.label.toLowerCase() || "adults"} · {DRAFT_VOICES.find((v) => v.value === voice)?.label.toLowerCase() || "my own account"}{extraBands.length ? ` · also for ${extraBands.length} more ${extraBands.length === 1 ? "age" : "ages"}` : ""}
               {" · "}<button type="button" className="st-link" onClick={startAnother}>Start another</button>
             </span>
           </div>
         ) : ready && draftable.length ? (
+          <>
+          {/* Written for a learning circle: said on its own line (a fourth picker
+              left every picker a few letters wide), with the way to write it for none. */}
+          {circle ? (
+            <p className="ns-circle-line">
+              <span>For your circle <b>“{circleName || "your circle"}”</b></span>
+              <button type="button" className="st-link" disabled={busy} onClick={() => setCircle(null)}>Not for this circle</button>
+            </p>
+          ) : null}
           <div className="ch-context ns-pickers">
             <label className="ns-pick is-paper">
               <span className="ns-pick__label">From</span>
@@ -926,7 +980,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
             <label className="ns-pick">
               <span className="ns-pick__label">For</span>
               <select aria-label="Reader age" value={audience} disabled={busy} onChange={(e) => { setAudience(e.target.value); setAudienceSet(true); }}>
-                {DRAFT_AUDIENCES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                {readerChoices.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
             </label>
             {/* From the brief alone it is always the scholar's own account. */}
@@ -959,6 +1013,7 @@ export default function NewStoryAgent({ me, initialSource = null, resumeJobId = 
               </div>
             </details>
           </div>
+          </>
         ) : null}
         <div className="ch-dock">
           <div className="ag-box">

@@ -181,7 +181,11 @@ router.post(
   draftLimiter,
   asyncHandler(async (req, res) => {
     const profileId = requireProfile(req);
-    const { origin, sourceId, audience, voice, brief, approveOutline: wantsOutline, createStory, levels } = req.body || {};
+    const { origin, sourceId, audience, voice, brief, approveOutline: wantsOutline, createStory, levels, circleId } = req.body || {};
+    /* A learning circle of theirs it is written for (lib/scholarCircles); checked against their circles in the learner app. */
+    if (circleId !== undefined && circleId !== null && (typeof circleId !== "string" || !/^[a-f0-9]{24}$/i.test(circleId))) {
+      throw new ApiError(400, "That circle is not one of yours.");
+    }
     /* "brief": an article from the scholar's brief alone, drawing on none of
        their papers (lib/briefSource.js). It names no source. */
     if (origin !== "harvested" && origin !== "contributed" && origin !== BRIEF_ORIGIN) {
@@ -208,6 +212,7 @@ router.post(
       approveOutline: Boolean(wantsOutline),
       createStory: createStory === undefined ? true : Boolean(createStory),
       levels: Array.isArray(levels) ? levels : Boolean(levels),
+      circleId: circleId || null,
     });
     res.status(result.reused ? 200 : 202).json(result);
   }),

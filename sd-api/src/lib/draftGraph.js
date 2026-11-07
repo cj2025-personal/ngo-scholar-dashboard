@@ -98,6 +98,8 @@ const State = Annotation.Root({
   voice: Annotation(),
   prepared: Annotation(),
   brief: Annotation(),
+  /* The learning circle it is written for, when it is (lib/scholarCircles): the outline is told who reads it. */
+  circle: Annotation(),
   /* The passages the source guard set aside: ids no section may use. */
   setAside: Annotation(),
   /* produced */
@@ -207,9 +209,9 @@ function buildDraftNodes({ generate, onProgress = async () => {}, judges = {}, l
     await progress("plan_outline", "Planning the article's sections…");
     const briefOnly = isBriefOnly(s.source);
     const prompt = briefOnly
-      ? plan.buildBriefOutlinePrompt({ scholar: s.scholar, audience: s.audience, brief: s.brief || "", voice: s.voice })
+      ? plan.buildBriefOutlinePrompt({ scholar: s.scholar, audience: s.audience, brief: s.brief || "", voice: s.voice, circle: s.circle || null })
       : plan.buildOutlinePrompt({
-        scholar: s.scholar, source: s.source, passages: s.passages, truncated: s.prepared.truncated, audience: s.audience, brief: s.brief || null, voice: s.voice,
+        scholar: s.scholar, source: s.source, passages: s.passages, truncated: s.prepared.truncated, audience: s.audience, brief: s.brief || null, voice: s.voice, circle: s.circle || null,
       });
     const r = await generate({ prompt, systemInstruction: systemFor(s), responseSchema: plan.OUTLINE_SCHEMA, temperature: 0.3, maxOutputTokens: 2048 });
     const { dropped, ...outline } = briefOnly ? plan.parseBriefOutline(r.text) : plan.parseOutline(r.text, s.passages, { allowExtension: Boolean(s.brief) });

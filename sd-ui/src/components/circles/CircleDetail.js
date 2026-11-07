@@ -248,8 +248,16 @@ export default function CircleDetail({ id }) {
             ))}
           </ul>
         ) : (
-          <p className="st-muted">No stories featured yet. Change the circle to choose some.</p>
+          <p className="st-muted">No stories featured yet. Change the circle to choose some, or write one for it.</p>
         )}
+        {/* Kivyn, writing for this circle: its readers' ages, and the story joins it when published. */}
+        {c.status === "open" || c.status === "draft" ? (
+          <div className="cc-actions">
+            <Link className="ck-act" href={`/editorial/new?circle=${encodeURIComponent(c.id)}`}>
+              Write a story for this circle
+            </Link>
+          </div>
+        ) : null}
       </section>
     </div>
   );

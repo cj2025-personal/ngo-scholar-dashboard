@@ -171,7 +171,25 @@ const OUTLINE_SCHEMA = {
   required: ["title", "deck", "beats", "brief_map", "brief_coverage"],
 };
 
-function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = false, audience, brief = null, voice = composer.DEFAULT_VOICE }) {
+/**
+ * An article written for one of the scholar's learning circles
+ * (lib/scholarCircles): who reads it, and - for a circle in a community's
+ * portal - how that portal frames its reading. Said after the reader, as who
+ * the article is for; the brief, not the circle, decides what it covers.
+ */
+function circleLines(circle) {
+  if (!circle || !circle.name) return [];
+  return [
+    "",
+    `It will be read in the scholar's learning circle "${circle.name}": school classes who read the scholar's stories together. What the circle reads: ${String(circle.purpose || "").slice(0, 400)}`,
+    "Write it for those readers. The brief, not the circle, decides what the article covers.",
+    ...(circle.portal?.framing
+      ? [`The circle is shown in the ${circle.portal.name} community's portal, which frames its reading this way: ${String(circle.portal.framing).slice(0, 800)}`]
+      : []),
+  ];
+}
+
+function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = false, audience, brief = null, voice = composer.DEFAULT_VOICE, circle = null }) {
   const aud = composer.AUDIENCES[composer.normaliseAudience(audience)];
   const name = scholar.name || "the scholar";
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
@@ -181,6 +199,7 @@ function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = f
     briefText
       ? `Plan an article that answers the scholar's brief below, with the paper as its evidence${by}, for ${aud.brief}`
       : `Plan an article about the paper below${by}, for ${aud.brief}`,
+    ...circleLines(circle),
     ...(authorVoice
       ? [
           "",
@@ -264,7 +283,7 @@ function buildOutlinePrompt({ scholar = {}, source = {}, passages, truncated = f
  * nothing; what keeps it honest is the context judge and the list of
  * specifics the author must verify before it is published.
  */
-function buildBriefOutlinePrompt({ scholar = {}, audience, brief, voice = composer.DEFAULT_VOICE }) {
+function buildBriefOutlinePrompt({ scholar = {}, audience, brief, voice = composer.DEFAULT_VOICE, circle = null }) {
   const aud = composer.AUDIENCES[composer.normaliseAudience(audience)];
   const name = scholar.name || "the scholar";
   const authorVoice = composer.normaliseVoice(voice) === composer.VOICE.AUTHOR;
@@ -272,6 +291,7 @@ function buildBriefOutlinePrompt({ scholar = {}, audience, brief, voice = compos
   return [
     `Plan an article that answers the scholar's brief below, for ${aud.brief}`,
     "There is no paper behind it: the scholar chose to write it from their brief alone, drawing on none of their research.",
+    ...circleLines(circle),
     ...(authorVoice
       ? ["", `The article is the author's own account, published under their byline. Nothing in it refers to them: no "${name}", no "the author", no "he" or "she".`]
       : []),

@@ -20,6 +20,7 @@ const { AUDIENCES: AUDIENCE_TABLE, normaliseAudience } = require("../lib/audienc
 const { readsForStories, readsByDay } = require("./reads.service");
 const { questionsForStories } = require("./readerQuestions.service");
 const { recordContribution } = require("../lib/contributions");
+const { JUDGED_CALL_MS, callLearnerApi } = require("../lib/learnerApi");
 const {
   normalizeBlockProvenance,
   presentBlockProvenance,
@@ -940,6 +941,37 @@ async function claimDraftProvenance(db, { draftJobId, profileId }) {
   return storyProvenanceFromJob(job);
 }
 
+/**
+ * The learning circle a draft was written for (draftJob `circle`), as the
+ * story keeps it: its id and name, until it is published into the circle.
+ */
+async function draftCircle(db, { draftJobId, profileId }) {
+  if (!draftJobId || !ObjectId.isValid(String(draftJobId))) return null;
+  const job = await db.collection(COLLECTIONS.draftJobs).findOne({ _id: new ObjectId(String(draftJobId)), profile_id: profileId }, { projection: { circle: 1 } });
+  return job?.circle?.id ? { id: String(job.circle.id), name: String(job.circle.name || ""), joined_at: null, problem: null } : null;
+}
+
+/**
+ * A story written for a learning circle joins it once it is published for
+ * readers: the learner app adds it to the stories the circle reads (its
+ * services/circles featureStory - theirs and public, at most 12, and a circle
+ * in a community's portal judged again). Once: the story keeps when it
+ * joined. A failure is the scholar's to see on the story, never a failed
+ * publish; they can add it on the circle's page.
+ */
+async function joinCircle(db, story, { call = callLearnerApi } = {}) {
+  const circle = story?.circle;
+  if (!circle?.id || circle.joined_at || story.status !== "published") return;
+  const stories = getStoryCollection(db);
+  try {
+    await call("POST", `/circles/${circle.id}/stories`, { profileId: story.profile_id, body: { editorialId: String(story._id) }, timeoutMs: JUDGED_CALL_MS });
+    await stories.updateOne({ _id: story._id }, { $set: { "circle.joined_at": new Date(), "circle.problem": null } });
+  } catch (error) {
+    console.warn(`[circles] story ${String(story._id)} did not join circle ${circle.id}: ${error.message}`);
+    await stories.updateOne({ _id: story._id }, { $set: { "circle.problem": String(error.message || "The circle could not be reached.").slice(0, 300) } }).catch(() => undefined);
+  }
+}
+
 async function linkDraftJob({ draftJobId, profileId, storyId }) {
   if (!draftJobId) return;
   try {
@@ -1054,6 +1086,12 @@ function mapStoryDocument(story, author = null, provenance = null) {
     /* What a save must be made against. The editor sends it back. */
     version: storyVersion.versionOf(story),
     levels,
+    /* The learning circle it was written for (Kivyn, from the circle's page or
+       by name), whether it has joined the circle, and why not when it could
+       not. The scholar's only: the public read leaves it out. */
+    circle: story.circle?.id
+      ? { id: String(story.circle.id), name: story.circle.name || null, joinedAt: story.circle.joined_at || null, problem: story.circle.problem || null }
+      : null,
     /* What the scientific record says about the source, as last checked.
        A retraction is shown to the reader too; it is not ours to keep. */
     record: story.record
@@ -1655,6 +1693,8 @@ async function getPublishedStoryBySlug(slug) {
   /* A reader may switch only between levels the scholar approved and that
      still say what the article says. */
   mapped.levels = mapped.levels.filter((l) => l.approved && !l.stale);
+  /* Which circle the scholar wrote it for is theirs, not the reader's. */
+  delete mapped.circle;
   return serializeMongoValue({ story: mapped });
 }
 
@@ -1713,6 +1753,7 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
     });
     const publishedBy = resolvePublisher({ status, user });
     const provenance = await claimDraftProvenance(db, { draftJobId: body.draftJobId, profileId });
+    const circle = await draftCircle(db, { draftJobId: body.draftJobId, profileId });
 
     const retainedImageIds = new Set(referencedImageIds);
     const persistedImages = uploadedImages.filter((image) => {
@@ -1749,6 +1790,8 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
       unpublished_at: null,
       published_by: publishedBy,
       provenance,
+      /* The learning circle it was written for, when it was: it joins the circle once published (joinCircle). */
+      circle,
       source: "native_dashboard_editor",
       editor_version: 4,
       version: 1,
@@ -1793,9 +1836,13 @@ async function createEditorialStory({ scholarId, profileId, user, body, files })
     console.error("Failed to sync editorial image metadata after create:", error);
   }
 
-  const created = await collection.findOne({ _id: storyId });
+  let created = await collection.findOne({ _id: storyId });
   if (created?.status === "published") {
     await recordContribution(db, { profileId: created.profile_id, kind: "story_published", ref: String(created._id), at: created.published_at || new Date() });
+    if (created.circle?.id) {
+      await joinCircle(db, created);
+      created = await collection.findOne({ _id: storyId });
+    }
   }
 
   return serializeMongoValue({
@@ -1889,6 +1936,8 @@ async function updateEditorialStory({
        into it, in which case the newer job wins. */
     const claimed = await claimDraftProvenance(db, { draftJobId: body.draftJobId, profileId });
     const provenance = claimed || existingStory.provenance || null;
+    /* The same for the circle it is written for: a new draft written for one names it. */
+    const claimedCircle = await draftCircle(db, { draftJobId: body.draftJobId, profileId });
 
     const retainedIdValues = parseRetainedIds(body.retainImageIds);
     const retainedIds = new Set(retainedIdValues || []);
@@ -1981,6 +2030,7 @@ async function updateEditorialStory({
         published_by: nextStory.published_by,
         provenance: nextStory.provenance,
         editor_version: nextStory.editor_version,
+        ...(claimedCircle ? { circle: claimedCircle } : {}),
       },
       source: storyVersion.SOURCE.SCHOLAR,
       actor: nextStory.updated_by,
@@ -2027,10 +2077,15 @@ async function updateEditorialStory({
     console.error("Failed to delete removed editorial images:", error);
   }
 
-  const updated = await collection.findOne({ _id: existingStory._id });
+  let updated = await collection.findOne({ _id: existingStory._id });
   /* Published for readers for the first time: the scholar's contribution (lib/contributions; once per story). */
   if (updated?.status === "published") {
     await recordContribution(db, { profileId: updated.profile_id, kind: "story_published", ref: String(updated._id), at: updated.published_at || new Date() });
+    /* Written for a circle and not yet in it: it joins now (once). */
+    if (updated.circle?.id && !updated.circle.joined_at) {
+      await joinCircle(db, updated);
+      updated = await collection.findOne({ _id: existingStory._id });
+    }
   }
 
   return serializeMongoValue({
@@ -2325,6 +2380,8 @@ async function ensureFirstRevision(db, { storyId, job }) {
 module.exports = {
   audienceGradeOf,
   buildExcerpt,
+  /* Exported for the circle-writing tests. */
+  joinCircle,
   /* Exported for the ownership-scope tests: the composition below is what
      leaked one scholar's stories to another. */
   buildScholarStoryFilters,

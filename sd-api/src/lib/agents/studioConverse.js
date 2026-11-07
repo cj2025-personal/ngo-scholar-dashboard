@@ -23,7 +23,7 @@ const { VOICE } = require("../draftComposer");
 const { introduce } = require("./identity");
 const { BRIEF_KEY } = require("../briefSource");
 
-const CONVERSE_VERSION = "studio-converse-2026.5";
+const CONVERSE_VERSION = "studio-converse-2026.6";
 
 /* The words the scholar sees for each voice and reader, as the composer shows them. */
 const VOICES = [
@@ -70,6 +70,16 @@ const SYSTEM = [
   "it unless they now name another. Lines like `Use “<title>”.` or `For ages 12–14.` are the scholar's taps on cards",
   "you showed them; read them together with what they said before.",
   "",
+  "The scholar may lead learning circles: school classes who read the scholar's stories together, each circle for some",
+  "reading ages. When they say the article is for one of their circles — by its name, or plainly by what it reads — set",
+  "`circle_id` to it. A circle shown as set was chosen on the page they came from: keep it unless they name another, or",
+  "set `circle_id` to not_for_circle if they say the article is not for a circle. Only for an article for a circle:",
+  "its readers are the circle's reading ages, so set `audience` to the youngest of them unless the scholar names",
+  "another of the circle's ages, and `extra_audiences` to its other ages; if they name a circle and a reader the",
+  "circle is not for, do not drop either: ask which they meant (ask_audience). Writing for a circle does not choose",
+  "the paper or what to write: those are still the scholar's to say. When the article is for a circle, say so in your",
+  "reply. Otherwise use none.",
+  "",
   "How it goes after you: you plan an outline from the paper, or from the brief alone; the scholar approves it, cuts sections or asks for",
   "changes; the approved outline is drafted into the page beside you, under their name; they read it, edit it, run the",
   "publish check and publish it on Proj Arch themselves, or schedule it. You cannot publish, schedule, send or delete",
@@ -77,8 +87,8 @@ const SYSTEM = [
   "",
   "Whatever the action, set `audience` as soon as the scholar has said or clearly implied who the article is for, in",
   "this message or an earlier one, and `paper_key` once a paper is chosen or named; if a phrase could mean more than",
-  "one reading age, ask rather than guess. Set `voice` only when they said whose account it is. Use none for anything",
-  "not known.",
+  "one reading age, ask rather than guess (\"teenagers\" is two of them: 12 to 14, and 15 to 18). Set `voice` only when",
+  "they said whose account it is. Use none for anything not known.",
   "",
   "Rules: use only the paper keys listed. Never say you have done something you have not. `reply` is what the scholar",
   "reads: one or two plain sentences, warm and direct, about their work. Give a one-sentence `rationale` for the record.",
@@ -86,13 +96,16 @@ const SYSTEM = [
 
 /* "none" where nothing is meant: the model API refuses an empty enum value. */
 const NONE = "none";
+/* The scholar said the article is not for a circle: clears one set on the page. */
+const NOT_FOR_CIRCLE = "not_for_circle";
 
-function schema({ paperKeys, audiences, voices }) {
+function schema({ paperKeys, audiences, voices, circleIds = [] }) {
   return {
     type: "OBJECT",
     properties: {
       action: { type: "STRING", enum: ACTIONS },
       paper_key: { type: "STRING", enum: [NONE, ...paperKeys] },
+      circle_id: { type: "STRING", enum: [NONE, NOT_FOR_CIRCLE, ...circleIds] },
       audience: { type: "STRING", enum: [NONE, ...audiences] },
       voice: { type: "STRING", enum: [NONE, ...voices] },
       extra_audiences: { type: "ARRAY", items: { type: "STRING", enum: audiences } },
@@ -100,9 +113,12 @@ function schema({ paperKeys, audiences, voices }) {
       reply: { type: "STRING" },
       rationale: { type: "STRING" },
     },
-    required: ["action", "paper_key", "audience", "voice", "extra_audiences", "brief", "reply", "rationale"],
+    required: ["action", "paper_key", "circle_id", "audience", "voice", "extra_audiences", "brief", "reply", "rationale"],
   };
 }
+
+/* A circle's reading ages, in the words the agent is shown for readers. */
+const agesOf = (circle, audiences) => (circle.bands || []).map((b) => audiences.find((a) => a.value === b)?.label || b).join(", ");
 
 /**
  * @param {object} p
@@ -110,10 +126,12 @@ function schema({ paperKeys, audiences, voices }) {
  * @param {{key:string, title:string, year?:number, words?:number}[]} p.papers
  * @param {{value:string, label:string}[]} p.audiences
  * @param {{value:string, label:string, hint?:string}[]} p.voices
- * @param {object} p.state  {paperKey, paperFrom: "shelf"|"conversation", audience (only once chosen), voice, extraAudiences, stage, outlineTitle}
+ * @param {object} p.state  {paperKey, paperFrom: "shelf"|"conversation", circleId, circleFrom: "page"|"conversation", audience (only once chosen), voice, extraAudiences, stage, outlineTitle}
  * @param {string} [p.scholarName]
+ * @param {{id:string, name:string, purpose:string, bands:string[]}[]} [p.circles]   the learning circles they lead (open, or not yet open)
  */
-function buildPrompt({ messages, papers, audiences, voices, state, scholarName }) {
+function buildPrompt({ messages, papers, audiences, voices, state, scholarName, circles = [] }) {
+  const circle = circles.find((c) => c.id === state.circleId) || null;
   const said = messages.length ? messages[messages.length - 1].text : "";
   const earlier = messages.slice(0, -1);
   return [
@@ -127,8 +145,11 @@ function buildPrompt({ messages, papers, audiences, voices, state, scholarName }
     "VOICES (value — label):",
     ...voices.map((v) => `${v.value} — ${v.label}${v.hint ? `: ${v.hint}` : ""}`),
     "",
+    "THEIR LEARNING CIRCLES — only for an article the scholar says is for one of them (id — name — what it reads — its readers):",
+    ...(circles.length ? circles.map((c) => `${c.id} — ${c.name} — ${String(c.purpose || "").slice(0, 200)} — ${(c.bands || []).join(", ")}`) : ["(none)"]),
+    "",
     "WHAT IS SET SO FAR:",
-    `paper: ${state.paperKey || "(none)"}${state.paperKey ? ` (chosen ${state.paperFrom === "shelf" ? "on their Papers shelf, before this conversation" : "in this conversation"})` : ""}; reader: ${state.audience || "(not said)"}; voice: ${state.voice || "(default)"}; also for: ${(state.extraAudiences || []).join(", ") || "(none)"}`,
+    `paper: ${state.paperKey || "(none)"}${state.paperKey ? ` (chosen ${state.paperFrom === "shelf" ? "on their Papers shelf, before this conversation" : "in this conversation"})` : ""}; circle: ${circle ? `${circle.id} (${circle.name}; chosen ${state.circleFrom === "page" ? "on the circle's page, before this conversation" : "in this conversation"})` : "(none)"}; reader: ${state.audience || "(not said)"}; voice: ${state.voice || "(default)"}; also for: ${(state.extraAudiences || []).join(", ") || "(none)"}`,
     `stage: ${STAGES.includes(state.stage) ? state.stage : "start"}${state.outlineTitle ? ` — the waiting outline is titled "${state.outlineTitle}"` : ""}`,
     "",
     ...(earlier.length ? ["THE CONVERSATION SO FAR:", ...earlier.map((m) => `${m.role === "scholar" ? "Scholar" : "You"}: ${m.text}`), ""] : []),
@@ -142,16 +163,21 @@ function stripFence(raw) {
   return m ? m[1] : s;
 }
 
-function parseDecision(raw, { paperKeys, audiences, voices }) {
+function parseDecision(raw, { paperKeys, audiences, voices, circleIds = [] }) {
   let j;
   try { j = JSON.parse(stripFence(raw)); } catch { return null; }
   if (!j || !ACTIONS.includes(j.action)) return null;
   const said = (v) => (v && v !== NONE ? String(v) : "");
   const paper = said(j.paper_key);
+  const circle = said(j.circle_id);
   return {
     action: j.action,
     paperKey: paper || null,
     paperKnown: !paper || paperKeys.includes(paper),
+    /* A circle named, kept as it was (null), or cleared (circleCleared). */
+    circleId: circle && circle !== NOT_FOR_CIRCLE ? circle : null,
+    circleKnown: !circle || circle === NOT_FOR_CIRCLE || circleIds.includes(circle),
+    circleCleared: circle === NOT_FOR_CIRCLE,
     audience: audiences.includes(j.audience) ? j.audience : null,
     voice: voices.includes(j.voice) ? j.voice : null,
     extraAudiences: [...new Set((Array.isArray(j.extra_audiences) ? j.extra_audiences : []).filter((a) => audiences.includes(a)))],
@@ -166,23 +192,32 @@ function parseDecision(raw, { paperKeys, audiences, voices }) {
  * a paper that is not theirs, or plans without a paper or a brief.
  * @returns {Promise<{decision: object, usage: object[], model: string|null}>}
  */
-async function decide({ messages, papers, audiences, voices, state, scholarName, generate }) {
+async function decide({ messages, papers, audiences, voices, state, scholarName, generate, circles = [] }) {
   const keys = papers.map((p) => p.key);
   const aud = audiences.map((a) => a.value);
   const vs = voices.map((v) => v.value);
-  const responseSchema = schema({ paperKeys: keys, audiences: aud, voices: vs });
-  const prompt = buildPrompt({ messages, papers, audiences, voices, state, scholarName });
+  const circleIds = circles.map((c) => c.id);
+  const responseSchema = schema({ paperKeys: keys, audiences: aud, voices: vs, circleIds });
+  const prompt = buildPrompt({ messages, papers, audiences, voices, state, scholarName, circles });
   const usage = [];
   let correction = "";
   let last = null;
   for (let round = 0; round < 2; round += 1) {
     const r = await generate({ prompt: correction ? `${prompt}\n\nYOUR LAST DECISION COULD NOT BE CARRIED OUT: ${correction} Decide again.` : prompt, systemInstruction: SYSTEM, responseSchema });
     if (r.usage) usage.push(r.usage);
-    const d = parseDecision(r.text, { paperKeys: keys, audiences: aud, voices: vs });
+    const d = parseDecision(r.text, { paperKeys: keys, audiences: aud, voices: vs, circleIds });
     last = { decision: d, model: r.model || null };
     if (!d) { correction = "It was not legible JSON."; continue; }
     const paper = d.paperKey || state.paperKey || null;
     if (!d.paperKnown) { correction = `It named the paper "${d.paperKey}", which is not in the scholar's list.`; continue; }
+    if (!d.circleKnown) { correction = "It named a circle that is not in the scholar's list."; continue; }
+    /* An article for a circle is for one of the circle's reading ages: its readers are no one else. */
+    const circle = d.circleCleared ? null : circles.find((c) => c.id === (d.circleId || state.circleId)) || null;
+    const reader = d.audience || state.audience || null;
+    if (d.action === "plan" && circle && reader && !(circle.bands || []).includes(reader)) {
+      correction = `It planned for ${reader}, but the circle "${circle.name}" is for ${agesOf(circle, audiences)}. Plan for one of the circle's ages, or ask which.`;
+      continue;
+    }
     /* What a plan with nothing chosen may bind to: the only paper there is,
        or — with no papers at all — the brief alone. Never the brief when a
        paper exists: writing without the scholar's work is said, not assumed. */

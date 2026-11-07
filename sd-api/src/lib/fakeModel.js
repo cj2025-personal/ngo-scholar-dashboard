@@ -553,7 +553,20 @@ function answerConverse(prompt) {
     if (/\b(adults?|general readers?|the public)\b/.test(s)) return "adults";
     return null;
   };
-  const reader = readerIn(said) || setReader || readerIn(brief);
+  const asked = readerIn(said) || setReader || readerIn(brief);
+
+  /* The scholar's learning circles: one named in what they said, or set on the page they came from.
+     Written for a circle, the reader is one of its ages - the youngest unless they named another. */
+  /* Each line: id — name — what it reads — its readers (reader values, comma-separated, last). */
+  const circles = between("THEIR LEARNING CIRCLES", "WHAT IS SET SO FAR").split("\n")
+    .map((l) => l.trim().split(" — ")).filter((parts) => parts.length >= 4 && /^[a-f0-9]{24}$/i.test(parts[0]))
+    .map((parts) => ({ id: parts[0], name: parts[1], bands: parts[parts.length - 1].split(", ").filter((b) => b in labels) }));
+  const setCircle = (prompt.match(/; circle: ([a-f0-9]{24}) \(/) || [])[1] || null;
+  const namedCircle = circles.find((c) => said.toLowerCase().includes(c.name.toLowerCase())) || null;
+  const circle = namedCircle || circles.find((c) => c.id === setCircle) || null;
+  const reader = circle && circle.bands.length ? (asked && circle.bands.includes(asked) ? asked : circle.bands[0]) : asked;
+  const forCircle = circle ? { circle_id: circle.id, extra_audiences: circle.bands.filter((b) => b !== reader) } : {};
+  const circleWords = circle ? ` for your circle “${circle.name}”` : "";
 
   if (/\b(what could (this|the|it)|ideas for|propose|suggest an angle)\b/i.test(said)) {
     return paper && !fromBrief ? out("propose", { paper_key: paper.key, reply: `I will read “${paper.title}” and propose what it could become.` }) : out("ask_paper", { reply: "Which paper should I read? Tap one, or name it." });
@@ -561,7 +574,7 @@ function answerConverse(prompt) {
   if (fromBrief) {
     if (!brief) return out("set_paper", { paper_key: paper.key, reply: "Writing from your brief alone, with none of your papers. Tell me what the article should be: the subject, what to cover, who it is for." });
     if (!reader) return out("ask_audience", { paper_key: paper.key, brief, reply: "Writing from your brief alone. Who is this for? Tap an age, or tell me." });
-    return out("plan", { paper_key: paper.key, audience: reader, brief, reply: `Planning it from your brief alone, for ${(labels[reader] || reader).toLowerCase()}. None of your papers will be used, and every specific in it will be listed for you to verify.` });
+    return out("plan", { paper_key: paper.key, audience: reader, brief, ...forCircle, reply: `Planning it from your brief alone${circleWords}, for ${(labels[reader] || reader).toLowerCase()}. None of your papers will be used, and every specific in it will be listed for you to verify.` });
   }
   if (!paper) {
     return out("ask_paper", { brief, reply: brief ? "Which of your papers should this come from? Tap one, or name it." : "Which of your papers should this come from? Tap one, or name it. Only papers we hold in full and may reproduce are listed." });
@@ -572,7 +585,7 @@ function answerConverse(prompt) {
   if (!reader) {
     return out("ask_audience", { paper_key: paper.key, brief, reply: `Working from “${paper.title}”. Who is this for? Tap an age, or tell me.` });
   }
-  return out("plan", { paper_key: paper.key, audience: reader, brief, reply: `Planning it from “${paper.title}”, for ${(labels[reader] || reader).toLowerCase()}. I will read the paper and come back with an outline.` });
+  return out("plan", { paper_key: paper.key, audience: reader, brief, ...forCircle, reply: `Planning it from “${paper.title}”${circleWords}, for ${(labels[reader] || reader).toLowerCase()}. I will read the paper and come back with an outline.` });
 }
 
 /** Ideas for the studio, for the test double: built from what the prompt shows. */
