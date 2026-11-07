@@ -14,6 +14,9 @@ import { CONCERN_WORDS, archiveCircle, bandLabel, changeCircleCode, getCircle, r
  */
 const count = (n, min) => (n === null || n === undefined ? `fewer than ${min}` : String(n));
 
+/* A class's grade, or a college's year; nothing for a group of mixed ages or of adults. */
+const gradeLine = (grade) => (!grade ? "" : grade === 13 ? " · college year 1" : grade === 14 ? " · college year 2" : ` · grade ${grade}`);
+
 /*
  * Its place in a community's portal. A model reads what the circle is about,
  * never who leads it, and places it, says why not, or asks Proj Arch to look
@@ -200,8 +203,8 @@ export default function CircleDetail({ id }) {
           <p className="cc-code-big">{c.classCode}</p>
           <p className="dash-muted">
             {c.classCodeActive
-              ? "Give it to a teacher you know. They enter it on their class's page in Proj Arch; their school approves it."
-              : "Switched off: no new class can join with it. Classes already in stay."}
+              ? "Give it to a teacher you know, or to the staff of a program, library or college. They enter it on their class's or group's page in Proj Arch; their school or organization approves it."
+              : "Switched off: no new class or group can join with it. Those already in stay."}
           </p>
           <div className="cc-actions">
             <button type="button" className="ck-act" disabled={busy !== null} onClick={() => apply("code", () => changeCircleCode(id, { active: !c.classCodeActive }))}>
@@ -217,7 +220,7 @@ export default function CircleDetail({ id }) {
       <section className="st-card dash-card cc-card" aria-labelledby="cc-classes-title">
         <h2 className="dash-h2" id="cc-classes-title">Who reads with you</h2>
         <p className="dash-muted">
-          {count(c.members, min)} {c.members === 1 ? "reader" : "readers"} in {c.classes.active} {c.classes.active === 1 ? "class" : "classes"}. You see schools and classes, never a reader&rsquo;s name.
+          {count(c.members, min)} {c.members === 1 ? "reader" : "readers"} in {c.classes.active} {c.classes.active === 1 ? "class or group" : "classes and groups"}. You see schools, organizations and their groups, never a reader&rsquo;s name.
         </p>
         {c.connections.length ? (
           <ul className="cc-rows">
@@ -225,14 +228,14 @@ export default function CircleDetail({ id }) {
               <li key={k.id}>
                 <span>
                   <b>{k.className}</b>
-                  {k.grade ? ` · grade ${k.grade}` : ""} · {k.school ?? "A school"}
+                  {gradeLine(k.grade)} · {k.school ?? "A school or organization"}
                 </span>
-                <span className="dash-muted">{k.status === "pending" ? "Waiting for their school" : `${count(k.members, min)} readers`}</span>
+                <span className="dash-muted">{k.status === "pending" ? "Waiting for their school or organization" : `${count(k.members, min)} readers`}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="st-muted">No class has joined yet.</p>
+          <p className="st-muted">No class or group has joined yet.</p>
         )}
       </section>
 

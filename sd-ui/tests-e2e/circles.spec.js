@@ -128,13 +128,13 @@ test("a scholar starts a circle, is told what the check found, and shares an ope
   /* Its page: schools and classes, a small class's count withheld, never a name. */
   await page.getByRole("link", { name: "Listening machines" }).click();
   await expect(page.getByRole("heading", { name: "Who reads with you" })).toBeVisible();
-  await expect(page.getByText("23 readers in 1 class.", { exact: false })).toBeVisible();
-  await expect(page.getByText("Waiting for their school")).toBeVisible();
+  await expect(page.getByText("23 readers in 1 class or group.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Waiting for their school or organization")).toBeVisible();
   await expect(page.getByText("read by fewer than 5")).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("circle-1366x607.png"), fullPage: true });
 
   await page.getByRole("button", { name: "Switch it off" }).click();
-  await expect(page.getByText(/Switched off: no new class can join/)).toBeVisible();
+  await expect(page.getByText(/Switched off: no new class or group can join/)).toBeVisible();
 });
 
 test("a scholar shows a circle in a community's portal, is told why another doesn't belong, and takes one out", async ({ page }) => {

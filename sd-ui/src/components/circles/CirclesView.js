@@ -7,10 +7,11 @@ import CircleForm from "@/components/circles/CircleForm";
 import { FINDING_WORDS, bandLabel, createCircle, listCircles } from "@/lib/circles";
 
 /*
- * The scholar's learning circles: groups of classes that read the stories
+ * The scholar's learning circles: classes and groups that read the stories
  * they choose. A teacher connects a class with the circle's code, and the
- * school approves it; the scholar never adds a child and never sees one's
- * name, only how many read.
+ * school approves it - or a program's, library's or college's staff connect
+ * a group, adults among them, and its admin approves; the scholar never adds
+ * a reader and never sees one's name, only how many read.
  */
 
 export const STATUS_WORDS = {
@@ -69,7 +70,7 @@ export default function CirclesView() {
     <div className="cc-page">
       <div className="cc-bar">
         <p className="dash-muted">
-          A circle is a group of classes reading the stories you choose. Share its code with a teacher; their school approves it. You see which schools joined and how many read, never who.
+          A circle is classes and groups reading the stories you choose: a school&rsquo;s, or a program&rsquo;s, library&rsquo;s or college&rsquo;s, adults among them. Share its code with a teacher or their staff; their school or organization approves it. You see who joined and how many read, never who read.
         </p>
         {!making ? (
           <button type="button" className="auth-submit" onClick={() => setMaking(true)}>
@@ -90,7 +91,7 @@ export default function CirclesView() {
       {state.status === "ready" && state.circles.length === 0 && !making ? (
         <section className="st-card dash-card cc-card">
           <h2 className="dash-h2">No circles yet</h2>
-          <p className="dash-muted">Start one around a few of your published stories, then share its code with a teacher you know.</p>
+          <p className="dash-muted">Start one around a few of your published stories, then share its code with a teacher, or the staff of a program, library or college, you know.</p>
         </section>
       ) : null}
 
@@ -106,8 +107,8 @@ export default function CirclesView() {
             <p>{circle.purpose}</p>
             <p className="dash-muted">
               {circle.bands.map(bandLabel).join(" · ")} · {circle.featuredEditorialIds.length} {circle.featuredEditorialIds.length === 1 ? "story" : "stories"} ·{" "}
-              {circle.classes.active} {circle.classes.active === 1 ? "class" : "classes"}
-              {circle.classes.pending ? `, ${circle.classes.pending} waiting for their school` : ""}
+              {circle.classes.active} {circle.classes.active === 1 ? "class or group" : "classes and groups"}
+              {circle.classes.pending ? `, ${circle.classes.pending} waiting for approval` : ""}
             </p>
             <Findings circle={circle} />
             {circle.status === "open" ? (
