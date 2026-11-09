@@ -70,6 +70,12 @@ const env = {
     process.env.GCP_EDITORIAL_IMAGES_BUCKET ||
     process.env.GCS_EDITORIAL_IMAGES_BUCKET ||
     "editorial-images",
+  /* Where scholar photos are kept, read only to show a scholar their own photo
+     beside "Show my photo" (services/consent.service). The same variable and
+     default the directory's backend reads (ngo-profile-app config/headshots):
+     approved portraits in one bucket, uploaded pictures in the other. */
+  scholarHeadshotsBucket: process.env.SCHOLAR_HEADSHOTS_BUCKET || "scholar-headshots",
+  legendPicturesBucket: process.env.LEGEND_PICTURES_BUCKET || "legend-pictures",
   gcpServiceAccountJson: process.env.GCP_SERVICE_ACCOUNT_JSON || null,
   gcpServiceAccountKeyFile:
     process.env.GCP_SERVICE_ACCOUNT_KEY_FILE ||

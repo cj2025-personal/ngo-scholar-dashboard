@@ -128,6 +128,24 @@ const WRITE_OPERATIONS = new Set([
 ]);
 
 /**
+ * One field of a collection this service does not own, which it may still set.
+ *
+ * `scholars.consent` is not curated data: it is what the scholar has allowed
+ * to be shown, and the shared consent SPEC (v1, 2026-11-09) gives its writes to
+ * the studio (the scholar, signed in) and the admin portal (staff), in one
+ * shape both follow. The curation pipeline still owns every other field, and
+ * the scholar's curated record is still corrected only through suggestions.
+ *
+ * Narrow on purpose: `$set` of paths under the field, one layer at a time
+ * (`consent.photo`, never `consent` whole, which would overwrite the layers
+ * staff set), on an existing document (no upsert, which would create a
+ * scholar). Nothing else on the collection gets through.
+ */
+const FIELD_GRANTS = {
+  scholars: { [OWNER.SD_API]: ["consent"] },
+};
+
+/**
  * May this service write here?
  *
  * An unlisted collection is allowed. The manifest covers what is SHARED; a
@@ -140,6 +158,23 @@ function canWrite(collectionName, self = OWNER.SD_API) {
   return owner === undefined || owner === self;
 }
 
+/**
+ * May this service make this one update on a collection it does not own?
+ * Only `$set` on paths below a granted field (see FIELD_GRANTS), and never as
+ * an upsert. The caller (mongo.js) allows it for `updateOne` alone.
+ */
+function canWriteFields(collectionName, update, options = {}, self = OWNER.SD_API) {
+  const fields = FIELD_GRANTS[collectionName]?.[self];
+  if (!fields || !update || typeof update !== "object" || Array.isArray(update)) return false;
+  if (options?.upsert) return false;
+  const operators = Object.keys(update);
+  if (operators.length !== 1 || operators[0] !== "$set") return false;
+  const set = update.$set;
+  if (!set || typeof set !== "object" || Array.isArray(set)) return false;
+  const paths = Object.keys(set);
+  return paths.length > 0 && paths.every((p) => fields.some((field) => p.startsWith(`${field}.`) && p.length > field.length + 1));
+}
+
 function ownerOf(collectionName) {
   return COLLECTION_OWNERSHIP[collectionName] ?? null;
 }
@@ -149,6 +184,8 @@ module.exports = {
   OWNER,
   COLLECTION_OWNERSHIP,
   WRITE_OPERATIONS,
+  FIELD_GRANTS,
   canWrite,
+  canWriteFields,
   ownerOf,
 };

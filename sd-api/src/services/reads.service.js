@@ -43,6 +43,7 @@
 const crypto = require("crypto");
 
 const { COLLECTIONS } = require("../db/mongo");
+const { findPublicStory } = require("../lib/publicStory");
 
 /** One read per source per story in this window. */
 const THROTTLE_MS = 10 * 60 * 1000;
@@ -85,13 +86,9 @@ async function recordStoryRead(db, { slug, from = "" }) {
   const name = String(slug || "").trim();
   if (!name) return { ok: true };
 
-  const story = await db.collection(COLLECTIONS.scholarEditorials).findOne(
-    {
-      slug: name,
-      $or: [{ status: "published" }, { status: "scheduled", scheduled_for: { $lte: new Date() } }],
-    },
-    { projection: { _id: 1, profile_id: 1 } },
-  );
+  /* Only a story the public can see is counted: not one whose author is
+     hidden, which answers as if it did not exist (lib/publicStory). */
+  const story = await findPublicStory(db, { slug: name }, { projection: { _id: 1, profile_id: 1 } });
   if (!story) return { ok: true };
 
   /* Hashed so that even the transient key in memory is not a list of who read

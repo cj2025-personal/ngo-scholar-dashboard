@@ -21,6 +21,9 @@ const { readsForStories, readsByDay } = require("./reads.service");
 const { questionsForStories } = require("./readerQuestions.service");
 const { recordContribution } = require("../lib/contributions");
 const { JUDGED_CALL_MS, callLearnerApi } = require("../lib/learnerApi");
+/* What "public" means for a story, its author's listing included: one
+   definition, shared with every other public read (lib/publicStory). */
+const { buildPublicStoryQuery, authorIsListed, findPublicStory } = require("../lib/publicStory");
 const {
   normalizeBlockProvenance,
   presentBlockProvenance,
@@ -352,15 +355,6 @@ function getEffectivePublicationStatus(story, now = new Date()) {
   }
 
   return "draft";
-}
-
-function buildPublicStoryQuery(now = new Date()) {
-  return {
-    $or: [
-      { status: "published" },
-      { status: "scheduled", scheduled_for: { $lte: now } },
-    ],
-  };
 }
 
 function countWords(content) {
@@ -1676,10 +1670,8 @@ async function getEditorialStory({ storyId, scholarId, profileId }) {
 
 async function getPublishedStoryBySlug(slug) {
   const db = await getDb();
-  const story = await getStoryCollection(db).findOne({
-    slug,
-    ...buildPublicStoryQuery(),
-  });
+  /* Absent too while its author is hidden (lib/publicStory). */
+  const story = await findPublicStory(db, { slug });
 
   if (!story) {
     throw new ApiError(404, "Published story not found.");
@@ -2113,7 +2105,10 @@ async function findAccessibleAssetOrThrow({ fileId, scholarId, profileId, isPubl
       };
   const story = await storyCollection.findOne(storyQuery);
 
-  if (!story) {
+  /* A public image is public only while its story is: not while the
+     scholar who wrote it is hidden (lib/publicStory). Their own studio
+     read is the other branch, and unaffected. */
+  if (!story || (isPublic && !(await authorIsListed(db, story.profile_id)))) {
     throw new ApiError(404, "Image not found.");
   }
 

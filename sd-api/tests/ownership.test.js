@@ -157,3 +157,32 @@ test("every shared collection has a named owner", () => {
     );
   }
 });
+
+test("the scholar's consent layer is the one field of `scholars` this service may set", () => {
+  const { canWriteFields, FIELD_GRANTS } = require("../src/db/ownership");
+  /* Granted by the shared consent SPEC: the studio sets one layer at a time. */
+  assert.deepEqual(FIELD_GRANTS.scholars[OWNER.SD_API], ["consent"]);
+  assert.equal(canWriteFields("scholars", { $set: { "consent.photo": { basis: "scholar" } } }), true);
+  assert.equal(canWriteFields("scholars", { $set: { "consent.listing": {} } }, { session: {} }), true);
+
+  /* Everything else on the curated record stays refused. */
+  const refused = [
+    [{ $set: { consent: { photo: {} } } }, {}, "the whole object, which would overwrite staff's layers"],
+    [{ $set: { "consent.": {} } }, {}, "an empty layer"],
+    [{ $set: { consentx: {} } }, {}, "a field that only starts like it"],
+    [{ $set: { "name.display": "Someone else" } }, {}, "a curated field"],
+    [{ $set: { "consent.photo": {}, "about.race": "x" } }, {}, "a curated field riding along"],
+    [{ $unset: { "consent.photo": "" } }, {}, "an unset"],
+    [{ $set: { "consent.photo": {} }, $inc: { n: 1 } }, {}, "a second operator"],
+    [{ "consent.photo": {} }, {}, "a replacement document"],
+    [{ $set: { "consent.photo": {} } }, { upsert: true }, "an upsert, which would create a scholar"],
+    [[{ $set: { "consent.photo": {} } }], {}, "a pipeline"],
+  ];
+  for (const [update, options, why] of refused) {
+    assert.equal(canWriteFields("scholars", update, options), false, why);
+  }
+  assert.equal(canWriteFields("users", { $set: { "consent.photo": {} } }), false, "no grant on another collection");
+  assert.equal(canWriteFields("scholars", { $set: { "consent.photo": {} } }, {}, OWNER.USER_DASHBOARD_API), false, "nor for another service");
+  /* The collection itself is still the curation pipeline's. */
+  assert.equal(canWrite("scholars"), false);
+});

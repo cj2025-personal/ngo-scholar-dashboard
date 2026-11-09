@@ -12,6 +12,7 @@ import {
 } from "react-icons/hi2";
 
 import CorrectionHistory from "@/components/profile/CorrectionHistory";
+import PrivacyPanel from "@/components/profile/PrivacyPanel";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
 import SuggestButton from "@/components/profile/SuggestButton";
 import Tile from "@/components/scholar/Tile";
@@ -38,6 +39,11 @@ import Tile from "@/components/scholar/Tile";
  * stories as the Stories list counts them (a deleted story is gone, here as
  * everywhere), the conversations as the Podcasts page lists them, and the
  * corrections as they are answered.
+ *
+ * ── What others see of it ──────────────────────────────────────────────────
+ * Beside the record, first in the side column: "Privacy and visibility"
+ * (PrivacyPanel), the scholar's own say over which parts of it are shown.
+ * Correcting what the record says stays where it was, on each section.
  */
 
 const IMG_BASE = process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4100";
@@ -129,7 +135,7 @@ function Timeline({ items, yearOf, titleOf, subOf, bodyOf, limit = Infinity }) {
   );
 }
 
-export default function ScholarProfileView({ data, corrections }) {
+export default function ScholarProfileView({ data, corrections, privacy }) {
   const profile = data?.profile;
 
   if (!profile) {
@@ -364,6 +370,8 @@ export default function ScholarProfileView({ data, corrections }) {
 
         {/* ── Beside it: the details, and your work here ──────────────────── */}
         <aside className="dash-col-side">
+          <PrivacyPanel data={privacy} name={profile.name} initials={profile.initials} />
+
           <RecordCard id="details" title="Details" className="dash-side-card" suggest={{ sectionKey: "details", label: "Profile details", currentText: snapshot.details }}>
             {detailItems.length ? (
               <dl className="prof-details">

@@ -1,0 +1,35 @@
+{
+  "_comment": "Contract fixtures for the scholar consent layer (SPEC.md v1). Every repo's helper must give the 'expect' values for each scholar.",
+  "cases": [
+    {
+      "name": "no consent recorded (every scholar today)",
+      "scholar": { "profile_id": "s-none", "about": { "race": "Black", "race_status": "flagged", "email": "x@u.edu" }, "display": { "profile_image_object_key": "contemporary/s-none/headshot-a.jpg", "profile_image_url": "https://storage.googleapis.com/legend-pictures/x.jpg" }, "faculty_image": { "proxy_url": "/api/images/faculty/x" } },
+      "expect": { "isListed": true, "photoBasis": null, "visiblePhotoKey": null, "photoCredit": null, "communities": [], "showContact": false }
+    },
+    {
+      "name": "hidden after a removal request",
+      "scholar": { "profile_id": "s-hidden", "consent": { "listing": { "state": "hidden", "reason": "scholar_request", "requestId": "r1", "at": "2026-11-09T00:00:00Z", "by": { "kind": "staff", "id": "admin" } } } },
+      "expect": { "isListed": false, "photoBasis": null, "visiblePhotoKey": null, "photoCredit": null, "communities": [], "showContact": false }
+    },
+    {
+      "name": "scholar granted their own photo, self-identified, shows contact",
+      "scholar": { "profile_id": "s-joined", "about": { "race": "Asian", "race_status": "flagged" }, "display": { "profile_image_object_key": "contemporary/s-joined/headshot-b.jpg" }, "consent": { "photo": { "basis": "scholar", "objectKey": null, "at": "2026-11-09T00:00:00Z", "by": { "kind": "scholar", "id": "s-joined" } }, "community": { "basis": "self_identified", "values": ["black"], "at": "2026-11-09T00:00:00Z", "by": { "kind": "scholar", "id": "s-joined" } }, "contact": { "show": true, "at": "2026-11-09T00:00:00Z", "by": { "kind": "scholar", "id": "s-joined" } } } },
+      "expect": { "isListed": true, "photoBasis": "scholar", "visiblePhotoKey": "contemporary/s-joined/headshot-b.jpg", "photoCredit": null, "communities": ["black"], "showContact": true }
+    },
+    {
+      "name": "open-licensed photo recorded by staff with a specific object",
+      "scholar": { "profile_id": "s-open", "display": { "profile_image_object_key": "contemporary/s-open/headshot-c.jpg" }, "consent": { "photo": { "basis": "open_license", "objectKey": "scholar-images/scholar/s-open/commons.jpg", "license": "CC BY 4.0", "attribution": "Photo: Jane Doe / Wikimedia Commons", "evidenceUrl": "https://commons.wikimedia.org/wiki/File:X.jpg", "at": "2026-11-09T00:00:00Z", "by": { "kind": "staff", "id": "admin" } } } },
+      "expect": { "isListed": true, "photoBasis": "open_license", "visiblePhotoKey": "scholar-images/scholar/s-open/commons.jpg", "photoCredit": { "license": "CC BY 4.0", "attribution": "Photo: Jane Doe / Wikimedia Commons" }, "communities": [], "showContact": false }
+    },
+    {
+      "name": "inferred race is never a community; a non-self-identified basis is ignored",
+      "scholar": { "profile_id": "s-inferred", "about": { "race": "Latino", "race_status": "approved" }, "consent": { "community": { "basis": "inferred", "values": ["latino"] } } },
+      "expect": { "isListed": true, "photoBasis": null, "visiblePhotoKey": null, "photoCredit": null, "communities": [], "showContact": false }
+    },
+    {
+      "name": "contact explicitly hidden",
+      "scholar": { "profile_id": "s-contact-off", "consent": { "contact": { "show": false } } },
+      "expect": { "isListed": true, "photoBasis": null, "visiblePhotoKey": null, "photoCredit": null, "communities": [], "showContact": false }
+    }
+  ]
+}

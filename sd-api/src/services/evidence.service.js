@@ -22,6 +22,7 @@ const composer = require("../lib/draftComposer");
 const { caveatsFor, reviewFor } = require("./agentRulings.service");
 const { serializeMongoValue } = require("../lib/serialize");
 const { passagesFor } = require("./passages.service");
+const { findPublicStory } = require("../lib/publicStory");
 
 let keysCache;
 
@@ -118,9 +119,8 @@ async function refreshStoryEvidence(db, storyId) {
 
 /** What the reader, or anyone, gets for a public story. */
 async function getPublicEvidence(db, slug) {
-  const editorial = require("./editorial.service");
-  const collection = db.collection(COLLECTIONS.scholarEditorials);
-  const storyDoc = await collection.findOne({ slug, ...editorial.buildPublicStoryQuery() });
+  /* Public, and by a listed author (lib/publicStory). */
+  const storyDoc = await findPublicStory(db, { slug });
   if (!storyDoc) throw new ApiError(404, "Published story not found.");
   const stored = storyDoc.evidence;
   const built = stored?.manifest ? null : await refreshStoryEvidence(db, storyDoc._id);

@@ -1,7 +1,7 @@
 const { MongoClient } = require("mongodb");
 
 const { env } = require("../config/env");
-const { OWNER, WRITE_OPERATIONS, canWrite, ownerOf } = require("./ownership");
+const { OWNER, WRITE_OPERATIONS, canWrite, canWriteFields, ownerOf } = require("./ownership");
 
 const COLLECTIONS = {
   credentials: "scholar_credentials",
@@ -67,6 +67,12 @@ const COLLECTIONS = {
      this service's record and not the browser's. Expiring. Private. */
   studioConversations: "scholar_studio_conversations",
   agentRulings: "agent_rulings",
+  /* The proof behind `scholars.consent`: one row per change a scholar (here)
+     or staff (the admin portal) made to what may be shown of a scholar,
+     appended in the same transaction as the change and never updated or
+     deleted. Two writers, one shape, fixed by the shared consent SPEC; left
+     out of the ownership manifest so both may append. */
+  consentEvents: "scholar_consent_events",
 };
 
 let clientPromise;
@@ -129,6 +135,18 @@ function guardCollection(collection, name) {
       const value = Reflect.get(target, prop, receiver);
 
       if (typeof prop === "string" && WRITE_OPERATIONS.has(prop) && !canWrite(name)) {
+        /* The one way through: an updateOne that sets only a field the
+           manifest grants this service on someone else's collection
+           (ownership.js FIELD_GRANTS: the scholar's consent layer). */
+        if (prop === "updateOne") {
+          return (filter, update, options, ...rest) => {
+            if (canWriteFields(name, update, options)) return value.call(target, filter, update, options, ...rest);
+            throw new Error(
+              `sd-api may not updateOne on "${name}" beyond the fields granted to it — that ` +
+                `collection is owned by ${ownerOf(name)}. See FIELD_GRANTS in src/db/ownership.js.`,
+            );
+          };
+        }
         return () => {
           throw new Error(
             `sd-api may not ${prop} on "${name}" — that collection is owned by ` +
@@ -419,6 +437,14 @@ async function ensureIndexes() {
       await db.collection(COLLECTIONS.agentIdeas).createIndex({ expires_at: 1 }, { expireAfterSeconds: 0, name: "idx_agent_ideas_expires_at_ttl" });
       await db.collection(COLLECTIONS.agentRulings).createIndex({ key: 1 }, { unique: true, name: "idx_agent_rulings_key_unique" });
       await db.collection(COLLECTIONS.agentRulings).createIndex({ expires_at: 1 }, { expireAfterSeconds: 0, name: "idx_agent_rulings_expires_at_ttl" });
+      /* A scholar's consent history, newest first: the studio's panel and the
+         admin's both read it so. The SPEC's index, under Mongo's own default
+         name, because the admin portal creates it too; if it already exists
+         under another name, that index is the same one and is kept. No expiry:
+         this is the proof, and is never removed. */
+      await db.collection(COLLECTIONS.consentEvents).createIndex({ profileId: 1, at: -1 }).catch((error) => {
+        if (error?.code !== 85 && error?.code !== 86) throw error;
+      });
     })();
   }
 

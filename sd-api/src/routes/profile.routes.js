@@ -5,8 +5,11 @@ const {
   requireAuth,
   communityScopeFromAuth,
 } = require("../middleware/auth.middleware");
+const { getDb } = require("../db/mongo");
+const { canonicalScholarId } = require("../lib/identity");
 const { getScholarProfileData } = require("../services/profile.service");
 const { acceptAiTerms } = require("../services/aiTerms.service");
+const { getConsent, changeConsent, streamOwnPhoto } = require("../services/consent.service");
 const {
   createSuggestion,
   listSuggestionsForScholar,
@@ -99,6 +102,50 @@ router.post(
       version: req.body?.version,
     });
     res.status(200).json({ aiTerms });
+  }),
+);
+
+/* ── Privacy and visibility (services/consent.service) ────────────────────
+ *
+ *   GET  /api/profile/consent          where each layer stands, the community
+ *                                      choices, and the scholar's history
+ *   GET  /api/profile/consent/photo    their own photo, for the panel
+ *   POST /api/profile/consent/:layer   { action, values? } one change
+ *
+ * Whose record is the session's and nothing else: no route here reads a
+ * profile id from the path, the query or the body. */
+const ownProfileId = (req) => canonicalScholarId(req.auth.user);
+
+router.get(
+  "/consent",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.status(200).json(await getConsent(await getDb(), ownProfileId(req)));
+  }),
+);
+
+router.get(
+  "/consent/photo",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await streamOwnPhoto(await getDb(), ownProfileId(req), res);
+  }),
+);
+
+router.post(
+  "/consent/:layer",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.status(200).json(
+      await changeConsent(await getDb(), {
+        profileId: ownProfileId(req),
+        layer: String(req.params.layer || ""),
+        action: typeof req.body?.action === "string" ? req.body.action : "",
+        values: req.body?.values,
+      }),
+    );
   }),
 );
 

@@ -36,11 +36,15 @@ async function waitForHealth(url, child, log, attempts = 150) {
 }
 
 async function start() {
-  const { MongoMemoryServer } = fromApi("mongodb-memory-server");
+  const { MongoMemoryReplSet } = fromApi("mongodb-memory-server");
   const { MongoClient } = fromApi("mongodb");
   const { seedScholar } = require(path.join(API_DIR, "tests-e2e", "seed.js"));
 
-  const mongod = await MongoMemoryServer.create();
+  /* A one-member replica set rather than a lone server: a change to what a
+     scholar lets others see is written with its proof in one transaction
+     (sd-api services/consent.service), and a lone server has none. */
+  const mongod = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  await mongod.waitUntilRunning();
   const client = await MongoClient.connect(mongod.getUri());
   const tokens = await seedScholar(client.db(DB_NAME));
   /* One scholar drafts more in this suite than a person would in ten

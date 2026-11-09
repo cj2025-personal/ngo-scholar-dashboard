@@ -221,4 +221,6 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
 
 module.exports = {
   getScholarProfileData,
+  /* For routes/images, which serves this photo to its owner alone. */
+  resolveScholarPhoto,
 };

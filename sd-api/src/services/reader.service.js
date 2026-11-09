@@ -36,6 +36,7 @@ const suggest = require("../lib/agents/readerSuggest");
 const vertex = require("../lib/vertex");
 const { env } = require("../config/env");
 const editorial = require("./editorial.service");
+const { findPublicStory } = require("../lib/publicStory");
 const { passagesFor } = require("./passages.service");
 const quota = require("./readerQuota.service");
 const { getPolicy } = require("./policy.service");
@@ -67,7 +68,9 @@ function viewTurn(doc) {
 }
 
 async function loadPublicStory(db, slug) {
-  const story = await db.collection(COLLECTIONS.scholarEditorials).findOne({ slug: String(slug || "").trim(), ...editorial.buildPublicStoryQuery() });
+  /* Public, and by a listed author: the companion does not talk about a
+     hidden scholar's story any more than the page shows it (lib/publicStory). */
+  const story = await findPublicStory(db, { slug: String(slug || "").trim() });
   if (!story) throw new ApiError(404, "Published story not found.");
   return story;
 }

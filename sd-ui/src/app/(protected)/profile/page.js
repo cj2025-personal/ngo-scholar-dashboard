@@ -1,6 +1,6 @@
 import Topbar from "@/components/scholar/Topbar";
 import ScholarProfileView from "@/components/profile/ScholarProfileView";
-import { getScholarProfile } from "@/lib/profile";
+import { getScholarConsent, getScholarProfile } from "@/lib/profile";
 import { getScholarCorrections } from "@/lib/corrections";
 
 /* Never cached: a scholar checking this page is checking whether their
@@ -8,9 +8,10 @@ import { getScholarCorrections } from "@/lib/corrections";
 export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
-  const [data, corrections] = await Promise.all([
+  const [data, corrections, privacy] = await Promise.all([
     getScholarProfile(),
     getScholarCorrections(),
+    getScholarConsent(),
   ]);
   const profile = data?.profile || {};
   const me = {
@@ -23,8 +24,9 @@ export default async function ProfilePage() {
     <div className="sc-shell">
       <Topbar activeHref="/profile" me={me} />
       {/* The corrections are drawn inside the view, at the foot of the record
-          they are about, and counted in its tiles. */}
-      <ScholarProfileView data={data} corrections={corrections} />
+          they are about, and counted in its tiles; what of the record others
+          see sits beside it. */}
+      <ScholarProfileView data={data} corrections={corrections} privacy={privacy} />
     </div>
   );
 }

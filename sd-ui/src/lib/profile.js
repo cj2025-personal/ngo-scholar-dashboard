@@ -39,3 +39,29 @@ export async function getScholarProfile() {
     return null;
   }
 }
+
+/**
+ * What the scholar lets others see of their record (sd-api /api/profile/consent):
+ * each layer's state, the community choices, and their history. Never cached,
+ * and null when it cannot be read, which the panel says rather than showing
+ * the defaults as if they were the scholar's choices.
+ */
+export async function getScholarConsent() {
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore.toString();
+
+  if (!cookieHeader) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${AUTH_API_URL}/api/profile/consent`, {
+      method: "GET",
+      headers: { Cookie: cookieHeader },
+      cache: "no-store",
+    });
+    return response.ok ? await response.json() : null;
+  } catch {
+    return null;
+  }
+}
