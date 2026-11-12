@@ -16,8 +16,10 @@ function getNumberEnv(name, fallback) {
   return parsedValue;
 }
 
+/* Separated by commas or spaces: a deploy passes environment values inside a
+   comma-delimited list, so a list of origins goes there space-separated. */
 const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000")
-  .split(",")
+  .split(/[\s,]+/)
   .map((value) => value.trim())
   .filter(Boolean);
 

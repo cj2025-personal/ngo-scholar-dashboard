@@ -196,7 +196,9 @@ jobs:
       - name: 'Build and Push Container'
         id: 'build'
         env:
-          CORS_OVERRIDE: '${{ vars.SCHOLAR_CORS_ORIGIN || secrets.SCHOLAR_CORS_ORIGIN }}'
+          # The studio and the public site's researcher sign-in, on projarch.org
+          # (2026-11-11), and the studio's Cloud Run addresses. Space-separated.
+          CORS_OVERRIDE: '${{ vars.SCHOLAR_CORS_ORIGIN || secrets.SCHOLAR_CORS_ORIGIN || 'https://studio.projarch.org https://www.projarch.org https://archivyn-scholar-ui-ishg7jtqbq-uc.a.run.app https://archivyn-scholar-ui-77137640226.us-central1.run.app' }}'
         run: |-
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${API_SERVICE}:${GITHUB_SHA}"
           docker build -f sd-api/Dockerfile \
@@ -279,7 +281,7 @@ jobs:
             MONGODB_DB=${{ vars.MONGODB_DB || secrets.MONGODB_DB || 'ngo_profiles' }}
             CORS_ORIGIN=${{ steps.build.outputs.cors_origin }}
             AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || secrets.AUTH_COOKIE_NAME || 'sd_session' }}
-            AUTH_COOKIE_DOMAIN=${{ vars.AUTH_COOKIE_DOMAIN || secrets.AUTH_COOKIE_DOMAIN }}
+            AUTH_COOKIE_DOMAIN=${{ vars.AUTH_COOKIE_DOMAIN || secrets.AUTH_COOKIE_DOMAIN || '.projarch.org' }}
             AUTH_COOKIE_SAMESITE=${{ vars.AUTH_COOKIE_SAMESITE || 'none' }}
             LLM_PROVIDER=vertex
             STORY_LLM_MODEL=${{ vars.STORY_LLM_MODEL || 'gemini-2.5-flash' }}
@@ -358,9 +360,11 @@ jobs:
       - name: 'Build and Push Container'
         id: 'build'
         env:
-          API_URL_OVERRIDE: '${{ vars.SCHOLAR_API_PUBLIC_URL || secrets.SCHOLAR_API_PUBLIC_URL }}'
+          # On projarch.org (2026-11-11), the domain the session cookie is set
+          # for, so the studio's own server sees it (sd-ui proxy.js).
+          API_URL_OVERRIDE: '${{ vars.SCHOLAR_API_PUBLIC_URL || secrets.SCHOLAR_API_PUBLIC_URL || 'https://studio-api.projarch.org' }}'
           SITE_URL: '${{ vars.SCHOLAR_SITE_URL || secrets.SCHOLAR_SITE_URL }}'
-          DOCS_PORTAL_URL: '${{ vars.DOCS_PORTAL_URL || secrets.DOCS_PORTAL_URL }}'
+          DOCS_PORTAL_URL: '${{ vars.DOCS_PORTAL_URL || secrets.DOCS_PORTAL_URL || 'https://docs.projarch.org' }}'
         run: |-
           API_URL="${API_URL_OVERRIDE}"
           if [ -z "${API_URL}" ]; then
