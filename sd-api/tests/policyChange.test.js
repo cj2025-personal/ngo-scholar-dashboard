@@ -25,8 +25,8 @@ test("a key the baseline does not have is named, nested or not", () => {
 });
 
 test("a new route or model limit is allowed; a new key inside a route is not", () => {
-  assert.deepEqual(unknownPaths("models", { routes: { "studio.summarise": { primary: "gemini-2.5-flash", fallback: [] } } }), []);
-  assert.deepEqual(unknownPaths("models", { modelLimits: { "gemini-3-pro": { minThinkingBudget: 256 } } }), []);
+  assert.deepEqual(unknownPaths("models", { routes: { "studio.summarise": { primary: "gemini-3.5-flash-lite", fallback: [] } } }), []);
+  assert.deepEqual(unknownPaths("models", { modelLimits: { "gemini-3.8-flash": { minThinkingBudget: 256 } } }), []);
   assert.deepEqual(unknownPaths("models", { routes: { "studio.edit": { thinkingBudget: 512, thinking: 512 } } }), ["routes.studio.edit.thinking"]);
 });
 

@@ -101,9 +101,12 @@ jobs:
       MONGODB_URI: mongodb://localhost:27017/evals-unused
       MONGODB_DB: evals-unused
       LLM_PROVIDER: vertex
-      STORY_LLM_MODEL: ${{ vars.STORY_LLM_MODEL || 'gemini-2.5-flash' }}
+      STORY_LLM_MODEL: ${{ vars.STORY_LLM_MODEL || 'gemini-3.5-flash-lite' }}
       # Not a credential: a project id, so the working value is the default.
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || vars.GCP_PROJECT_ID || 'ngo-application-services' }}
+      # Gemini runs on the US multi-region, as in production (Gemini 3 is not
+      # served on us-central1); the embedding models stay on GCP_LOCATION.
+      VERTEX_MODEL_LOCATION: ${{ vars.VERTEX_MODEL_LOCATION || 'us' }}
       GCP_LOCATION: ${{ vars.GCP_LOCATION || 'us-central1' }}
       GCP_SERVICE_ACCOUNT_JSON: ''
       GCP_SERVICE_ACCOUNT_KEY_FILE: ''

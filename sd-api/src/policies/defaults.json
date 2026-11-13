@@ -1,5 +1,5 @@
 {
-  "$comment": "The baseline every agent policy starts from. Any value can be overridden at runtime, with a version and an author, through the agent_policies collection (scripts/policy.js); nothing here is read as a constant by the code. Models are the ones this Vertex project serves, probed on 2026-10-01.",
+  "$comment": "The baseline every agent policy starts from. Any value can be overridden at runtime, with a version and an author, through the agent_policies collection (scripts/policy.js); nothing here is read as a constant by the code. Models are the ones this Vertex project serves on the US multi-region, probed on 2026-11-13; each job runs on the cheapest model, and the least reasoning, that passes its evals.",
 
   "policy": {
     "cacheSeconds": 60
@@ -7,29 +7,26 @@
 
   "models": {
     "routes": {
-      "default":         { "primary": null, "fallback": ["gemini-2.5-pro"], "thinkingBudget": 0, "temperature": 0.4, "maxOutputTokens": 4096, "timeoutMs": 90000 },
-      "reader.guard":    { "primary": "gemini-2.5-flash-lite", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 1024, "timeoutMs": 15000 },
-      "reader.agent":    { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 1024, "temperature": 0.3, "maxOutputTokens": 4096, "timeoutMs": 40000 },
-      "reader.sentinel": { "primary": "gemini-2.5-pro", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 1024, "temperature": 0, "maxOutputTokens": 6144, "timeoutMs": 45000 },
-      "reader.refusal":  { "primary": "gemini-2.5-flash-lite", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 0, "temperature": 0.5, "maxOutputTokens": 512, "timeoutMs": 10000 },
-      "reader.memory":   { "primary": "gemini-2.5-flash-lite", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 0, "temperature": 0.2, "maxOutputTokens": 768, "timeoutMs": 15000 },
-      "reader.suggest":  { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-flash-lite"], "thinkingBudget": 0, "temperature": 0.6, "maxOutputTokens": 2048, "timeoutMs": 30000 },
-      "studio.converse": { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0.3, "maxOutputTokens": 2048, "timeoutMs": 30000 },
-      "studio.edit":     { "primary": null, "fallback": ["gemini-2.5-pro"], "thinkingBudget": 0, "temperature": 0.2, "maxOutputTokens": 2048, "timeoutMs": 90000 },
-      "studio.ideas":    { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-flash-lite"], "thinkingBudget": 0, "temperature": 0.6, "maxOutputTokens": 2048, "timeoutMs": 30000 },
-      "drafting.voice":  { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 30000 },
-      "drafting.band":   { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 45000 },
-      "drafting.review": { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 4096, "timeoutMs": 60000 },
-      "drafting.fidelity": { "primary": "gemini-2.5-pro", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 1024, "temperature": 0, "maxOutputTokens": 8192, "timeoutMs": 90000 },
-      "drafting.reach":    { "primary": "gemini-2.5-pro", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 1024, "temperature": 0, "maxOutputTokens": 8192, "timeoutMs": 90000 },
-      "drafting.context":  { "primary": "gemini-2.5-pro", "fallback": ["gemini-2.5-flash"], "thinkingBudget": 1024, "temperature": 0, "maxOutputTokens": 8192, "timeoutMs": 90000 },
-      "drafting.guard":    { "primary": "gemini-2.5-flash", "fallback": ["gemini-2.5-pro"], "thinkingBudget": 512, "temperature": 0, "maxOutputTokens": 4096, "timeoutMs": 60000 }
+      "default":         { "primary": null, "fallback": ["gemini-3.8-flash"], "thinkingBudget": 0, "temperature": 0.4, "maxOutputTokens": 4096, "timeoutMs": 90000 },
+      "reader.guard":    { "primary": "gemini-3.1-flash-lite", "fallback": ["gemini-3.5-flash-lite"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 1024, "timeoutMs": 15000 },
+      "reader.agent":    { "primary": "gemini-3.5-flash-lite", "fallback": ["gemini-3.8-flash"], "thinkingBudget": 0, "temperature": 0.3, "maxOutputTokens": 4096, "timeoutMs": 40000 },
+      "reader.sentinel": { "primary": "gemini-3.8-flash", "fallback": ["gemini-3.5-flash-lite"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 6144, "timeoutMs": 45000 },
+      "reader.refusal":  { "primary": "gemini-3.1-flash-lite", "fallback": ["gemini-3.5-flash-lite"], "thinkingBudget": 0, "temperature": 0.5, "maxOutputTokens": 512, "timeoutMs": 10000 },
+      "reader.memory":   { "primary": "gemini-3.1-flash-lite", "fallback": ["gemini-3.5-flash-lite"], "thinkingBudget": 0, "temperature": 0.2, "maxOutputTokens": 768, "timeoutMs": 15000 },
+      "reader.suggest":  { "primary": "gemini-3.5-flash-lite", "fallback": ["gemini-3.1-flash-lite"], "thinkingBudget": 0, "temperature": 0.6, "maxOutputTokens": 2048, "timeoutMs": 30000 },
+      "studio.converse": { "primary": "gemini-3.5-flash-lite", "fallback": ["gemini-3.8-flash"], "thinkingBudget": 0, "temperature": 0.3, "maxOutputTokens": 2048, "timeoutMs": 30000 },
+      "studio.edit":     { "primary": null, "fallback": ["gemini-3.8-flash"], "thinkingBudget": 0, "temperature": 0.2, "maxOutputTokens": 2048, "timeoutMs": 90000 },
+      "studio.ideas":    { "primary": "gemini-3.5-flash-lite", "fallback": ["gemini-3.1-flash-lite"], "thinkingBudget": 0, "temperature": 0.6, "maxOutputTokens": 2048, "timeoutMs": 30000 },
+      "drafting.voice":  { "primary": "gemini-3.5-flash-lite", "fallback": ["gemini-3.8-flash"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 30000 },
+      "drafting.band":   { "primary": "gemini-3.5-flash-lite", "fallback": ["gemini-3.8-flash"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 2048, "timeoutMs": 45000 },
+      "drafting.review": { "primary": "gemini-3.8-flash", "fallback": ["gemini-3.5-flash-lite"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 4096, "timeoutMs": 60000 },
+      "drafting.fidelity": { "primary": "gemini-3.8-flash", "fallback": ["gemini-3.5-flash-lite"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 8192, "timeoutMs": 90000 },
+      "drafting.reach":    { "primary": "gemini-3.8-flash", "fallback": ["gemini-3.5-flash-lite"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 8192, "timeoutMs": 90000 },
+      "drafting.context":  { "primary": "gemini-3.8-flash", "fallback": ["gemini-3.5-flash-lite"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 8192, "timeoutMs": 90000 },
+      "drafting.guard":    { "primary": "gemini-3.5-flash-lite", "fallback": ["gemini-3.8-flash"], "thinkingBudget": 0, "temperature": 0, "maxOutputTokens": 4096, "timeoutMs": 60000 }
     },
-    "$routes": "The three fact-checking judges (fidelity, reach, context) run on a model other than the writer's, so a draft is never marked by the model that wrote it; the writer is the deployment model, flash.",
-    "modelLimits": {
-      "gemini-2.5-pro": { "minThinkingBudget": 128 },
-      "gemini-2.5-flash-lite": { "minThinkingBudgetWhenOn": 512 }
-    },
+    "$routes": "The three fact-checking judges (fidelity, reach, context) run on a model other than the writer's, so a draft is never marked by the model that wrote it; the writer is the deployment model, gemini-3.5-flash-lite, and the judges gemini-3.8-flash. The article reviewer is on gemini-3.8-flash because 3.5-flash-lite took a colleague's pronoun for the scholar's. Reasoning is off on every route: a positive budget bought no reasoning tokens on the 3.x models (measured 2026-11-13), and 0 stops gemini-3.8-flash reasoning by default, which would be billed as output.",
+    "modelLimits": {},
     "embeddings": { "primary": "text-embedding-005", "fallback": ["text-multilingual-embedding-002"], "batchSize": 32, "timeoutMs": 30000 },
     "breaker": { "failureThreshold": 3, "cooldownSeconds": 60 }
   },

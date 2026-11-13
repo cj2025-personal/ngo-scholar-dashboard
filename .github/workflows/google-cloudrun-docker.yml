@@ -276,6 +276,12 @@ jobs:
           # LEDGER_KEY_ID is deliberately absent: evidenceLedger derives a key
           # id from the public key when none is given, so the signature and its
           # identifier cannot disagree.
+          #
+          # VERTEX_MODEL_LOCATION is where Gemini runs: the US multi-region,
+          # since Gemini 3 is not served on us-central1 for this project. It is
+          # its own variable so GCP_LOCATION, which the embedding models still
+          # use, stays the region every service shares. Never global: a reader
+          # may be a child, and their question stays in the United States.
           env_vars: |
             NODE_ENV=production
             MONGODB_DB=${{ vars.MONGODB_DB || secrets.MONGODB_DB || 'ngo_profiles' }}
@@ -284,7 +290,8 @@ jobs:
             AUTH_COOKIE_DOMAIN=${{ vars.AUTH_COOKIE_DOMAIN || secrets.AUTH_COOKIE_DOMAIN || '.projarch.org' }}
             AUTH_COOKIE_SAMESITE=${{ vars.AUTH_COOKIE_SAMESITE || 'none' }}
             LLM_PROVIDER=vertex
-            STORY_LLM_MODEL=${{ vars.STORY_LLM_MODEL || 'gemini-2.5-flash' }}
+            STORY_LLM_MODEL=${{ vars.STORY_LLM_MODEL || 'gemini-3.5-flash-lite' }}
+            VERTEX_MODEL_LOCATION=${{ vars.VERTEX_MODEL_LOCATION || 'us' }}
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
             GCP_LOCATION=${{ secrets.GCP_REGION }}
             GCS_EDITORIAL_IMAGES_BUCKET=${{ vars.GCS_EDITORIAL_IMAGES_BUCKET || secrets.GCS_EDITORIAL_IMAGES_BUCKET || 'editorial-images' }}

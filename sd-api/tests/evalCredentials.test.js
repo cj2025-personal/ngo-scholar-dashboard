@@ -26,7 +26,11 @@ process.env.MONGODB_URI ||= "mongodb://localhost:27017/eval-credentials-test";
 process.env.MONGODB_DB ||= "eval-credentials-test";
 process.env.LLM_PROVIDER = "vertex";
 process.env.GCP_PROJECT_ID = "test-project";
-process.env.STORY_LLM_MODEL = "gemini-2.5-flash";
+process.env.STORY_LLM_MODEL = "gemini-3.5-flash-lite";
+/* The defaults: Gemini on the US multi-region, embeddings on us-central1. */
+process.env.VERTEX_MODEL_LOCATION = "";
+process.env.GCP_LOCATION = "";
+process.env.VERTEX_LOCATION = "";
 process.env.GCP_SERVICE_ACCOUNT_JSON = "";
 process.env.GCP_SERVICE_ACCOUNT_KEY_FILE = "";
 process.env.GOOGLE_APPLICATION_CREDENTIALS = "";
@@ -102,7 +106,8 @@ function preflight(env) {
       GCP_PROJECT_ID: "test-project",
       VERTEX_PROJECT_ID: "",
       GOOGLE_CLOUD_PROJECT: "",
-      STORY_LLM_MODEL: "gemini-2.5-flash",
+      STORY_LLM_MODEL: "gemini-3.5-flash-lite",
+      VERTEX_MODEL_LOCATION: "",
       GCP_SERVICE_ACCOUNT_JSON: "",
       GCP_SERVICE_ACCOUNT_KEY_FILE: "",
       GOOGLE_APPLICATION_CREDENTIALS: "",
@@ -148,7 +153,7 @@ test("the access check: a token is a pass; no token, no project or the fake is a
   const ok = await vertex.checkAccess({ client: async () => new (class IdentityPoolClient {})(), token: async () => "t" });
   assert.equal(ok.ok, true);
   assert.equal(ok.credentials, "IdentityPoolClient");
-  assert.match(ok.model, /projects\/test-project\/locations\/.+\/models\/gemini-2\.5-flash$/);
+  assert.match(ok.model, /projects\/test-project\/locations\/us\/publishers\/google\/models\/gemini-3\.5-flash-lite$/);
 
   const refused = await vertex.checkAccess({ client: async () => new (class IdentityPoolClient {})(), token: async () => { throw new Error("Permission 'iam.serviceAccounts.getAccessToken' denied"); } });
   assert.equal(refused.ok, false);
@@ -165,7 +170,7 @@ test("the preflight, as CI runs it, gets a token through the whole keyless excha
     const { code, out } = await preflight({ GOOGLE_APPLICATION_CREDENTIALS: workloadIdentityFile(google.base, "gha-creds-ok.json") });
     assert.equal(code, 0, out);
     assert.match(out, /credentials\s+IdentityPoolClient: an access token was issued/);
-    assert.match(out, /model\s+projects\/test-project\/locations\/us-central1\/publishers\/google\/models\/gemini-2\.5-flash/);
+    assert.match(out, /model\s+projects\/test-project\/locations\/us\/publishers\/google\/models\/gemini-3\.5-flash-lite/);
     const [oidc, sts, iam] = google.seen;
     assert.equal(oidc.auth, "Bearer actions-request-token", "GitHub's OIDC token was asked for with the runner's request token");
     assert.match(sts.body, /subject_token=github-oidc-jwt/, "and exchanged with Google");
@@ -196,6 +201,38 @@ test("the preflight fails without a project, and against the fake model", async 
   const fake = await preflight({ LLM_PROVIDER: "fake" });
   assert.equal(fake.code, 1, fake.out);
   assert.match(fake.out, /the evals would measure the test double/);
+});
+
+test("the models run in the United States: global, or another country's region, is refused", async () => {
+  const worldwide = await preflight({ VERTEX_MODEL_LOCATION: "global" });
+  assert.equal(worldwide.code, 1, worldwide.out);
+  assert.match(worldwide.out, /::error::The evals cannot reach the model: VERTEX_MODEL_LOCATION is "global"; the models must run in the United States/);
+  const abroad = await preflight({ GCP_LOCATION: "europe-west4" });
+  assert.equal(abroad.code, 1, abroad.out);
+  assert.match(abroad.out, /GCP_LOCATION is "europe-west4"/);
+});
+
+test("Gemini is called on the US multi-region's own host; the embedding models on the region", async () => {
+  const realFetch = globalThis.fetch;
+  const urls = [];
+  process.env.VERTEX_ACCESS_TOKEN = "t";
+  globalThis.fetch = async (url, init) => {
+    urls.push(String(url));
+    const body = String(url).endsWith(":predict")
+      ? { predictions: JSON.parse(init.body).instances.map(() => ({ embeddings: { values: [1, 0] } })) }
+      : { candidates: [{ content: { parts: [{ text: "ok" }] } }], usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 1, thoughtsTokenCount: 4, totalTokenCount: 8 } };
+    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const r = await vertex.generateContent({ prompt: "x" });
+    await vertex.embed({ texts: ["a"], model: "text-embedding-005" });
+    assert.equal(urls[0], "https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/google/models/gemini-3.5-flash-lite:generateContent");
+    assert.equal(urls[1], "https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/google/models/text-embedding-005:predict");
+    assert.equal(r.usage.output, 5, "reasoning is billed as output, so it is counted there");
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.VERTEX_ACCESS_TOKEN;
+  }
 });
 
 // ── The CI job itself ──────────────────────────────────────────────────────

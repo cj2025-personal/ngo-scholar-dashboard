@@ -92,12 +92,20 @@ const env = {
     model:
       process.env.STORY_LLM_MODEL ||
       process.env.LLM_MODEL ||
-      "gemini-2.5-flash",
+      "gemini-3.5-flash-lite",
     project:
       process.env.GCP_PROJECT_ID ||
       process.env.VERTEX_PROJECT_ID ||
       process.env.GOOGLE_CLOUD_PROJECT ||
       null,
+    /* Where the Gemini models run. Gemini 3 is not served on us-central1 for
+       this project, only on the US multi-region and on global; `us` keeps a
+       child's question inside the United States, and global would not. Its
+       own variable, because GCP_LOCATION is the region every other Google
+       API on the platform shares. */
+    modelLocation: process.env.VERTEX_MODEL_LOCATION || "us",
+    /* The region for the models the US multi-region does not serve: the
+       embedding models and Imagen. */
     location: process.env.GCP_LOCATION || process.env.VERTEX_LOCATION || "us-central1",
   },
   /* Illustrations on request, through Vertex Imagen. Off by default until a

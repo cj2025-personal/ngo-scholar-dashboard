@@ -8,8 +8,9 @@
  * article must never take an illustration for a figure from the paper. The
  * only route to a real figure is the paper itself, which is a later feature.
  *
- * Same env as the text model (project, location, credentials); the model is
- * IMAGE_MODEL, default imagen-3.0-generate-002. LLM_PROVIDER=fake returns a
+ * Same project and credentials as the text model, on the regional
+ * GCP_LOCATION (Imagen is a regional model); the model is IMAGE_MODEL,
+ * default imagen-3.0-generate-002. LLM_PROVIDER=fake returns a
  * small placeholder PNG so the loop runs in tests.
  */
 

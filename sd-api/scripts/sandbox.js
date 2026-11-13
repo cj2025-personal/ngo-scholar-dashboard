@@ -86,7 +86,7 @@ async function main() {
 
   console.log("");
   console.log("=".repeat(70));
-  console.log("SANDBOX · in-memory database · " + (fake ? "fake model" : `model ${process.env.STORY_LLM_MODEL || process.env.LLM_MODEL || "gemini-2.5-flash"}`));
+  console.log("SANDBOX · in-memory database · " + (fake ? "fake model" : `model ${process.env.STORY_LLM_MODEL || process.env.LLM_MODEL || "the API's default (src/config/env.js)"}`));
   console.log(`  API      http://localhost:${port}`);
   console.log(`  UI       start it in sd-ui with: npm run dev   (sd-ui/.env must point NEXT_PUBLIC_AUTH_API_URL at http://localhost:${port})`);
   console.log(`  Sign in  ${uiOrigin}/login`);

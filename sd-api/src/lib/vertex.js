@@ -16,10 +16,18 @@
  * storage upgrade cannot silently remove it.
  *
  * ── Thinking is off ────────────────────────────────────────────────────────
- * On Gemini 2.5 the reasoning pass is billed to `maxOutputTokens`. Left unset it
- * can consume the whole budget and return truncated JSON — user-dashboard-api
- * lost a run of Evidence Hunt generations exactly that way. Pinned to 0 here;
- * a caller that wants reasoning asks for it and sizes the budget to match.
+ * Gemini's reasoning pass counts against `maxOutputTokens` and is billed as
+ * output. Left unset it can consume the whole budget and return truncated
+ * JSON — user-dashboard-api lost a run of Evidence Hunt generations exactly
+ * that way — and gemini-3.8-flash reasons by default. Pinned to 0 here; a
+ * caller that wants reasoning asks for it and sizes the budget to match.
+ *
+ * ── Where the models run ───────────────────────────────────────────────────
+ * Gemini on the US multi-region (`VERTEX_MODEL_LOCATION`, default `us`):
+ * Gemini 3 is not served on us-central1 for this project. The embedding
+ * models are not served on the multi-region, so they stay on the regional
+ * GCP_LOCATION. Both must be in the United States: a reader may be a child,
+ * and global routing could take the question anywhere.
  */
 
 const { GoogleAuth } = require("google-auth-library");
@@ -68,15 +76,19 @@ const isFake = () => env.llm.provider === "fake" && !env.isProduction;
  *  feature rather than crashing the service at boot: drafting is one perk on
  *  one panel, not something the portal needs to serve a login page. */
 function isConfigured() {
-  if (isFake()) return true;
-  return env.llm.provider === "vertex" && Boolean(env.llm.project) && Boolean(env.llm.model);
+  return !describeMissingConfig();
 }
+
+/* The US multi-region, or a single US region. Not global, not another country. */
+const US_LOCATION = /^us(-[a-z]+\d+)?$/;
 
 function describeMissingConfig() {
   if (isFake()) return null;
   if (env.llm.provider !== "vertex") return `LLM_PROVIDER is "${env.llm.provider}"; only "vertex" is supported${env.isProduction ? "" : " (and \"fake\" for tests)"}.`;
   if (!env.llm.project) return "GCP_PROJECT_ID is not set.";
   if (!env.llm.model) return "STORY_LLM_MODEL (or LLM_MODEL) is not set.";
+  if (!US_LOCATION.test(env.llm.modelLocation)) return `VERTEX_MODEL_LOCATION is "${env.llm.modelLocation}"; the models must run in the United States ("us" or a us- region).`;
+  if (!US_LOCATION.test(env.llm.location)) return `GCP_LOCATION is "${env.llm.location}"; the embedding models must run in a us- region.`;
   return null;
 }
 
@@ -85,16 +97,21 @@ function describeMissingConfig() {
  * through. With no model named, the deployment's own (`STORY_LLM_MODEL`):
  * callers that route by purpose name the model they were routed to.
  */
-function resolveResourceName(model = null) {
+function resolveResourceName(model = null, location = env.llm.modelLocation) {
   if (isFake()) return model ? `fake/${model}` : "fake/model";
   const id = String(model || env.llm.model).trim().replace(/^\/+/, "");
   if (id.startsWith("projects/")) return id;
-  return `projects/${env.llm.project}/locations/${env.llm.location}/publishers/google/models/${id}`;
+  return `projects/${env.llm.project}/locations/${location}/publishers/google/models/${id}`;
+}
+
+/** A multi-region (`us`) has a host of its own; a region prefixes the shared one. */
+function hostFor(location) {
+  return /^[a-z]+$/.test(location) ? `aiplatform.${location}.rep.googleapis.com` : `${location}-aiplatform.googleapis.com`;
 }
 
 function buildUrl(resourceName, method = "generateContent") {
-  const location = (resourceName.match(/\/locations\/([^/]+)/) || [])[1] || env.llm.location;
-  return `https://${location}-aiplatform.googleapis.com/v1/${resourceName}:${method}`;
+  const location = (resourceName.match(/\/locations\/([^/]+)/) || [])[1] || env.llm.modelLocation;
+  return `https://${hostFor(location)}/v1/${resourceName}:${method}`;
 }
 
 /**
@@ -284,7 +301,9 @@ async function generateContent({
       functionCalls,
       /* The model turn as sent back, so a tool loop can append it verbatim. */
       parts,
-      usage: { input: count(u.promptTokenCount), output: count(u.candidatesTokenCount), total: count(u.totalTokenCount) },
+      /* Output as billed: the reasoning tokens are charged at the output
+         rate, so the daily budgets and the audit count them there too. */
+      usage: { input: count(u.promptTokenCount), output: count(u.candidatesTokenCount + (u.thoughtsTokenCount || 0)), total: count(u.totalTokenCount) },
       modelVersion: typeof payload?.modelVersion === "string" ? payload.modelVersion : null,
       resourceName,
     };
@@ -313,7 +332,8 @@ async function embed({ texts, taskType = "RETRIEVAL_DOCUMENT", model, batchSize 
   const list = (texts || []).map((t) => String(t || "").slice(0, 8000));
   if (isFake()) return require("./fakeModel").embed({ texts: list, taskType, model });
 
-  const resourceName = resolveResourceName(model);
+  /* Regional: the US multi-region does not serve the embedding models. */
+  const resourceName = resolveResourceName(model, env.llm.location);
   const url = buildUrl(resourceName, "predict");
   const token = await getAccessToken();
   const vectors = [];
