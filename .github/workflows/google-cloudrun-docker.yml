@@ -198,7 +198,9 @@ jobs:
         env:
           # The studio and the public site's researcher sign-in, on projarch.org
           # (2026-11-11), and the studio's Cloud Run addresses. Space-separated.
-          CORS_OVERRIDE: '${{ vars.SCHOLAR_CORS_ORIGIN || secrets.SCHOLAR_CORS_ORIGIN || 'https://studio.projarch.org https://www.projarch.org https://archivyn-scholar-ui-ishg7jtqbq-uc.a.run.app https://archivyn-scholar-ui-77137640226.us-central1.run.app' }}'
+          # Inside a single-quoted YAML value a quote is written twice ('');
+          # a single one ended the value and GitHub rejected the whole file.
+          CORS_OVERRIDE: '${{ vars.SCHOLAR_CORS_ORIGIN || secrets.SCHOLAR_CORS_ORIGIN || ''https://studio.projarch.org https://www.projarch.org https://archivyn-scholar-ui-ishg7jtqbq-uc.a.run.app https://archivyn-scholar-ui-77137640226.us-central1.run.app'' }}'
         run: |-
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${API_SERVICE}:${GITHUB_SHA}"
           docker build -f sd-api/Dockerfile \
@@ -369,9 +371,9 @@ jobs:
         env:
           # On projarch.org (2026-11-11), the domain the session cookie is set
           # for, so the studio's own server sees it (sd-ui proxy.js).
-          API_URL_OVERRIDE: '${{ vars.SCHOLAR_API_PUBLIC_URL || secrets.SCHOLAR_API_PUBLIC_URL || 'https://studio-api.projarch.org' }}'
+          API_URL_OVERRIDE: '${{ vars.SCHOLAR_API_PUBLIC_URL || secrets.SCHOLAR_API_PUBLIC_URL || ''https://studio-api.projarch.org'' }}'
           SITE_URL: '${{ vars.SCHOLAR_SITE_URL || secrets.SCHOLAR_SITE_URL }}'
-          DOCS_PORTAL_URL: '${{ vars.DOCS_PORTAL_URL || secrets.DOCS_PORTAL_URL || 'https://docs.projarch.org' }}'
+          DOCS_PORTAL_URL: '${{ vars.DOCS_PORTAL_URL || secrets.DOCS_PORTAL_URL || ''https://docs.projarch.org'' }}'
         run: |-
           API_URL="${API_URL_OVERRIDE}"
           if [ -z "${API_URL}" ]; then
