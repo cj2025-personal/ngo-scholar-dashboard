@@ -51,6 +51,8 @@ export const STEP_POSES = {
   /* the page waiting on a model */
   converse: "reading",
   resume: "reading",
+  /* a draft that paused while the scholar was away, being picked up again */
+  paused: "reading",
   ideas: "reading",
 };
 
