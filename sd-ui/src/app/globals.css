@@ -2127,11 +2127,13 @@ select {
      width below the bar: positioned against the bar itself, whatever its height. */
   .nb-search { position: static; }
   .nb-search__pop { left: 12px; right: 12px; top: calc(100% + 8px); width: auto; }
-  .nb-nav { grid-area: nav; justify-self: stretch; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .nb-nav { grid-area: nav; justify-self: stretch; gap: 0; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .nb-nav::-webkit-scrollbar { display: none; }
   .nb-nav__link span { display: inline; }
   .nb-nav__link svg { display: none; }
-  .nb-nav__link { flex: 1 1 0; justify-content: center; padding: 0 6px; }
+  /* All six places fit from 375 px: sized by their words (not equal shares, which cut "Podcasts"),
+     a size down, tighter padding. Narrower, the row still scrolls, with the page you are on in view (Topbar). */
+  .nb-nav__link { flex: 1 0 auto; justify-content: center; padding: 0 5px; font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .nb-search__pop, .nb-menu { animation: none; }

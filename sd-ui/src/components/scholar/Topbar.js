@@ -137,9 +137,8 @@ function SearchOpen({ onClose }) {
       <label className="nb-search__field">
         <HiOutlineMagnifyingGlass size={16} aria-hidden />
         <input
-          /* eslint-disable-next-line jsx-a11y/no-autofocus -- the scholar just
-             opened a search, by click or by Ctrl-K; the caret belongs here and
-             nowhere else. */
+          /* Focused on open: the scholar just opened a search, by click or by
+             Ctrl-K; the caret belongs here and nowhere else. */
           autoFocus
           value={query}
           placeholder="Search your work…"
@@ -286,7 +285,17 @@ const LOCKUP = { src: "/brand/archivyn-lockup-compact.svg", width: 752.59, heigh
 export default function Topbar({ activeHref = "/", me = { initials: "SC", name: "Scholar" }, write = false }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef(null);
+  const navRef = useRef(null);
   const closeSearch = useCallback(() => setSearchOpen(false), []);
+
+  /* On a phone too narrow for every place (under ~375 px), the row scrolls sideways: bring the page
+     you are on into view, so its tab is never the one cut off at the edge. Nothing moves where all fit. */
+  useEffect(() => {
+    const nav = navRef.current;
+    const active = nav?.querySelector(".nb-nav__link.is-active");
+    if (!nav || !active || nav.scrollWidth <= nav.clientWidth) return;
+    nav.scrollLeft = Math.max(0, active.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2);
+  }, [activeHref]);
   /* The wrapper holds the dismiss, not the open subtree, so clicking the field
      itself does not count as clicking outside it. */
   useDismiss(searchRef, searchOpen, closeSearch);
@@ -322,7 +331,7 @@ export default function Topbar({ activeHref = "/", me = { initials: "SC", name: 
           />
         </Link>
 
-        <nav className="nb-nav" aria-label="Sections">
+        <nav className="nb-nav" aria-label="Sections" ref={navRef}>
           {NAV.map((item) => (
             <Link
               key={item.href}
