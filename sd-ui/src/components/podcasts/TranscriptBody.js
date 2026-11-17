@@ -44,12 +44,14 @@ export default function TranscriptBody({ episode }) {
       {episode.openingNote ? <p className="pod-read__note">{episode.openingNote}</p> : null}
 
       <ol className="pod-turns" aria-label="The conversation, turn by turn">
-        {turns.map((turn) => {
+        {turns.map((turn, position) => {
           const bare = turn.mine && !turn.evidence.length;
           return (
             <li key={turn.index} id={turnId(turn)} tabIndex={-1} className={`pod-turn${turn.mine ? " is-mine" : ""}${bare ? " is-unsourced" : ""}`}>
               <div className="pod-turn__who">
-                <span className="pod-turn__n">{turn.index + 1}</span>
+                {/* Numbered by where it falls, from 1: the pipeline's turn_index starts at 1 in
+                    production and at 0 elsewhere, and "which turn" must mean the same to everyone. */}
+                <span className="pod-turn__n">{position + 1}</span>
                 <span className="pod-turn__name">{turn.speaker}</span>
                 {turn.mine ? <span className="pod-turn__badge">you</span> : null}
               </div>

@@ -66,10 +66,11 @@ const LEGEND = person({
  * @param {string} [p.contemporaryOwner] whose profile fills the contemporary seat
  */
 function job({ status, title, mineUnsourced = false, legacySeat = LEGEND, contemporaryOwner = ME }) {
+  /* turn_index from 1, as the production pipeline writes it (checked on released episodes 2026-11-17). */
   const turns = [
-    { turn_index: 0, speaker_role: "contemporary_scholar", speaker_name: "Test Scholar", text: "What did the record keep of that period?", evidence_ids: ["e1"] },
-    { turn_index: 1, speaker_role: "legacy_scholar", speaker_name: legacySeat.display_name, text: "The record kept the appointments and little else.", evidence_ids: ["e2"] },
-    { turn_index: 2, speaker_role: "contemporary_scholar", speaker_name: "Test Scholar", text: "That absence is the finding.", evidence_ids: mineUnsourced ? [] : ["e3"] },
+    { turn_index: 1, speaker_role: "contemporary_scholar", speaker_name: "Test Scholar", text: "What did the record keep of that period?", evidence_ids: ["e1"] },
+    { turn_index: 2, speaker_role: "legacy_scholar", speaker_name: legacySeat.display_name, text: "The record kept the appointments and little else.", evidence_ids: ["e2"] },
+    { turn_index: 3, speaker_role: "contemporary_scholar", speaker_name: "Test Scholar", text: "That absence is the finding.", evidence_ids: mineUnsourced ? [] : ["e3"] },
   ];
   return {
     _id: new ObjectId(),
@@ -219,6 +220,8 @@ test("the podcast page lists released conversations, each with a way to tell the
   await expect(panel.getByRole("link", { name: /Something's wrong\?/ })).toHaveAttribute("href", /^mailto:editors@example\.test/);
   await expect(panel.locator(".pod-turn.is-mine")).toHaveCount(2);
   await expect(panel.locator(".pod-turn.is-unsourced")).toHaveCount(1);
+  /* Turns are numbered from 1 by where they fall, whatever index the pipeline gave them. */
+  await expect(panel.locator(".pod-turn__n")).toHaveText(["1", "2", "3"]);
   /* The count of turns citing nothing, pinned at the top, carries the way to them. */
   await expect(panel.locator(".pod-panel__listen .pod-voice.is-warn")).toContainText("1 turn cites nothing of yours");
   await expect(panel.locator(".pod-turn.is-unsourced")).toContainText("Nothing of yours is cited for this turn.");
