@@ -16,9 +16,29 @@ const { openAgent, freshConversation } = require("./agent");
 const { readState } = require("./stack");
 
 let state;
+/* The story this spec drafts, once it exists. It deletes it itself at the end; if a step fails first,
+   afterAll does, so a failure here cannot leave a draft in review, levels waiting or an open conversation
+   for the specs after it (the Studio queue folds three drafts into one line; the agent rail finds a
+   conversation it did not start). */
+let createdStoryId = null;
 
 test.beforeAll(() => {
   state = readState();
+});
+
+test.afterAll(async ({ playwright }) => {
+  const api = await playwright.request.newContext({ extraHTTPHeaders: { cookie: `sd_session=${state.token}` } });
+  try {
+    if (createdStoryId) await api.delete(`${state.apiUrl}/api/editorial-stories/${createdStoryId}`);
+    for (let i = 0; i < 10; i += 1) {
+      const latest = await api.get(`${state.apiUrl}/api/drafting/converse/latest`);
+      const open = latest.ok() ? (await latest.json()).conversation : null;
+      if (!open) break;
+      await api.post(`${state.apiUrl}/api/drafting/converse/${open.conversationId}/end`);
+    }
+  } finally {
+    await api.dispose();
+  }
 });
 
 test.beforeEach(async ({ context }) => {
@@ -104,6 +124,7 @@ test("from a paper to a published story, with the agent editing by instruction",
 
   /* Step 4 runs on the server; the draft is a story before the page moves. */
   await expect(page).toHaveURL(/\/editorial\/[0-9a-f]{24}$/, { timeout: 120_000 });
+  createdStoryId = page.url().match(/\/editorial\/([0-9a-f]{24})$/)[1];
 
   /* The review workspace: status, provenance, the outline the scholar approved. */
   await expect(page.locator(".sc-write-status")).toHaveText("Machine draft · in review");
@@ -227,7 +248,8 @@ test("from a paper to a published story, with the agent editing by instruction",
   await expect(page.locator(".lv-bar")).toHaveCount(0, "closed until asked for");
   await ages.click();
   await page.locator(".lv-bar").getByRole("button", { name: "Write for every age" }).click();
-  await expect(page.locator(".lv-status.is-ready")).toHaveCount(3, { timeout: 60_000 });
+  /* Three ages written and judged one after another: over a minute when the whole suite shares the machine. */
+  await expect(page.locator(".lv-status.is-ready")).toHaveCount(3, { timeout: 120_000 });
   await page.locator(".lv-pill", { hasText: "Ages 12–14" }).click();
   await expect(page.locator(".lv-preview .sc-kicker")).toContainText("Ages 12–14 · target grade 7");
   await expect(page.locator(".lv-block").first()).toBeVisible();

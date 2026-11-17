@@ -24,6 +24,17 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
 });
 
+/* The story this spec drafts. Removing it is what the spec tests; if a step fails before that, afterAll
+   removes it, so a failure cannot leave a draft in review for the specs after it. A 404 (already gone) is fine. */
+let createdStoryId = null;
+test.afterAll(async ({ playwright }) => {
+  if (!createdStoryId) return;
+  const { apiUrl, token } = readState();
+  const api = await playwright.request.newContext({ extraHTTPHeaders: { cookie: `sd_session=${token}` } });
+  await api.delete(`${apiUrl}/api/editorial-stories/${createdStoryId}`);
+  await api.dispose();
+});
+
 test("a draft in review and reading levels waiting can each be removed from the Studio queue", async ({ page }) => {
   test.setTimeout(240_000);
   const { apiUrl } = readState();
@@ -42,6 +53,7 @@ test("a draft in review and reading levels waiting can each be removed from the 
   await outline.getByRole("button", { name: /Approve and draft/ }).click();
   await expect(page).toHaveURL(/\/editorial\/[0-9a-f]{24}$/, { timeout: 120_000 });
   const storyId = page.url().match(/\/editorial\/([0-9a-f]{24})$/)[1];
+  createdStoryId = storyId;
 
   const version = (await (await page.request.get(`${apiUrl}/api/editorial-stories/${storyId}`)).json()).story.version;
   const wrote = await page.request.post(`${apiUrl}/api/editorial-stories/${storyId}/levels`, {
