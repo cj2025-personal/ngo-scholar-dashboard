@@ -830,6 +830,7 @@ export default function StoryWorkspace({ initialStory = null, me = null, aiTerms
     <div className="sc-write-canvas">
       {hasCover ? (
         <div className="sc-write-cover">
+          {/* eslint-disable-next-line @next/next/no-img-element -- uploaded and record images, from any host and at any size: next/image would need every host listed in advance */}
           <img src={effectiveCoverImageUrl} alt={form.coverImageFilename || "Cover"} />
           <div className="sc-write-cover-actions">
             <label className="sc-write-cover-btn">Replace<input type="file" accept="image/*" onChange={handleCoverFileChange} hidden /></label>

@@ -149,6 +149,7 @@ export default function PublishedStoryReader({ story }) {
         </header>
 
         {coverImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- uploaded and record images, from any host and at any size: next/image would need every host listed in advance
           <img
             src={coverImageUrl}
             alt={story?.coverImage?.filename || story?.title || "Cover image"}

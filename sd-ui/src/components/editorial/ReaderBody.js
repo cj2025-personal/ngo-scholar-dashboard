@@ -149,6 +149,7 @@ export default function ReaderBody({ story }) {
           if (block.type === "image") {
             return (
               <figure key={`img-${index}`} className={`reader-image-block reader-image-width-${block.width || "body"}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- uploaded and record images, from any host and at any size: next/image would need every host listed in advance */}
                 <img src={buildPublicImageUrl(block.url)} alt={block.alt || block.filename || "Story image"} className="reader-inline-image" />
                 {block.caption ? <figcaption>{block.caption}</figcaption> : null}
               </figure>

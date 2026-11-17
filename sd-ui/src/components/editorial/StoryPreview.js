@@ -14,6 +14,7 @@ function renderBodyBlock(block, index) {
         className={`preview-image-block preview-image-width-${block.width || "body"}`}
       >
         {source ? (
+          // eslint-disable-next-line @next/next/no-img-element -- uploaded and record images, from any host and at any size: next/image would need every host listed in advance
           <img
             src={source}
             alt={block.alt || block.filename || "Story image"}
@@ -79,6 +80,7 @@ export default function StoryPreview({
     <article className="preview-shell">
       <div className="preview-story-layout">
         {coverImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- uploaded and record images, from any host and at any size: next/image would need every host listed in advance
           <img
             src={coverImageUrl}
             alt={coverImageFilename || title || "Cover image"}

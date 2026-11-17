@@ -110,13 +110,15 @@ export default function SuggestButton({ sectionKey, label, currentText = "", tex
 
     document.addEventListener("keydown", onKeyDown);
     lockScroll();
+    /* The pencil that opened it, read now: by cleanup time the ref may point elsewhere. */
+    const trigger = triggerRef.current;
 
     return () => {
       clearTimeout(timer);
       document.removeEventListener("keydown", onKeyDown);
       unlockScroll();
       // Return focus to the pencil that opened the modal.
-      triggerRef.current?.focus();
+      trigger?.focus();
     };
     // close/resetForm rely only on stable setters + refs, so [open] is correct.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -346,6 +346,7 @@ function ImageBlockCard({ block, onChangeImageFile, onUpdateBlock, onRemoveImage
     <div className={`image-block-card image-width-${block.width}`}>
       <div className="image-block-frame">
         {imageSource ? (
+          // eslint-disable-next-line @next/next/no-img-element -- uploaded and record images, from any host and at any size: next/image would need every host listed in advance
           <img
             src={imageSource}
             alt={block.alt || block.imageFilename || "Story image"}
