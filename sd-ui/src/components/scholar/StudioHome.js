@@ -86,7 +86,7 @@ const plural = (n, one, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? 
 
 /* ── What needs the scholar ────────────────────────────────────────────────
    Built in any order; ranked by tone. Each row is one thing with its way out. */
-function buildTodos({ jobs, all, draftable, episodes, standing, inventory }) {
+function buildTodos({ jobs, all, draftable, standing, inventory }) {
   const todos = [];
   for (const job of jobs || []) {
     if (job.status === "awaiting_outline") {
@@ -128,22 +128,6 @@ function buildTodos({ jobs, all, draftable, episodes, standing, inventory }) {
       propose: { origin: p.origin, sourceId: p.id },
     });
   }
-  /* A conversation generated in the scholar's name, not yet released: speech
-     attributed to a living person. Grave when a turn of theirs cites nothing. */
-  for (const ep of (episodes || []).filter((e) => e.state === "pending")) {
-    const bare = ep.voice?.myTurnsWithoutEvidence || 0;
-    todos.push({
-      tone: bare > 0 ? "grave" : "warn",
-      kind: "Podcast",
-      group: "episode",
-      lead: bare > 0 ? `A conversation speaks as you with ${bare} unsourced ${bare === 1 ? "turn" : "turns"}` : "A conversation in your name has not been released yet",
-      title: shortTitle(ep.title, 64),
-      meta: `With ${ep.with?.name || "the archive"} · ${ep.voice?.myTurns || 0} of ${ep.voice?.turns || 0} turns spoken as you`,
-      detail: `“${shortTitle(ep.title, 60)}” · with ${ep.with?.name || "the archive"} · ${ep.voice?.myTurns || 0} of ${ep.voice?.turns || 0} turns spoken as you`,
-      href: `/podcasts/${ep.id}`,
-      cta: "Read it",
-    });
-  }
   /* One mark short of Legacy, and only then: the standing engine's own nextStep. */
   if (standing?.standing === "approaching" && standing.nextStep) {
     todos.push({ tone: "info", kind: "Legacy", lead: `One mark left before Legacy: ${standing.nextStep.title.toLowerCase()}`, title: standing.nextStep.title, meta: standing.nextStep.blockers.join(" · "), detail: standing.nextStep.blockers.join(" · "), href: "/standing", cta: "Where you stand" });
@@ -157,7 +141,6 @@ function buildTodos({ jobs, all, draftable, episodes, standing, inventory }) {
 /* The nouns for what is waiting. Reading levels are counted as levels, so the number is literally true. */
 const KIND_NOUN = {
   "The record": ["record alert", "record alerts"],
-  Podcast: ["conversation", "conversations"],
   Outline: ["outline", "outlines"],
   Draft: ["draft", "drafts"],
   "In progress": ["draft being written", "drafts being written"],
@@ -414,7 +397,7 @@ function FirstStory({ inventory, draftable }) {
 
 /* ── The page ────────────────────────────────────────────────────────────── */
 
-export default function StudioHome({ me, sources, jobs, stories, episodes, reads = null, range = 30, ranges = [7, 30, 90] }) {
+export default function StudioHome({ me, sources, jobs, stories, reads = null, range = 30, ranges = [7, 30, 90] }) {
   const firstName = (me.name || "").split(/\s+/)[0] || "there";
   const inventory = sources || null;
   const draftable = inventory?.draftable || [];
@@ -422,7 +405,7 @@ export default function StudioHome({ me, sources, jobs, stories, episodes, reads
   const all = stories || [];
   const standing = inventory?.standing || null;
 
-  const todos = buildTodos({ jobs, all, draftable, episodes, standing, inventory });
+  const todos = buildTodos({ jobs, all, draftable, standing, inventory });
 
   const published = all.filter((s) => s.status === "published");
   const scheduled = all.filter((s) => s.status === "scheduled");

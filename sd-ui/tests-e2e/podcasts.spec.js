@@ -125,12 +125,16 @@ test.beforeEach(async ({ context }) => {
   ]);
 });
 
-test("an unreleased conversation reaches the scholar, and another scholar's does not", async ({ page }) => {
+/* Since 2026-11-16 a scholar sees released episodes only: the rest is the company's work (sd-api podcasts.service RELEASED). */
+test("only a released conversation reaches the scholar, and another scholar's does not", async ({ page }) => {
+  const unreleased = job({ status: "review", title: "Still in review" });
   await seed([
-    job({ status: "review", title: "Institutions and the public record", mineUnsourced: true }),
-    job({ status: "published", title: "What the archive kept" }),
-    /* Someone else's conversation. It must appear nowhere below. */
-    job({ status: "review", title: "Not yours at all", contemporaryOwner: "someone-else-0002" }),
+    unreleased,
+    job({ status: "running", title: "Still being made" }),
+    job({ status: "rejected", title: "Withdrawn" }),
+    job({ status: "published", title: "What the archive kept", mineUnsourced: true }),
+    /* Someone else's conversation, released. It must appear nowhere below. */
+    job({ status: "published", title: "Not yours at all", contemporaryOwner: "someone-else-0002" }),
   ]);
 
   const res = await page.request.get(`${state.apiUrl}/api/podcasts`, {
@@ -138,21 +142,19 @@ test("an unreleased conversation reaches the scholar, and another scholar's does
   });
   expect(res.status()).toBe(200);
   const { episodes } = await res.json();
-  expect(episodes.map((e) => e.title).sort()).toEqual([
-    "Institutions and the public record",
-    "What the archive kept",
-  ]);
+  expect(episodes.map((e) => e.title)).toEqual(["What the archive kept"]);
 
-  const pending = episodes.find((e) => e.state === "pending");
+  const released = episodes[0];
+  expect(released.state).toBe("live");
   /* The counts the portal exists to show. */
-  expect(pending.voice).toMatchObject({ turns: 3, myTurns: 2, myQuotes: 2, myTurnsWithoutEvidence: 1 });
-  expect(pending.with).toMatchObject({ name: "Carter G. Woodson", kind: "legend" });
+  expect(released.voice).toMatchObject({ turns: 3, myTurns: 2, myQuotes: 2, myTurnsWithoutEvidence: 1 });
+  expect(released.with).toMatchObject({ name: "Carter G. Woodson", kind: "legend" });
 
-  /* An id belonging to someone else is a 404, not a filtered-out leak. */
-  const other = await page.request.get(`${state.apiUrl}/api/podcasts/${new ObjectId().toString()}`, {
-    headers: { cookie: `sd_session=${state.token}` },
-  });
-  expect(other.status()).toBe(404);
+  /* An unreleased episode of theirs is a 404 like any id that is not theirs, not a filtered-out leak. */
+  for (const id of [unreleased._id.toString(), new ObjectId().toString()]) {
+    const one = await page.request.get(`${state.apiUrl}/api/podcasts/${id}`, { headers: { cookie: `sd_session=${state.token}` } });
+    expect(one.status()).toBe(404);
+  }
 });
 
 /**
@@ -168,7 +170,7 @@ test("when both seats hold a living scholar, the second one still sees it", asyn
   const peer = person({ profile_id: ME, scholar_id: ME, display_name: "Test Scholar" });
   await seed([
     job({
-      status: "review",
+      status: "published",
       title: "Two living scholars",
       legacySeat: peer,
       contemporaryOwner: "someone-else-0002",
@@ -188,40 +190,77 @@ test("when both seats hold a living scholar, the second one still sees it", asyn
   expect(episode.voice.myTurns).toBe(1);
 });
 
-test("the podcast page separates released from not, and the transcript marks the scholar's turns", async ({ page }) => {
+test("the podcast page lists released conversations, each with a way to tell the editors, and the transcript marks the scholar's turns", async ({ page }) => {
   await seed([
-    job({ status: "review", title: "Institutions and the public record", mineUnsourced: true }),
-    job({ status: "published", title: "What the archive kept" }),
+    job({ status: "review", title: "Still in review" }),
+    job({ status: "published", title: "Institutions and the public record", mineUnsourced: true }),
   ]);
 
   await page.goto("/podcasts");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("heading", { name: "Not yet released" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Released", exact: true })).toBeVisible();
-  await expect(page.locator(".pod-ep")).toHaveCount(2);
-  await expect(page.locator(".pod-ep.is-pending")).toHaveCount(1);
-  /* The tiles count what the list shows. */
-  const tile = (label) => page.locator(".pods-kpis .dash-tile").filter({ has: page.locator(".dash-tile__label").getByText(label, { exact: true }) }).locator(".dash-tile__value");
-  await expect(tile("Not yet released")).toHaveText("1");
-  await expect(tile("Released")).toHaveText("1");
-  /* A turn in their name with nothing behind it is the reason the page exists,
-     so it is stated on the card and not only in the transcript. */
-  await expect(page.locator(".pod-ep.is-pending .pod-voice.is-warn")).toContainText("cite nothing");
-  /* Unreleased, reading comes first. */
-  await expect(page.locator(".pod-ep.is-pending").getByRole("link", { name: "Read the transcript" })).toHaveClass(/is-primary/);
+  await expect(page.locator(".pod-ep")).toHaveCount(1);
+  await expect(page.getByText("Still in review")).toHaveCount(0);
+  const row = page.locator(".pod-ep", { hasText: "Institutions and the public record" });
+  /* A turn in their name with nothing behind it is stated on the row, not only in the transcript. */
+  await expect(row.locator(".pod-voice.is-warn")).toContainText("1 turn cites nothing of yours");
+  /* One way to reach the editors, already naming the episode. */
+  const report = row.getByRole("link", { name: /Something's wrong\?/ });
+  await expect(report).toHaveAttribute("href", /^mailto:editors@example\.test\?subject=Something%20is%20wrong%20in%20%22Institutions%20and%20the%20public%20record%22/);
+  await page.setViewportSize({ width: 1366, height: 607 });
+  await page.screenshot({ path: test.info().outputPath("podcasts-1366x607.png") });
 
-  await page.locator(".pod-ep.is-pending .pod-ep__title a").click();
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Institutions and the public record");
-  await expect(page.locator(".pod-turn.is-mine")).toHaveCount(2);
-  await expect(page.locator(".pod-turn.is-unsourced")).toHaveCount(1);
-  await expect(page.locator(".pod-read__flag")).toContainText("no passage cited");
+  /* The transcript opens in a side panel over the list, with an address of its own (2026-11-16). */
+  await row.getByRole("link", { name: "Read the transcript of Institutions and the public record" }).click();
+  const panel = page.getByRole("dialog", { name: "Institutions and the public record" });
+  await expect(panel).toBeVisible();
+  await expect(page).toHaveURL(/\/podcasts\?episode=[a-f0-9]{24}$/);
+  /* Focus starts at the top of the read, on its title. */
+  await expect(panel.getByRole("heading", { name: "Institutions and the public record" })).toBeFocused();
+  await expect(panel.getByRole("link", { name: /Something's wrong\?/ })).toHaveAttribute("href", /^mailto:editors@example\.test/);
+  await expect(panel.locator(".pod-turn.is-mine")).toHaveCount(2);
+  await expect(panel.locator(".pod-turn.is-unsourced")).toHaveCount(1);
+  /* The count of turns citing nothing, pinned at the top, carries the way to them. */
+  await expect(panel.locator(".pod-panel__listen .pod-voice.is-warn")).toContainText("1 turn cites nothing of yours");
+  await expect(panel.locator(".pod-turn.is-unsourced")).toContainText("Nothing of yours is cited for this turn.");
+  /* "Go to it" lands on the turn, focus and all. */
+  await panel.getByRole("button", { name: "Go to it" }).click();
+  await expect(panel.locator(".pod-turn.is-unsourced")).toBeFocused();
 
   /* Their own words are readable behind a turn that cited them. */
-  await page.locator(".pod-turn.is-mine .pod-turn__ev summary").first().click();
-  await expect(page.locator(".pod-turn__ev q").first()).toContainText("eleven institutions");
+  await panel.locator(".pod-turn.is-mine .pod-turn__ev summary").first().click();
+  await expect(panel.locator(".pod-turn__ev q").first()).toContainText("eleven institutions");
+  await page.screenshot({ path: test.info().outputPath("podcasts-transcript-1366x607.png") });
+
+  /* Esc closes it, the address with it, and focus goes back to what opened it. */
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(page).toHaveURL(/\/podcasts$/);
+  await expect(row.getByRole("link", { name: "Read the transcript of Institutions and the public record" })).toBeFocused();
+
+  /* The back button closes it too, and the old page address opens it over the list. */
+  await row.getByRole("link", { name: "Read the transcript of Institutions and the public record" }).click();
+  await expect(panel).toBeVisible();
+  await page.goBack();
+  await expect(panel).toHaveCount(0);
+  const id = new URL(await row.getByRole("link", { name: /Read the transcript/ }).getAttribute("href"), "http://x").searchParams.get("episode");
+  await page.goto(`/podcasts/${id}`);
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Close the transcript" }).click();
+  await expect(page).toHaveURL(/\/podcasts$/);
 });
 
-test("an episode with audio plays where it is listed, one at a time, and says when the reading is unapproved", async ({ page }) => {
+test("a transcript link that is not one of theirs, or not released, opens nothing and says so", async ({ page }) => {
+  const unreleased = job({ status: "review", title: "Still in review" });
+  await seed([unreleased, job({ status: "published", title: "What the archive kept" })]);
+  for (const id of [unreleased._id.toString(), new ObjectId().toString()]) {
+    await page.goto(`/podcasts?episode=${id}`);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "That conversation isn’t available" })).toBeVisible();
+    await expect(page.getByText("Still in review")).toHaveCount(0);
+  }
+});
+
+test("an episode with audio plays where it is listed, one at a time, and says when the voices are AI", async ({ page }) => {
   /* A one-second silent WAV, as a data URL, so the test needs no network. */
   const rate = 8000;
   const wavBytes = Buffer.alloc(44 + rate);
@@ -230,13 +269,17 @@ test("an episode with audio plays where it is listed, one at a time, and says wh
   wavBytes.writeUInt32LE(rate, 28); wavBytes.writeUInt16LE(1, 32); wavBytes.writeUInt16LE(8, 34); wavBytes.write("data", 36); wavBytes.writeUInt32LE(rate, 40);
   wavBytes.fill(128, 44);
   const wav = "data:audio/wav;base64," + wavBytes.toString("base64");
-  const voiced = (over) => ({ ...job(over), voice_draft: { status: "draft", asset: { url: wav, duration_seconds: 1 } } });
-  await seed([voiced({ status: "review", title: "First voiced" }), voiced({ status: "published", title: "Second voiced" })]);
+  /* The first: its approved AI reading published as it is. The second: a recording an editor attached instead. */
+  const promoted = { ...job({ status: "published", title: "First voiced" }), voice_draft: { status: "approved", asset: { url: wav, duration_seconds: 1 } }, attached_asset: { url: wav, duration_seconds: 1 } };
+  const replaced = { ...job({ status: "published", title: "Second voiced" }), voice_draft: { status: "approved", asset: { url: wav, duration_seconds: 1 } }, attached_asset: { url: `${wav}#studio`, duration_seconds: 1 } };
+  await seed([promoted, replaced]);
 
   await page.goto("/podcasts");
   const first = page.locator(".pod-ep", { hasText: "First voiced" });
   const second = page.locator(".pod-ep", { hasText: "Second voiced" });
-  await expect(first.locator(".pod-player__draft")).toHaveText("Machine reading, not yet approved");
+  await expect(first.locator(".pod-player__voice")).toHaveText("AI voices");
+  /* Not claimed for a recording an editor attached, which may be real. */
+  await expect(second.locator(".pod-player__voice")).toHaveCount(0);
   await expect(first.locator(".pod-player__time")).toContainText("0:01");
 
   await first.getByRole("button", { name: "Play First voiced" }).click();
@@ -246,16 +289,17 @@ test("an episode with audio plays where it is listed, one at a time, and says wh
   await expect(first.getByRole("button", { name: "Play First voiced" })).toBeVisible();
 });
 
-test("an unreleased conversation is a grave row in the Studio queue", async ({ page }) => {
+test("an unreleased conversation is nowhere a scholar looks: not the Studio, not Podcasts", async ({ page }) => {
   await seed([job({ status: "review", title: "Institutions and the public record", mineUnsourced: true })]);
 
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  const row = page.locator(".st-todo", { hasText: "unsourced" }).first();
-  await expect(row).toBeVisible();
-  /* Grave, because it is speech attributed to a living person that nothing of
-     theirs supports — the same weight as the record moving under a claim. */
-  await expect(row).toHaveClass(/is-grave/);
+  await expect(page.getByText("Institutions and the public record")).toHaveCount(0);
+  await expect(page.locator(".st-todo", { hasText: /unsourced|not been released/ })).toHaveCount(0);
+
+  await page.goto("/podcasts");
+  await expect(page.getByRole("heading", { name: "Nothing released in your name yet" })).toBeVisible();
+  await expect(page.getByText("Institutions and the public record")).toHaveCount(0);
 });
 
 test.afterAll(async () => {

@@ -3,7 +3,6 @@ import StudioHome from "@/components/scholar/StudioHome";
 import { getDraftJobsServer, getDraftSourcesServer, getReadsTimelineServer } from "@/lib/drafting-server";
 import { getEditorialStories } from "@/lib/editorial";
 import { getScholarProfile } from "@/lib/profile";
-import { getScholarEpisodes } from "@/lib/podcasts";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +14,13 @@ export default async function Home({ searchParams }) {
   const asked = Number(params?.range);
   const range = RANGES.includes(asked) ? asked : 30;
 
-  const [profileData, sources, jobsResult, storiesResult, episodes, reads] = await Promise.all([
+  /* No episodes: the Studio listed unreleased conversations as things to do,
+     and since 2026-11-16 a scholar sees only released ones, on Podcasts. */
+  const [profileData, sources, jobsResult, storiesResult, reads] = await Promise.all([
     getScholarProfile(),
     getDraftSourcesServer(),
     getDraftJobsServer(10),
     getEditorialStories("all"),
-    getScholarEpisodes(20),
     getReadsTimelineServer(range),
   ]);
 
@@ -40,7 +40,6 @@ export default async function Home({ searchParams }) {
         sources={sources}
         jobs={jobsResult?.jobs || []}
         stories={storiesResult?.stories || []}
-        episodes={episodes}
         reads={reads}
         range={range}
         ranges={RANGES}

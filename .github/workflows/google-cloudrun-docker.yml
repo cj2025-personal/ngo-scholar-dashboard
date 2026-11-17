@@ -420,6 +420,7 @@ jobs:
             AUTH_API_URL=${{ steps.build.outputs.api_url }}
             AUTH_COOKIE_NAME=${{ vars.AUTH_COOKIE_NAME || secrets.AUTH_COOKIE_NAME || 'sd_session' }}
             SITE_URL=${{ vars.SCHOLAR_SITE_URL || secrets.SCHOLAR_SITE_URL }}
+            EDITORS_EMAIL=${{ vars.EDITORS_EMAIL || 'hello@projarch.org' }}
 
       - name: 'Show sd-ui URL'
         run: 'echo "sd-ui: ${{ steps.deploy.outputs.url }}"'

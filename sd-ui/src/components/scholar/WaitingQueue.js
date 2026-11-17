@@ -11,7 +11,6 @@ import {
   HiOutlineDocumentText,
   HiOutlineExclamationTriangle,
   HiOutlineListBullet,
-  HiOutlineMicrophone,
   HiOutlinePause,
   HiOutlinePencil,
   HiOutlineSparkles,
@@ -74,13 +73,11 @@ const FOLDS = {
   review: { lead: (n) => `${n} drafts are waiting for your review`, cta: "Review", href: "/editorial?tab=review" },
   levels: { lead: (n) => `${n} stories have reading levels waiting for your approval`, cta: "All stories", href: "/editorial" },
   running: { lead: (n) => `${n} drafts are being written`, cta: "Watch them", href: "/editorial" },
-  episode: { lead: (n) => `${n} conversations in your name have not been released`, cta: "All conversations", href: "/podcasts" },
 };
 
 /* What each kind of row is, drawn and filed. */
 const KINDS = {
   "The record": { icon: HiOutlineExclamationTriangle, chip: "The record" },
-  Podcast: { icon: HiOutlineMicrophone, chip: "Podcasts" },
   Outline: { icon: HiOutlineListBullet, chip: "Drafts" },
   Draft: { icon: HiOutlineDocumentText, chip: "Drafts" },
   "In progress": { icon: HiOutlinePencil, chip: "Drafts" },

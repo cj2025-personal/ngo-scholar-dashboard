@@ -46,6 +46,8 @@ module.exports = defineConfig({
       NEXT_PUBLIC_AUTH_API_URL: API_URL,
       NEXT_PUBLIC_SITE_URL: `http://localhost:${UI_PORT}`,
       AUTH_COOKIE_NAME: "sd_session",
+      /* Where a podcast's "Something's wrong?" writes to; a test address, so the link can be checked. */
+      EDITORS_EMAIL: "editors@example.test",
       /* Its own build directory, so the suite runs beside `npm run dev` (see next.config.mjs). */
       NEXT_DIST_DIR: ".next-e2e",
     },

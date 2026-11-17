@@ -14,7 +14,17 @@ import { HiPause, HiPlay } from "react-icons/hi2";
  * sounds" is a different offer from "listen to the episode".
  *
  * Only one plays at a time: starting one pauses any other on the page.
+ *
+ * Voices a model made are labelled where they play (2026-11-16): a listener
+ * hears them as the people named, and the EU AI Act (Article 50) and the
+ * synthetic-media guidance it draws on ask for that to be said at first
+ * contact. "AI voices" when the API says the audio is synthetic, with "draft,
+ * not yet approved" while no editor has signed it off; nothing for a
+ * replacement an editor attached, which may be a real recording. A speed
+ * button too (W3C WAI's player guidance): a scholar checking ten minutes of
+ * themselves may want it faster.
  */
+const SPEEDS = [1, 1.25, 1.5, 2];
 function clock(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const m = Math.floor(seconds / 60);
@@ -22,12 +32,26 @@ function clock(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export default function EpisodePlayer({ src, title, durationSeconds = null, isDraft = false, size = "md" }) {
+export default function EpisodePlayer({ src, title, durationSeconds = null, isDraft = false, synthetic = false, size = "md" }) {
   const audio = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [now, setNow] = useState(0);
   const [length, setLength] = useState(Number(durationSeconds) || 0);
   const [failed, setFailed] = useState(false);
+  const [speed, setSpeed] = useState(1);
+
+  function nextSpeed() {
+    const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+    setSpeed(next);
+    /* Both: loading the audio (preload is none) resets playbackRate to the default. */
+    if (audio.current) {
+      audio.current.defaultPlaybackRate = next;
+      audio.current.playbackRate = next;
+    }
+  }
+
+  /* A draft is always the machine reading; otherwise only what the API calls synthetic. */
+  const voiceLabel = isDraft ? "AI voices · draft, not yet approved" : synthetic ? "AI voices" : null;
 
   useEffect(() => {
     const el = audio.current;
@@ -94,9 +118,12 @@ export default function EpisodePlayer({ src, title, durationSeconds = null, isDr
         />
         <span className="pod-player__time">
           {failed ? "The audio could not be loaded" : `${clock(now)} / ${length ? clock(length) : "–:––"}`}
-          {isDraft && !failed ? <span className="pod-player__draft">Machine reading, not yet approved</span> : null}
+          {voiceLabel && !failed ? <span className={`pod-player__voice${isDraft ? " is-draft" : ""}`}>{voiceLabel}</span> : null}
         </span>
       </div>
+      <button type="button" className="pod-player__speed" onClick={nextSpeed} disabled={failed} aria-label={`Playback speed ${speed}×, change speed for ${title}`}>
+        {speed}×
+      </button>
     </div>
   );
 }

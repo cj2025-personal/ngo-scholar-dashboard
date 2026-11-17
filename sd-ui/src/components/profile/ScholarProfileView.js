@@ -87,13 +87,6 @@ function storyStatus(story) {
   return { label: "Draft", tone: "draft" };
 }
 
-const CONVERSATION = {
-  pending: { label: "Not yet released", pill: "dash-pill is-warn" },
-  live: { label: "Released", pill: "dash-pill is-ok" },
-  making: { label: "Being made", pill: "dash-pill is-info" },
-  stopped: { label: "Stopped", pill: "dash-pill" },
-};
-
 /** A card in the record: its name, its "Suggest an edit", then what it holds. */
 function RecordCard({ id, title, suggest, children, className = "" }) {
   const headingId = `prof-${id}-title`;
@@ -165,7 +158,8 @@ export default function ScholarProfileView({ data, corrections, privacy }) {
 
   const counts = profile.counts || {};
   const storyCounts = counts.stories || { total: 0, published: 0, scheduled: 0, drafts: 0, inReview: 0 };
-  const talkCounts = counts.conversations || { total: 0, live: 0, pending: 0 };
+  /* Released conversations only (sd-api podcasts.service RELEASED): nothing pending to count or flag. */
+  const talkCounts = counts.conversations || { total: 0 };
   const correctionItems = corrections?.suggestions || [];
   const openCorrections = correctionItems.filter((item) => item.status === "open").length;
 
@@ -257,9 +251,8 @@ export default function ScholarProfileView({ data, corrections, privacy }) {
         <Tile
           label="Conversations"
           value={talkCounts.total.toLocaleString()}
-          sub={talkCounts.total ? [talkCounts.live ? `${talkCounts.live} released` : null, talkCounts.pending ? `${talkCounts.pending} not yet released` : null].filter(Boolean).join(" · ") || "in the making" : "none in your name yet"}
+          sub={talkCounts.total ? "released in your name" : "none released yet"}
           href="/podcasts"
-          className={talkCounts.pending ? "is-attention" : ""}
         />
         <Tile
           label="Corrections"
@@ -429,21 +422,20 @@ export default function ScholarProfileView({ data, corrections, privacy }) {
             </div>
             {conversations.length ? (
               <ul className="prof-list">
-                {conversations.slice(0, 4).map((c) => {
-                  const state = CONVERSATION[c.state] || CONVERSATION.making;
-                  return (
-                    <li key={c.id}>
-                      <Link href={`/podcasts/${c.id}`} title={c.title}>{c.title}</Link>
+                {/* Each opens its transcript in the Podcasts page's panel. */}
+                {conversations.slice(0, 4).map((c) => (
+                  <li key={c.id}>
+                    <Link href={`/podcasts?episode=${encodeURIComponent(c.id)}`} title={c.title}>{c.title}</Link>
+                    {c.with ? (
                       <span className="prof-list__meta">
-                        <span className={state.pill}>{state.label}</span>
-                        {c.with ? <span>with {c.with}</span> : null}
+                        <span>with {c.with}</span>
                       </span>
-                    </li>
-                  );
-                })}
+                    ) : null}
+                  </li>
+                ))}
               </ul>
             ) : (
-              <p className="dash-muted">No conversation has been made in your name yet.</p>
+              <p className="dash-muted">Nothing released in your name yet.</p>
             )}
             {recordings.length ? (
               <p className="dash-faint prof-note">Also on your record: {plural(recordings.length, "other recording")}.</p>
