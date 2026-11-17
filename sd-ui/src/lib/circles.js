@@ -1,7 +1,8 @@
 /**
  * Learning circles, from the browser: the scholar's own, through this
  * studio's API (/api/circles), which asks the learner app where they live.
- * Every call answers { ok, data, error }.
+ * Every call answers { ok, data, error, status }: status is the HTTP status,
+ * or 0 when nothing answered (the scholar's connection, most likely).
  */
 const AUTH_API_URL = process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000";
 const UNREACHABLE = "Proj Arch could not be reached. Check your connection and try again.";
@@ -16,7 +17,7 @@ async function request(path, init = {}) {
       headers: { ...(init.body ? { "Content-Type": "application/json" } : {}), ...(init.headers || {}) },
     });
   } catch {
-    return { ok: false, data: null, error: UNREACHABLE };
+    return { ok: false, data: null, error: UNREACHABLE, status: 0 };
   }
   let data = null;
   try {
@@ -24,8 +25,8 @@ async function request(path, init = {}) {
   } catch {
     /* An error with no JSON body is still an error. */
   }
-  if (!response.ok) return { ok: false, data: null, error: data?.error || data?.message || `Request failed (${response.status}).` };
-  return { ok: true, data, error: null };
+  if (!response.ok) return { ok: false, data: null, error: data?.error || data?.message || `Request failed (${response.status}).`, status: response.status };
+  return { ok: true, data, error: null, status: response.status };
 }
 
 /** The reading ages a circle can be for, as the studio names them. */

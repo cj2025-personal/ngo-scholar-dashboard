@@ -23,9 +23,10 @@ export default async function ImpactPage() {
       <Topbar activeHref="/impact" me={me} />
       <div className="dash">
         <header className="dash-head">
-          <div className="dash-head__copy">
+          <div>
             <p className="dash-date">Impact</p>
             <h1 className="dash-greet">What your work reached</h1>
+            <p className="pods-intro">A signed record of who your stories reached, yours to share.</p>
           </div>
         </header>
         <ImpactView />

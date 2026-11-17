@@ -1,6 +1,11 @@
+import { HiOutlineArrowUpRight } from "react-icons/hi2";
+
+import Kivyn from "@/components/kivyn/Kivyn";
 import StoriesTable from "@/components/scholar/StoriesTable";
 import Topbar from "@/components/scholar/Topbar";
+import { DRAFT_AUDIENCES } from "@/lib/drafting";
 import { getEditorialStories } from "@/lib/editorial";
+import { AGENT_NAME } from "@/lib/kivyn/pose.mjs";
 import { getScholarProfile } from "@/lib/profile";
 import { buildStoryRows, STORY_GROUPS } from "@/lib/storyRows";
 
@@ -25,6 +30,51 @@ export const dynamic = "force-dynamic";
  * not repeat it.
  */
 const TAB_ALIASES = { drafts: "draft" };
+
+/**
+ * A scholar with no stories yet: what this page will hold, and how a story
+ * gets here, in the three steps it actually takes. It points at the bar's
+ * "Write a story with Kivyn" rather than repeating it (one control per action).
+ * The reading ages come from the list the drafting uses, so they can't drift.
+ */
+function StoriesEmpty() {
+  const youngest = DRAFT_AUDIENCES[0].label.toLowerCase();
+  const oldest = DRAFT_AUDIENCES[DRAFT_AUDIENCES.length - 1].label.toLowerCase();
+  const steps = [
+    { title: "Plan it together", text: `Say what you want to write, or pick one of your papers. ${AGENT_NAME} agrees an outline with you before a word is drafted.` },
+    { title: "Approve every reading age", text: `${AGENT_NAME} writes it for the ages you choose, from ${youngest} to ${oldest}. Nothing reaches a reader until you approve that version.` },
+    { title: "See what readers made of it", text: "Each story you publish shows its reads here, with the questions readers asked and the ones it couldn’t answer." },
+  ];
+  return (
+    <section className="st-card dash-card es" aria-labelledby="stories-empty-title">
+      <div className="es-intro">
+        <Kivyn pose="writing" size={64} />
+        <div>
+          <h2 id="stories-empty-title" className="dash-h2">Your first story is one conversation away</h2>
+          <p className="es-lead">
+            {AGENT_NAME} helps you turn your research into a story young readers can follow. This is how a story gets from you to them,
+            and every one you start appears here from its first draft on.
+          </p>
+        </div>
+      </div>
+      <ol className="es-steps">
+        {steps.map((s, i) => (
+          <li key={s.title}>
+            <span className="es-n" aria-hidden>{i + 1}</span>
+            <div>
+              <h3 className="es-h3">{s.title}</h3>
+              <p>{s.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <p className="es-foot">
+        <HiOutlineArrowUpRight size={16} aria-hidden />
+        <span>Start with <strong>Write a story with {AGENT_NAME}</strong>, the red button at the top of the page.</span>
+      </p>
+    </section>
+  );
+}
 
 export default async function EditorialPage({ searchParams }) {
   const params = await searchParams;
@@ -72,13 +122,7 @@ export default async function EditorialPage({ searchParams }) {
         ) : rows.length ? (
           <StoriesTable rows={rows} total={rows.length} variant="full" initialTab={initialTab} />
         ) : (
-          <section className="st-card dash-card stories-empty" aria-labelledby="stories-empty-title">
-            <h2 id="stories-empty-title" className="dash-h2">Nothing written yet</h2>
-            <p className="dash-muted">
-              Every story starts from &ldquo;Write a story with Kivyn&rdquo;, at the top of this page: say what you want to write,
-              or pick one of your papers, and Kivyn plans it with you before a word is drafted.
-            </p>
-          </section>
+          <StoriesEmpty />
         )}
       </div>
     </div>

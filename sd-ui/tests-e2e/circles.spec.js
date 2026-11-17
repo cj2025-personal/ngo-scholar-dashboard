@@ -16,7 +16,13 @@ let stub;
 const circles = [];
 const seen = [];
 
-const view = (c) => ({ ...c, classes: { active: c.connections.filter((k) => k.status === "active").length, pending: c.connections.filter((k) => k.status === "pending").length } });
+/* As the learner app answers the list: classes counted, and how many read it, a number from the floor (5) up (2026-11-17). */
+const view = (c) => ({
+  ...c,
+  classes: { active: c.connections.filter((k) => k.status === "active").length, pending: c.connections.filter((k) => k.status === "pending").length },
+  readers: c.status === "open" ? 12 : null,
+  minReport: 5,
+});
 
 test.beforeAll(async () => {
   state = readState();
@@ -97,20 +103,83 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies([{ name: "sd_session", value: state.token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
 });
 
-test("a scholar starts a circle, is told what the check found, and shares an open circle's code", async ({ page }) => {
+/* A circle shares published stories, so the page asks for one first. The specs share one database: made once, deleted after. */
+let storyId = null;
+async function publishStory(request) {
+  if (storyId) return storyId;
+  const made = await request.fetch(`${state.apiUrl}/api/editorial-stories`, {
+    method: "POST",
+    headers: { cookie: `sd_session=${state.token}` },
+    data: { title: "How small antennas listen", content: "Antennas pick one voice out of a crowd.", status: "draft" },
+  });
+  storyId = (await made.json()).story.id;
+  const { MongoClient, ObjectId } = require(require.resolve("mongodb", { paths: [require("path").resolve(__dirname, "..", "..", "sd-api")] }));
+  const client = await MongoClient.connect(state.mongoUri);
+  try {
+    await client.db("sd_ui_e2e").collection("scholar_editorials").updateOne({ _id: new ObjectId(storyId) }, { $set: { status: "published", published_at: new Date("2026-11-01T00:00:00Z") } });
+  } finally {
+    await client.close();
+  }
+  return storyId;
+}
+
+/**
+ * The scholar with nothing published, for as long as `fn` runs. Earlier specs
+ * in a full run leave published stories on the one shared scholar, so this
+ * makes the state the check is about instead of assuming it, and puts every
+ * story back as it was afterwards (the specs run one at a time).
+ */
+async function withNothingPublished(fn) {
+  const { MongoClient } = require(require.resolve("mongodb", { paths: [require("path").resolve(__dirname, "..", "..", "sd-api")] }));
+  const client = await MongoClient.connect(state.mongoUri);
+  const stories = client.db("sd_ui_e2e").collection("scholar_editorials");
+  const published = await stories.find({ profile_id: "e2e-profile-0001", status: "published" }, { projection: { _id: 1 } }).toArray();
+  const ids = published.map((s) => s._id);
+  try {
+    if (ids.length) await stories.updateMany({ _id: { $in: ids } }, { $set: { status: "draft" } });
+    await fn();
+  } finally {
+    if (ids.length) await stories.updateMany({ _id: { $in: ids } }, { $set: { status: "published" } });
+    await client.close();
+  }
+}
+
+test.afterAll(async ({ playwright }) => {
+  if (!storyId) return;
+  const api = await playwright.request.newContext();
+  await api.fetch(`${state.apiUrl}/api/editorial-stories/${storyId}`, { method: "DELETE", headers: { cookie: `sd_session=${state.token}` } });
+  await api.dispose();
+});
+
+test("a scholar starts a circle, is told what the check found, and shares an open circle's code", async ({ page, context }) => {
   await page.setViewportSize({ width: 1366, height: 607 });
-  await page.goto("/");
-  await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Circles" }).click();
-  await expect(page).toHaveURL(/\/circles$/);
-  await expect(page.getByRole("heading", { name: "No circles yet" })).toBeVisible();
+
+  /* Nothing published yet: the one way on is to Stories, and no circle can be started empty-handed. */
+  await withNothingPublished(async () => {
+    await page.goto("/");
+    await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Circles" }).click();
+    await expect(page).toHaveURL(/\/circles$/);
+    await expect(page.getByRole("heading", { name: "First, publish a story" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Go to my stories" })).toHaveAttribute("href", "/editorial");
+    await expect(page.getByRole("button", { name: "Start a circle" })).toHaveCount(0);
+  });
+
+  /* With a story out, the empty state offers the one "Start a circle"; the header has none. */
+  await publishStory(page.request);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Start your first circle" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start a circle" })).toHaveCount(1);
 
   /* One that asks learners to write to the scholar: kept a draft, and why. */
   await page.getByRole("button", { name: "Start a circle" }).click();
   await page.getByLabel("Name").fill("Ask me anything");
   await page.getByLabel("What the circle reads about").fill("Read the stories and email me your questions about antennas.");
   await page.getByRole("button", { name: "Start the circle" }).click();
-  await expect(page.getByText("Draft: change the name or purpose")).toBeVisible();
-  await expect(page.getByText(/asks learners to contact you/)).toBeVisible();
+  const draft = page.locator(".cc-row").filter({ hasText: "Ask me anything" });
+  await expect(draft.getByText("Draft", { exact: true })).toBeVisible();
+  await expect(draft.getByText("Needs a change before classes can join")).toBeVisible();
+  await expect(draft.getByText(/asks learners to contact you/)).toBeVisible();
+  await expect(draft.getByRole("link", { name: "Change the wording" })).toBeVisible();
 
   /* One that is fine: open, with its code. */
   await page.getByRole("button", { name: "Start a circle" }).click();
@@ -118,8 +187,21 @@ test("a scholar starts a circle, is told what the check found, and shares an ope
   await page.getByLabel("What the circle reads about").fill("Classes read how antennas pick one voice out of a crowd.");
   await page.getByLabel("Ages 12–14").check();
   await page.getByRole("button", { name: "Start the circle" }).click();
-  await expect(page.locator(".cc-card").filter({ hasText: "Listening machines" }).getByText("Open")).toBeVisible();
-  await expect(page.locator(".cc-card").filter({ hasText: "Listening machines" })).toContainText("KQRT-4821");
+  const open = page.locator(".cc-row").filter({ hasText: "Listening machines" });
+  await expect(open.getByText("Open", { exact: true })).toBeVisible();
+  await expect(open).toContainText("KQRT-4821");
+  /* How many read it, on the list, without opening the circle; under the floor it says so, never a small number. */
+  await expect(open.locator(".cc-row__readers")).toHaveText("12 readers");
+  await expect(page.locator(".cc-row").filter({ hasText: "Ask me anything" }).locator(".cc-row__readers")).toHaveText("Under 5 readers so far");
+  /* The draft that needs a change is listed first. */
+  await expect(page.locator(".cc-row").first()).toContainText("Ask me anything");
+
+  /* Its code copies, and only then says so. */
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open.getByRole("button", { name: "Copy the class code for Listening machines" }).click();
+  await expect(open.getByRole("button", { name: "Copy the class code for Listening machines" })).toHaveText("Copied");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("KQRT-4821");
+  await page.screenshot({ path: test.info().outputPath("circles-1366x607.png"), fullPage: true });
 
   const made = seen.find((s) => s.method === "POST" && s.body.name === "Listening machines");
   expect(made.scholar).toBe("e2e-profile-0001");
@@ -139,6 +221,7 @@ test("a scholar starts a circle, is told what the check found, and shares an ope
 
 test("a scholar shows a circle in a community's portal, is told why another doesn't belong, and takes one out", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 607 });
+  await publishStory(page.request);
   const start = async (name, purpose) => {
     await page.goto("/circles");
     await page.getByRole("button", { name: "Start a circle" }).click();
