@@ -179,7 +179,8 @@ export default function ScholarProfileView({ data, corrections, privacy }) {
   const hasLinks = Boolean(featuredVideo) || socialProfiles.length > 0 || references.length > 0;
   const recordIsEmpty = !hasAbout && researchFocus.length === 0 && education.length === 0 && milestones.length === 0 && publications.length === 0 && !hasLinks;
 
-  const heading = [profile.title, profile.name].filter(Boolean).join(" ");
+  /* A record with no name says so, rather than a stand-in that reads like one (the API sends null). */
+  const heading = [profile.title, profile.name].filter(Boolean).join(" ") || "No name on your record yet";
   /* The headline once: the record's tagline when it has one, otherwise the facts are the headline. */
   const facts = [
     [HiOutlineBriefcase, profile.currentPosition],

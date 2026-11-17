@@ -72,7 +72,8 @@ export default function EvidenceRail({ storyId, version, status, slug, onGoTo })
         </div>
         <div className="ck-item">
           <span className={`st-dot ${limitations?.ok === true ? "is-ok" : limitations?.ok === false ? "is-warn" : "is-faint"}`} />
-          <span>{limitations?.sentence || "The paper states no limitations we could find."}</span>
+          {/* "None found" only once the check ran; before that, as with the numbers above, it says so. */}
+          <span>{limitations?.sentence || (limitations ? "The paper states no limitations we could find." : "Limitations not checked")}</span>
         </div>
         {budget && budget.ok !== null ? (
           <div className="ck-item">

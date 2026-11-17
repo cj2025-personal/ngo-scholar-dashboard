@@ -129,8 +129,8 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
   const featuredPublications = scholar?.publications?.featured_publications || [];
   const researchFocus = scholar?.background_and_work?.research_focus || [];
   const milestones = scholar?.milestones || [];
-  const displayName =
-    scholar?.name?.display || scholar?.name?.full || "Scholar profile";
+  /* Null when the record has none: a stand-in ("Scholar profile") read as the scholar's name. */
+  const displayName = scholar?.name?.display || scholar?.name?.full || null;
 
   return serializeMongoValue({
     profile: {
@@ -143,10 +143,8 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
         [scholar?.about?.current_position, scholar?.about?.institution]
           .filter(Boolean)
           .join(" | "),
-      summary:
-        scholar?.description?.summary ||
-        scholar?.about?.short_bio ||
-        "Scholar profile information is available for this account.",
+      /* Null when the record has none, never a sentence no record holds. */
+      summary: scholar?.description?.summary || scholar?.about?.short_bio || null,
       institution: scholar?.about?.institution || null,
       department: scholar?.about?.department || null,
       fieldOfStudy:

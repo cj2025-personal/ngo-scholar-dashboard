@@ -52,15 +52,16 @@ function buildSummaryCards(scholar, editorialStories) {
   ].filter(Boolean).length;
 
   return [
+    /* Said as what is counted: not every story is AI-written, nor every recording generated. */
     {
       title: "Editorial Pieces",
       value: String(editorialStories.length),
-      note: "AI-generated scholar editorial stories",
+      note: "Stories in your studio",
     },
     {
       title: "Podcast Episodes",
       value: String(podcasts.length),
-      note: "Generated scholar audio and published conversations",
+      note: "Recordings on your public record",
     },
     {
       title: "Profile Sections",
@@ -76,10 +77,8 @@ function buildEditorialStories(stories) {
     title: story.title || "Untitled editorial",
     status: story.status || "draft",
     meta: formatStoryMeta(story),
-    note:
-      story.excerpt ||
-      story.content?.replace(/\s+/g, " ").slice(0, 160) ||
-      "AI-generated scholar story record.",
+    /* The story's own words, or nothing: not every story is AI-written. */
+    note: story.excerpt || story.content?.replace(/\s+/g, " ").slice(0, 160) || null,
     slug: story.slug || null,
   }));
 }
@@ -112,13 +111,11 @@ function buildPodcastEpisodes(scholar) {
     }));
 }
 
+/* What the record says, and null where it says nothing: the pages decide how to show a gap
+   (the bar falls back to "Scholar"), so no stand-in reads as the scholar's own name or words. */
 function buildProfile(scholar) {
-  const displayName =
-    scholar?.name?.display || scholar?.name?.full || "Scholar profile";
-  const summary =
-    scholar?.description?.summary ||
-    scholar?.about?.short_bio ||
-    "Scholar profile information is available for this account.";
+  const displayName = scholar?.name?.display || scholar?.name?.full || null;
+  const summary = scholar?.description?.summary || scholar?.about?.short_bio || null;
 
   const tags = [
     scholar?.about?.current_position,
