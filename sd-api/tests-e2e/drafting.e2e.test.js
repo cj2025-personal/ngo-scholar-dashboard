@@ -1468,13 +1468,26 @@ test("the profile counts what the scholar has, never what they deleted, and its 
   const removed = await call("DELETE", `/api/editorial-stories/${made.data.story.id}`);
   assert.equal(removed.status, 200);
 
-  /* A conversation in the scholar's name, as the admin portal writes one. */
+  /* Conversations in the scholar's name, as the admin portal writes them: one released, mirrored onto
+     the record, and one still in review, which a scholar is not shown (podcasts.service RELEASED). */
   const seat = { entity_type: "scholar", scholar_id: PROFILE_ID, profile_id: PROFILE_ID, display_name: "Test Scholar" };
   const legend = { entity_type: "legend", scholar_id: "carter-g-woodson", profile_id: "carter-g-woodson", display_name: "Carter G. Woodson" };
-  await db.collection("scholar_dialogue_generation_jobs").insertOne({
-    _id: new ObjectId(), status: "review", selected_contemporary: seat, selected_legacy: legend,
-    generated_episode: { title: "What the record kept", turns: [] }, createdAt: new Date(), updatedAt: new Date(),
-  });
+  await db.collection("scholar_dialogue_generation_jobs").insertMany([
+    {
+      _id: new ObjectId(), status: "published", selected_contemporary: seat, selected_legacy: legend, mirrored_podcast: { podcast_id: "pod-record-kept" },
+      generated_episode: { title: "What the record kept", turns: [] }, createdAt: new Date(), updatedAt: new Date(),
+    },
+    {
+      _id: new ObjectId(), status: "review", selected_contemporary: seat, selected_legacy: legend,
+      generated_episode: { title: "Still in review", turns: [] }, createdAt: new Date(), updatedAt: new Date(),
+    },
+  ]);
+  /* The record's catalogue: the mirror of the released one, and a recording of its own. */
+  const before = await db.collection("scholars").findOne({ profile_id: PROFILE_ID }, { projection: { "links_and_media.podcasts": 1 } });
+  await db.collection("scholars").updateOne({ profile_id: PROFILE_ID }, { $set: { "links_and_media.podcasts": [
+    { podcast_id: "pod-record-kept", title: "What the record kept" },
+    { podcast_id: "pod-radio", title: "A radio interview" },
+  ] } });
 
   const [profile, list, podcasts, dashboard] = await Promise.all([
     call("GET", "/api/profile/me"),
@@ -1496,12 +1509,17 @@ test("the profile counts what the scholar has, never what they deleted, and its 
   });
   assert.ok(!profile.data.stories.some((s) => s.id === made.data.story.id || s.status === "deleted"), "a deleted story is listed");
 
-  /* Podcasts: the conversations the Podcasts page lists, plus the record's catalogue. */
+  /* Podcasts: the released conversations the Podcasts page lists, plus the record's other recordings. */
   const episodes = podcasts.data.episodes;
-  assert.ok(episodes.length >= 1);
+  assert.deepEqual(episodes.map((e) => e.title), ["What the record kept"]);
   assert.equal(profile.data.profile.counts.conversations.total, episodes.length);
-  assert.equal(profile.data.profile.counts.podcasts, episodes.length + (profile.data.podcasts || []).length);
   assert.ok(profile.data.conversations.some((c) => c.title === "What the record kept" && c.with === "Carter G. Woodson"));
+  assert.ok(!profile.data.conversations.some((c) => c.title === "Still in review"), "an unreleased conversation is on the profile");
+  /* The mirror of the released episode is not counted twice. */
+  assert.deepEqual((profile.data.podcasts || []).map((p) => p.title), ["A radio interview"]);
+  assert.equal(profile.data.profile.counts.podcasts, 2);
+
+  await db.collection("scholars").updateOne({ profile_id: PROFILE_ID }, before?.links_and_media ? { $set: { "links_and_media.podcasts": before.links_and_media.podcasts } } : { $unset: { "links_and_media.podcasts": "" } });
 
   /* One scholar, one set of initials, whichever page asks. */
   assert.equal(profile.data.profile.initials, "T");

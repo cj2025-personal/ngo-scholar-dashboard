@@ -117,9 +117,15 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
   /* Keyed the way the scholar record is found: the profile id, or the
      scholar id for an account that carries only that. */
   const aiTerms = await getAiTerms({ profileId: profileId || scholarId });
-  const podcasts = Array.isArray(scholar?.links_and_media?.podcasts)
-    ? scholar.links_and_media.podcasts
-    : [];
+  /* The record's recordings as the Podcasts page lists them under "Also on
+     your record": less the mirrors of the released episodes above
+     (links_and_media.podcasts[].podcast_id = an episode's recordId), so a
+     released episode is counted once, and less any entry with neither a
+     title nor a link, which has nothing to show (dashboard.service). */
+  const mirrored = new Set(conversations.map((c) => c.recordId).filter(Boolean));
+  const podcasts = (Array.isArray(scholar?.links_and_media?.podcasts) ? scholar.links_and_media.podcasts : []).filter(
+    (p) => (p?.title || p?.asset?.url) && !(p?.podcast_id && mirrored.has(p.podcast_id)),
+  );
   const featuredPublications = scholar?.publications?.featured_publications || [];
   const researchFocus = scholar?.background_and_work?.research_focus || [];
   const milestones = scholar?.milestones || [];
@@ -160,12 +166,12 @@ async function getScholarProfileData({ scholarId, profileId, user }) {
         publications:
           scholar?.publications?.total_publications_count ||
           featuredPublications.length,
-        /* What the Podcasts page shows: the conversations, then the catalogue. */
+        /* What the Podcasts page shows: the released conversations, then the rest of the catalogue. */
         podcasts: conversations.length + podcasts.length,
+        /* Released only (podcasts.service RELEASED), so there is no "pending" to count. */
         conversations: {
           total: conversations.length,
           live: conversations.filter((c) => c.state === "live").length,
-          pending: conversations.filter((c) => c.state === "pending").length,
         },
       },
     },

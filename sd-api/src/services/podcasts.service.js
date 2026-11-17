@@ -17,7 +17,9 @@
  * conversation in their name exists at all before it ships.
  *
  * This reads the job collection directly and answers the questions a person
- * named in an episode would actually ask.
+ * named in an episode would actually ask. Since 2026-11-16 it reads released
+ * episodes only (RELEASED, below): what is made before release is the
+ * company's work, not the scholar's.
  *
  * ── Read-only, and structurally so ─────────────────────────────────────────
  * Every collection here belongs to ngo-admin-backend. This service reads them
@@ -103,7 +105,20 @@ const LIST_PROJECTION = {
   "voice_draft.asset": 1,
   "review.published_at": 1,
   "validation.ok": 1,
+  "mirrored_podcast.podcast_id": 1,
 };
+
+/**
+ * Only what has been released (decided 2026-11-16).
+ *
+ * Episodes are the company's work: pairing, writing, voicing and the decision
+ * to release are the editors', and a scholar has no part in an episode before
+ * it is out. So a scholar sees an episode once it is released, and nothing of
+ * one queued, being made, in review, approved, rejected or failed. The rule is
+ * in the query, not the page, so an unreleased episode never leaves this
+ * service, and its id is a 404 like any other that is not theirs.
+ */
+const RELEASED = { status: "published" };
 
 function personOf(snapshot) {
   if (!snapshot) return null;
@@ -126,6 +141,12 @@ function audioOf(job) {
        signed off. Saying so is the difference between "listen to the episode"
        and "hear how it currently sounds". */
     isDraft: !job.attached_asset && job.voice_draft?.status !== "approved",
+    /* Voices made by a model, not recorded by the people named. The published
+       asset is either the approved voice draft promoted as it is (same URL) or
+       a replacement an editor attached, which may be a real recording; only the
+       first is known to be synthetic. A listener hears these as the scholar, so
+       the page says so wherever the audio plays. */
+    synthetic: !job.attached_asset || (Boolean(job.voice_draft?.asset?.url) && job.attached_asset.url === job.voice_draft.asset.url),
   };
 }
 
@@ -209,15 +230,17 @@ function presentEpisode(job, profileId = null) {
     audio: audioOf(job),
     publishedAt: job.review?.published_at || null,
     updatedAt: job.updatedAt || job.createdAt || null,
+    /* The entry this episode was mirrored to on the public record
+       (links_and_media.podcasts[].podcast_id), so a page listing both can
+       say it once. */
+    recordId: job.mirrored_podcast?.podcast_id || null,
   };
 }
 
 /**
- * Every dialogue this scholar is named in, newest first.
- *
- * Includes the unpublished ones, which is the point: an episode that has not
- * shipped is the only one a scholar can still do anything about, and it was
- * the one they could not see.
+ * Every released dialogue this scholar is named in, newest first. See
+ * RELEASED: until 2026-11-16 this included unpublished ones, for a review
+ * before release that scholars do not take part in.
  */
 function seatFilter(profileId) {
   const id = String(profileId);
@@ -238,7 +261,7 @@ async function listEpisodesForScholar(profileId, { limit = 50 } = {}) {
   const db = await getDb();
   const jobs = await db
     .collection(JOBS)
-    .find(seatFilter(profileId), {
+    .find({ ...RELEASED, ...seatFilter(profileId) }, {
       projection: LIST_PROJECTION,
       sort: { createdAt: -1 },
       limit: Math.min(Number(limit) || 50, 100),
@@ -263,7 +286,7 @@ async function getEpisodeForScholar(profileId, episodeId) {
   }
 
   const db = await getDb();
-  const job = await db.collection(JOBS).findOne({ _id, ...seatFilter(profileId) });
+  const job = await db.collection(JOBS).findOne({ _id, ...RELEASED, ...seatFilter(profileId) });
   if (!job) return null;
 
   const myRole = roleOf(job, profileId);
@@ -297,4 +320,4 @@ async function getEpisodeForScholar(profileId, episodeId) {
 
 /* `presentEpisode` is exported for tests: it is the contract this service
    offers the portal, and it is worth pinning without a database. */
-module.exports = { listEpisodesForScholar, getEpisodeForScholar, presentEpisode, STATE };
+module.exports = { listEpisodesForScholar, getEpisodeForScholar, presentEpisode, STATE, RELEASED };

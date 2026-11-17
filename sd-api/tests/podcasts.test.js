@@ -107,6 +107,16 @@ test("a machine reading that no editor approved is labelled a draft", () => {
   assert.equal(attached.audio.isDraft, false);
 });
 
+test("audio is called synthetic when it is the voice draft, promoted or not, and not when an editor attached another", () => {
+  const draft = { status: "approved", asset: { url: "https://x/voiced.mp3", duration_seconds: 610 } };
+  assert.equal(presentEpisode(job({ voice_draft: { ...draft, status: "review" } })).audio.synthetic, true);
+  /* Promoted as it is: the published asset is the same file. */
+  assert.equal(presentEpisode(job({ voice_draft: draft, attached_asset: { url: "https://x/voiced.mp3", duration_seconds: 610 } })).audio.synthetic, true);
+  /* A replacement, which may be a real recording: not claimed either way. */
+  assert.equal(presentEpisode(job({ voice_draft: draft, attached_asset: { url: "https://x/studio-take.mp3", duration_seconds: 600 } })).audio.synthetic, false);
+  assert.equal(presentEpisode(job({ attached_asset: { url: "https://x/final.mp3", duration_seconds: 600 } })).audio.synthetic, false);
+});
+
 test("no audio is null, never a broken player", () => {
   assert.equal(presentEpisode(job()).audio, null);
   /* A voice draft that failed carries a status but no asset. */

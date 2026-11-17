@@ -23,7 +23,7 @@ function requireProfile(req) {
   return profileId;
 }
 
-/** Every episode, published or not, newest first. */
+/** Every released episode they are in, newest first (podcasts.service RELEASED). */
 router.get(
   "/",
   requireAuth,

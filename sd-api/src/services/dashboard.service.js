@@ -6,9 +6,10 @@ const { ApiError } = require("../lib/api-error");
 const { serializeMongoValue } = require("../lib/serialize");
 const { scholarInitials } = require("../lib/byline");
 
+/* A recording's length as words, or null when the record does not give one (never a stand-in word). */
 function formatDuration(seconds) {
   if (!seconds || Number.isNaN(Number(seconds))) {
-    return "Audio";
+    return null;
   }
 
   const totalSeconds = Math.round(Number(seconds));
@@ -83,22 +84,32 @@ function buildEditorialStories(stories) {
   }));
 }
 
+/**
+ * The recordings on the scholar's public record (links_and_media.podcasts).
+ *
+ * What the record does not say is null, never a stand-in: these used to
+ * read "Scholar podcast episode", "Generated scholar podcast episode." and
+ * "available" when a field was missing, which put words on the page that no
+ * record held (and called a real interview "generated"). The pages leave out
+ * what is null. An entry with neither a title nor a link has nothing to show
+ * and is dropped.
+ */
 function buildPodcastEpisodes(scholar) {
   const podcasts = scholar?.links_and_media?.podcasts || [];
 
-  return podcasts.slice(0, 6).map((podcast) => ({
-    title: podcast.title,
-    length: formatDuration(
-      podcast.duration_seconds || podcast?.asset?.duration_seconds,
-    ),
-    type: [podcast.media_type, podcast.source_kind].filter(Boolean).join(" - ") || "Scholar podcast episode",
-    summary:
-      podcast.transcript_excerpt ||
-      podcast.description ||
-      "Generated scholar podcast episode.",
-    state: podcast.status || "available",
-    audioUrl: podcast?.asset?.url || null,
-  }));
+  return podcasts
+    .filter((podcast) => podcast?.title || podcast?.asset?.url)
+    .slice(0, 6)
+    .map((podcast) => ({
+      /* Matches a released episode's recordId (podcasts.service) when it was mirrored from one. */
+      podcastId: podcast.podcast_id || null,
+      title: podcast.title || null,
+      length: formatDuration(podcast.duration_seconds || podcast?.asset?.duration_seconds),
+      type: [podcast.media_type, podcast.source_kind].filter(Boolean).join(" · ") || null,
+      summary: podcast.transcript_excerpt || podcast.description || null,
+      state: podcast.status || null,
+      audioUrl: podcast?.asset?.url || null,
+    }));
 }
 
 function buildProfile(scholar) {
@@ -237,4 +248,6 @@ async function getDashboardData({ scholarId, profileId, user = null }) {
 
 module.exports = {
   getDashboardData,
+  /* Exported for tests: what the record's recordings say, and that it never says more. */
+  buildPodcastEpisodes,
 };
