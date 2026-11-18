@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 
+import AuthShell from "@/components/auth/AuthShell";
 import LoginForm from "@/components/auth/LoginForm";
 import { getServerSession } from "@/lib/auth";
+import { BRAND_NAME, CONTACT_EMAIL, PRODUCT_NAME, PUBLIC_SITE_URL } from "@/lib/brand";
 
 export const metadata = {
-  title: "Scholar Login",
-  description: "Sign in to the Scholar Dashboard",
+  title: `Sign in · ${BRAND_NAME} ${PRODUCT_NAME}`,
+  description: `Sign in to ${PRODUCT_NAME}`,
 };
 
 export default async function LoginPage({ searchParams }) {
@@ -13,7 +15,8 @@ export default async function LoginPage({ searchParams }) {
   const resolvedSearchParams = await searchParams;
   const nextPath =
     typeof resolvedSearchParams?.next === "string" &&
-    resolvedSearchParams.next.startsWith("/")
+    resolvedSearchParams.next.startsWith("/") &&
+    !resolvedSearchParams.next.startsWith("//")
       ? resolvedSearchParams.next
       : "/";
 
@@ -21,20 +24,22 @@ export default async function LoginPage({ searchParams }) {
     redirect(nextPath);
   }
 
+  /* The public site's researcher sign-in, word for word: a scholar meets the
+     same page whichever door they use. */
   return (
-    <main className="auth-shell">
-      <section className="auth-card">
-        <div className="auth-copy">
-          <span className="auth-kicker">Proj Arch</span>
-          <h1>Scholar sign in</h1>
-          <p>
-            Use your scholar credentials to access the dashboard. Authentication
-            is handled through a secure cookie-backed session.
-          </p>
-        </div>
-
-        <LoginForm nextPath={nextPath} />
-      </section>
-    </main>
+    <AuthShell
+      title={PRODUCT_NAME}
+      description="Sign in with the scholar account your invitation set up."
+      footnote={
+        <>
+          Not a researcher? Learners, families and educators{" "}
+          <a href={`${PUBLIC_SITE_URL}/auth/login`}>sign in here</a>.
+          <br />
+          Forgot your password? Write to {CONTACT_EMAIL}.
+        </>
+      }
+    >
+      <LoginForm nextPath={nextPath} />
+    </AuthShell>
   );
 }

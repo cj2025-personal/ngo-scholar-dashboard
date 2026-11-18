@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { FiAlertCircle, FiCheckCircle, FiLock } from "react-icons/fi";
 
 const AUTH_API_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:4000";
@@ -25,10 +26,12 @@ const RULES = [
   { label: "a special character", test: (v) => /[^A-Za-z0-9]/.test(v) },
 ];
 
-export default function ClaimForm({ token, scholarName }) {
+/** Setting the password of an invited scholar's account, in the sign-in shell's form. */
+export default function ClaimForm({ token }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -90,78 +93,102 @@ export default function ClaimForm({ token, scholarName }) {
 
   if (done) {
     return (
-      <div className="auth-card auth-card--single">
-        <h1 className="auth-card__title">Your account is ready</h1>
-        <p className="auth-card__lede">
-          Sign in with the password you just chose.
-        </p>
+      <div className="authshell-banner is-success" role="status">
+        <FiCheckCircle size={18} aria-hidden="true" className="authshell-banner-icon" />
+        <div>
+          <h2 className="authshell-done-title">Your account is ready</h2>
+          <div className="authshell-banner-detail">Sign in with the password you just chose.</div>
+        </div>
       </div>
     );
   }
 
   return (
-    <form className="auth-card auth-card--single" onSubmit={handleSubmit} noValidate>
-      <h1 className="auth-card__title">Set your password</h1>
-      <p className="auth-card__lede">
-        You&rsquo;re setting up the Proj Arch account for{" "}
-        <strong>{scholarName || "your scholar profile"}</strong>.
-      </p>
+    <form onSubmit={handleSubmit} noValidate>
+      {error ? (
+        <div className="authshell-banner is-error" role="alert">
+          <FiAlertCircle size={18} aria-hidden="true" className="authshell-banner-icon" />
+          <div>
+            <strong>We couldn’t set up your account.</strong>
+            <div className="authshell-banner-detail">{error}</div>
+          </div>
+        </div>
+      ) : null}
 
-      <label className="auth-field">
-        <span className="auth-field__label">Password</span>
-        <input
-          type="password"
-          name="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          disabled={submitting}
-          required
-        />
-      </label>
+      <div className="authshell-field">
+        <label htmlFor="claim-password" className="authshell-label">
+          Password
+        </label>
+        <div className="authshell-input-wrap">
+          <FiLock size={16} className="authshell-input-icon" aria-hidden="true" />
+          <input
+            id="claim-password"
+            type={showPassword ? "text" : "password"}
+            name="password"
+            autoComplete="new-password"
+            className="authshell-input authshell-input-with-icon authshell-input-with-trailing"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={submitting}
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            className="authshell-input-trailing"
+            aria-pressed={showPassword}
+            aria-controls="claim-password claim-confirm"
+          >
+            {showPassword ? "Hide" : "Show"}
+          </button>
+        </div>
+      </div>
 
-      <ul className="auth-rules" aria-live="polite">
+      <ul className="authshell-rules" aria-live="polite">
         {RULES.map((rule) => {
           const met = rule.test(password);
           return (
-            <li
-              key={rule.label}
-              className={met ? "auth-rules__item is-met" : "auth-rules__item"}
-            >
+            <li key={rule.label} className={met ? "is-met" : undefined}>
               <span aria-hidden="true">{met ? "✓" : "•"}</span> {rule.label}
             </li>
           );
         })}
       </ul>
 
-      <label className="auth-field">
-        <span className="auth-field__label">Confirm password</span>
-        <input
-          type="password"
-          name="confirmPassword"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={(event) => setConfirm(event.target.value)}
-          disabled={submitting}
-          required
-        />
-      </label>
+      <div className="authshell-field">
+        <label htmlFor="claim-confirm" className="authshell-label">
+          Confirm password
+        </label>
+        <div className="authshell-input-wrap">
+          <FiLock size={16} className="authshell-input-icon" aria-hidden="true" />
+          <input
+            id="claim-confirm"
+            type={showPassword ? "text" : "password"}
+            name="confirmPassword"
+            autoComplete="new-password"
+            className="authshell-input authshell-input-with-icon"
+            value={confirm}
+            onChange={(event) => setConfirm(event.target.value)}
+            disabled={submitting}
+            required
+          />
+        </div>
+        {mismatch ? (
+          <p className="authshell-error" role="alert">
+            The two passwords don&rsquo;t match.
+          </p>
+        ) : null}
+      </div>
 
-      {mismatch ? (
-        <p className="auth-error" role="alert">
-          The two passwords don&rsquo;t match.
-        </p>
-      ) : null}
-
-      {error ? (
-        <p className="auth-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      <button type="submit" className="auth-submit" disabled={!ready || submitting || isPending}>
-        {submitting ? "Setting up…" : "Create my account"}
-      </button>
+      <div className="authshell-actions is-stacked">
+        <button
+          type="submit"
+          className="authshell-btn authshell-btn-primary is-block"
+          disabled={!ready || submitting || isPending}
+        >
+          {submitting ? "Setting up…" : "Create my account"}
+        </button>
+      </div>
     </form>
   );
 }

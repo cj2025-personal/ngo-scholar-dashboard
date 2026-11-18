@@ -1,0 +1,1125 @@
+/* ──────────────────────────────────────────────
+   AuthShell — the sign-in and sign-up layout
+   ──────────────────────────────────────────────
+   Built from the home page's parts: the wall of legends from its hero, its
+   headline, Newsreader for headings and Figtree for everything else, its navy
+   and red, 48px controls. The shell serves sign-in, the three sign-up pages,
+   password reset, email verification and onboarding, so these primitives are
+   shared by all of them.
+
+   Copied from the public site (ngo-web frontend src/components/auth/
+   AuthShell.css) so the studio's sign-in and invitation pages are the same
+   place as the site's researcher sign-in. Change both together. Here only the
+   two font lines differ: the studio's own interface face is Inter, so the
+   shell names Figtree and Newsreader directly (src/lib/publicFonts.js). */
+
+.authshell {
+  --auth-navy: #102a56;
+  --auth-night: #0b1f44;
+  --auth-ink: #475569;
+  --auth-muted: #64748b;
+  --auth-red: #b22234;
+  --auth-red-on-dark: #ff5a66;
+  --auth-rule: #e3e8f2;
+  --auth-edge: #cbd5e1;
+  --auth-pale: #eef3fb;
+  --auth-font: var(--font-figtree), Figtree, system-ui, sans-serif;
+  --auth-display: var(--font-newsreader), Newsreader, Georgia, serif;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(360px, 0.85fr) 1.15fr;
+  background: #ffffff;
+  font-family: var(--auth-font);
+}
+
+/* Left brand panel ============================== */
+
+.authshell-brand {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 36px 56px 32px;
+  background: var(--auth-night);
+  color: #ffffff;
+}
+
+/* The home hero's wall, bleeding past the panel's edges so it reads as a wall
+   behind the panel rather than a grid placed inside it. */
+.authshell-wall {
+  position: absolute;
+  inset: -40px -40px 0 -30px;
+  z-index: -2;
+}
+
+.authshell-wall .mission-wall {
+  height: 100%;
+  grid-template-columns: repeat(7, 1fr);
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.authshell-wall .mission-portrait {
+  opacity: 0.92;
+}
+
+/* Navy at the top for the lockup, clear through the middle, and solid navy
+   from just past half way for the line and the links. Pointer events pass
+   through, so a tile still shows its name on hover. */
+.authshell-brand::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    var(--auth-night) 0%,
+    rgba(11, 31, 68, 0.88) 11%,
+    rgba(11, 31, 68, 0) 24%,
+    rgba(11, 31, 68, 0) 36%,
+    rgba(11, 31, 68, 0.86) 56%,
+    var(--auth-night) 70%
+  );
+}
+
+.authshell-brand-logo {
+  display: inline-flex;
+  align-self: flex-start;
+  position: relative;
+  z-index: 1;
+}
+
+.authshell-brand-logo img {
+  display: block;
+  width: 133px;
+  height: 40px;
+}
+
+.authshell-brand-hero {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  max-width: 460px;
+}
+
+.authshell-brand-tagline {
+  margin: 0 0 16px;
+  font-family: var(--auth-display);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 46px;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+.authshell-brand-tagline em {
+  color: var(--auth-red-on-dark);
+  font: inherit;
+  font-style: normal;
+  letter-spacing: inherit;
+}
+
+.authshell-brand-sub {
+  margin: 0;
+  font-size: 16px;
+  line-height: 26px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.authshell-brand-bullets {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.authshell-brand-bullets li {
+  position: relative;
+  padding-left: 22px;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.authshell-brand-bullets li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--auth-red-on-dark);
+  font-weight: 700;
+}
+
+.authshell-brand-foot,
+.authshell-panel-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* index.css sets 16px on every span and link, so these ask for the row's. */
+.authshell-brand-foot span,
+.authshell-panel-foot span,
+.authshell-brand-foot a,
+.authshell-panel-foot a {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* Clears the fixed cookie-preferences button pinned to the viewport's
+   bottom-left, which otherwise sits on top of the copyright. */
+.authshell-brand-foot {
+  position: relative;
+  z-index: 1;
+  margin-top: 36px;
+  padding-left: 32px;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.authshell-brand-foot a {
+  color: rgba(255, 255, 255, 0.78);
+  text-decoration: none;
+}
+
+.authshell-brand-foot a:hover {
+  color: #ffffff;
+}
+
+/* Only when the layout stacks; on wide screens the panel carries these. */
+.authshell-panel-foot {
+  display: none;
+}
+
+/* Right form panel ============================== */
+
+.authshell-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 72px 56px 28px;
+  overflow-y: auto;
+}
+
+/* The secondary link ("Have an account? Log in") has a row of its own above
+   the card, in the flow, so a long form on a short screen cannot run under it
+   and a long label simply wraps. */
+.authshell-panel-head {
+  align-self: stretch;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 24px;
+  text-align: right;
+}
+
+.authshell-panel-secondary {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--auth-navy);
+  text-decoration: underline;
+  text-decoration-color: var(--auth-edge);
+  text-underline-offset: 3px;
+}
+
+.authshell-panel-secondary:hover {
+  text-decoration-color: var(--auth-navy);
+}
+
+/* Centred in its column: the auto margins split the free space above and
+   below the card, and a long form simply scrolls inside the column. */
+.authshell-card {
+  width: 100%;
+  max-width: 400px;
+  margin-top: auto;
+  background: #ffffff;
+}
+
+/* Step indicator: one equal column per step, its number above its name, and
+   a line from each number to the next. Columns let every name show at every
+   width, wrapping in the narrowest, where a single row would overflow the
+   card. */
+.authshell-steps {
+  --authshell-step-dot: 24px;
+  --authshell-step-line-gap: 6px;
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  display: flex;
+  align-items: flex-start;
+}
+
+.authshell-step {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* From the previous number's right edge to this one's left, each a gap
+   short. The columns are equal, so the previous number's center is half a
+   column to the left. */
+.authshell-step + .authshell-step::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--authshell-step-dot) / 2);
+  left: calc(-50% + var(--authshell-step-dot) / 2 + var(--authshell-step-line-gap));
+  right: calc(50% + var(--authshell-step-dot) / 2 + var(--authshell-step-line-gap));
+  height: 1px;
+  background: var(--auth-rule);
+}
+
+.authshell-step.is-done + .authshell-step::before,
+.authshell-step.is-active + .authshell-step::before {
+  background: var(--auth-navy);
+  opacity: 0.35;
+}
+
+.authshell-step-dot {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: var(--authshell-step-dot);
+  height: var(--authshell-step-dot);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  background: #ffffff;
+  color: var(--auth-muted);
+  border: 1px solid var(--auth-edge);
+}
+
+.authshell-step.is-active .authshell-step-dot {
+  background: var(--auth-navy);
+  color: #ffffff;
+  border-color: var(--auth-navy);
+}
+
+.authshell-step.is-done .authshell-step-dot {
+  background: var(--auth-pale);
+  color: var(--auth-navy);
+  border-color: var(--auth-pale);
+}
+
+.authshell-step.is-active,
+.authshell-step.is-done {
+  color: var(--auth-navy);
+}
+
+.authshell-step-label {
+  max-width: 100%;
+  padding: 0 2px;
+  font-size: inherit;
+  line-height: inherit;
+  overflow-wrap: anywhere;
+}
+
+/* Headings */
+.authshell-eyebrow {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--auth-red);
+}
+
+.authshell-title {
+  margin: 0;
+  font-family: var(--auth-display);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 46px;
+  letter-spacing: -0.01em;
+  color: var(--auth-navy);
+}
+
+/* Accent text inside the title matches the title in everything but colour. */
+.authshell-title span,
+.authshell-title em,
+.authshell-title strong,
+.authshell-accent {
+  color: var(--auth-red);
+  font: inherit;
+  font-style: normal;
+  letter-spacing: inherit;
+}
+
+.authshell-desc {
+  margin: 10px 0 0;
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--auth-ink);
+}
+
+.authshell-form {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Pages pass a <form> as the single child, and the gap above does not reach
+   the fields inside it. Give the form the same rhythm. */
+.authshell-form > form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.authshell-footnote {
+  width: 100%;
+  max-width: 400px;
+  margin-top: auto;
+  padding-top: 32px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--auth-muted);
+  text-align: center;
+}
+
+.authshell-footnote a,
+.authshell-switch a,
+.authshell-checkrow a {
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--auth-navy);
+  text-decoration: underline;
+  text-decoration-color: var(--auth-edge);
+  text-underline-offset: 3px;
+}
+
+.authshell-footnote a:hover,
+.authshell-switch a:hover,
+.authshell-checkrow a:hover {
+  text-decoration-color: var(--auth-navy);
+}
+
+/* Shared form primitives ======================== */
+
+.authshell-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.authshell-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.authshell-label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--auth-navy);
+}
+
+.authshell-input,
+.authshell-select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--auth-edge);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--auth-navy);
+  font-family: var(--auth-font);
+  font-size: 15px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.authshell-input::placeholder {
+  color: #94a3b8;
+}
+
+.authshell-input:focus,
+.authshell-select:focus {
+  outline: none;
+  border-color: var(--auth-navy);
+  box-shadow: 0 0 0 3px rgba(16, 42, 86, 0.14);
+}
+
+.authshell-input.has-error,
+.authshell-select.has-error {
+  border-color: var(--auth-red);
+  box-shadow: 0 0 0 3px rgba(178, 34, 52, 0.1);
+}
+
+/* Input with leading icon / trailing button */
+.authshell-input-wrap {
+  position: relative;
+}
+
+.authshell-input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--auth-muted);
+  pointer-events: none;
+}
+
+.authshell-input-with-icon {
+  padding-left: 42px;
+}
+
+.authshell-input-with-trailing {
+  padding-right: 72px;
+}
+
+/* A real button, in the keyboard order, that says what it does. */
+.authshell-input-trailing {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--auth-ink);
+  font-family: var(--auth-font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.authshell-input-trailing:hover {
+  background: var(--auth-pale);
+  color: var(--auth-navy);
+}
+
+.authshell-input-trailing:focus-visible {
+  outline: 2px solid var(--auth-navy);
+  outline-offset: 1px;
+}
+
+.authshell-help,
+.authshell-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.authshell-help {
+  color: var(--auth-muted);
+}
+
+.authshell-error {
+  color: var(--auth-red);
+  font-weight: 500;
+}
+
+.authshell-checkrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--auth-navy);
+  cursor: pointer;
+}
+
+.authshell-checkrow input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--auth-navy);
+}
+
+.authshell-checkrow > span {
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: 500;
+}
+
+.authshell-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.authshell-actions.is-stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Label with a trailing utility link (e.g. "Forgot password?"). */
+.authshell-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.authshell-label-link {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--auth-navy);
+  text-decoration: underline;
+  text-decoration-color: var(--auth-edge);
+  text-underline-offset: 3px;
+}
+
+.authshell-label-link:hover {
+  text-decoration-color: var(--auth-navy);
+}
+
+.authshell-banner-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* "or", between the submit button and the way to create an account. */
+.authshell-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--auth-muted);
+}
+
+.authshell-or::before,
+.authshell-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--auth-rule);
+}
+
+/* "New to Proj Arch? Create an account" under the form. */
+.authshell-switch {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--auth-ink);
+}
+
+.authshell-btn {
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 0 22px;
+  border: none;
+  border-radius: 10px;
+  font-family: var(--auth-font);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.authshell-btn.is-block {
+  width: 100%;
+}
+
+/* Navy, the one primary style across the platform. */
+.authshell-btn-primary {
+  background: var(--auth-navy);
+  color: #ffffff;
+}
+
+.authshell-btn-primary:hover:not(:disabled) {
+  background: var(--auth-night);
+  transform: translateY(-1px);
+}
+
+.authshell-btn-primary:disabled {
+  background: #3b5584;
+  color: #ffffff;
+  cursor: progress;
+}
+
+.authshell-btn-ghost {
+  background: transparent;
+  color: var(--auth-ink);
+}
+
+.authshell-btn-ghost:hover {
+  color: var(--auth-navy);
+  background: var(--auth-pale);
+}
+
+.authshell-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.authshell-banner div,
+.authshell-banner strong,
+.authshell-banner a {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.authshell-banner a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.authshell-banner.is-error {
+  background: #fdf2f3;
+  border: 1px solid #f3c4ca;
+  color: #7f1d2b;
+}
+
+.authshell-banner.is-info {
+  background: var(--auth-pale);
+  border: 1px solid #d6e0f0;
+  color: var(--auth-navy);
+}
+
+/* A sign-up for an address that is waiting for its code: the way to finish. */
+.authshell-pending .authshell-pending-action {
+  display: flex;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.authshell-pending .authshell-error {
+  display: block;
+  margin-top: 8px;
+}
+
+.authshell-banner.is-success {
+  background: rgba(22, 101, 52, 0.06);
+  border: 1px solid rgba(22, 101, 52, 0.2);
+  color: #14532d;
+}
+
+/* Responsive ===================================== */
+
+/* --- Split layout: desktops, and tablets in landscape ------------------ */
+
+/* The shell owns exactly one viewport, so the page never scrolls. If a form
+   is ever taller than the space it scrolls inside its own column rather than
+   moving the brand panel off screen. Below this width the layout stacks and
+   normal page scrolling takes over. */
+@media (min-width: 961px) {
+  .authshell {
+    height: 100dvh;
+  }
+
+  /* The link's own row fills the top of the panel, so it needs less padding
+     above it. */
+  .authshell-panel.has-head {
+    padding-top: 28px;
+  }
+}
+
+/* Short viewports (small laptops with a deep browser chrome): trim the type
+   and the space above the form so the whole form still clears the fold. */
+@media (min-width: 961px) and (max-height: 700px) {
+  .authshell-panel {
+    padding-top: 56px;
+  }
+
+  .authshell-title,
+  .authshell-brand-tagline {
+    font-size: 34px;
+    line-height: 40px;
+  }
+
+  .authshell-form,
+  .authshell-form > form {
+    gap: 16px;
+  }
+
+  .authshell-form {
+    margin-top: 22px;
+  }
+}
+
+/* --- Stacked layout: tablets and phones -------------------------------- */
+
+@media (max-width: 960px) {
+  .authshell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  /* The wall becomes a band across the top with the lockup on it, so the
+     faces still greet the reader and the form starts on the first screen. */
+  .authshell-brand {
+    height: 200px;
+    padding: 18px 24px;
+  }
+
+  .authshell-brand::after {
+    background: linear-gradient(
+      180deg,
+      var(--auth-night) 0%,
+      rgba(11, 31, 68, 0.85) 26%,
+      rgba(11, 31, 68, 0.1) 48%,
+      rgba(11, 31, 68, 0.3) 76%,
+      var(--auth-night) 100%
+    );
+  }
+
+  .authshell-wall {
+    inset: -20px -30px auto -20px;
+    height: 260px;
+  }
+
+  .authshell-wall .mission-wall {
+    height: 100%;
+    grid-template-columns: repeat(6, 1fr);
+  }
+
+  /* The home page drops to four columns at this width; the band keeps six
+     smaller tiles, which reads as a wall rather than as four photographs. */
+  .authshell-wall .mission-col:nth-child(n + 5) {
+    display: block;
+  }
+
+  .authshell-wall .mission-col:nth-child(7) {
+    display: none;
+  }
+
+  .authshell-brand-logo img {
+    width: 99px;
+    height: 30px;
+  }
+
+  .authshell-brand-hero,
+  .authshell-brand-foot {
+    display: none;
+  }
+
+  /* env() insets keep the form clear of notches, rounded corners and the
+     home indicator; they resolve to 0 everywhere else. */
+  .authshell-panel {
+    padding: 28px max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left));
+    overflow: visible;
+  }
+
+  .authshell-panel-head {
+    margin-bottom: 16px;
+  }
+
+  .authshell-card {
+    margin-top: 0;
+  }
+
+  .authshell-footnote {
+    margin-top: 0;
+    padding-top: 24px;
+  }
+
+  .authshell-panel-foot {
+    display: flex;
+    align-self: stretch;
+    margin: 28px calc(-1 * max(24px, env(safe-area-inset-left))) 0;
+    padding: 22px max(24px, env(safe-area-inset-left)) max(22px, env(safe-area-inset-bottom));
+    background: var(--auth-night);
+    color: rgba(255, 255, 255, 0.56);
+  }
+
+  .authshell-panel-foot a {
+    color: rgba(255, 255, 255, 0.78);
+    text-decoration: none;
+  }
+
+  .authshell-title {
+    font-size: 36px;
+    line-height: 42px;
+  }
+}
+
+/* Tablet portrait: the card centred rather than filling the width. */
+@media (min-width: 601px) and (max-width: 960px) {
+  .authshell-panel {
+    padding-top: 48px;
+  }
+}
+
+/* Phones in landscape: almost no vertical room, so spend none of it. */
+@media (max-width: 960px) and (max-height: 520px) {
+  .authshell-brand {
+    height: 120px;
+  }
+
+  .authshell-title {
+    font-size: 28px;
+    line-height: 34px;
+  }
+
+  .authshell-desc {
+    font-size: 14px;
+    line-height: 22px;
+  }
+}
+
+@media (max-width: 480px) {
+  .authshell-field-row {
+    grid-template-columns: 1fr;
+  }
+
+  /* Narrow columns: smaller names, still all of them. */
+  .authshell-step {
+    font-size: 11px;
+    line-height: 14px;
+  }
+}
+
+/* Smallest handsets (iPhone SE and 360px Android). */
+@media (max-width: 380px) {
+  .authshell-panel {
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-left: max(16px, env(safe-area-inset-left));
+  }
+
+  .authshell-title {
+    font-size: 32px;
+    line-height: 38px;
+  }
+}
+
+/* --- Touch input ------------------------------------------------------- */
+
+/* Anything driven by a finger rather than a cursor, at any screen size.
+   16px is the threshold below which iOS Safari zooms the page on focus, and
+   44px is the smallest target Apple and WCAG 2.5.8 both call comfortable. */
+@media (pointer: coarse) {
+  .authshell-input,
+  .authshell-select {
+    font-size: 16px;
+  }
+
+  .authshell-input-trailing {
+    min-width: 44px;
+    height: 40px;
+  }
+
+  .authshell-checkrow input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin-top: 0;
+  }
+
+  .authshell-label-row {
+    gap: 12px;
+  }
+}
+
+/* Hover lift is a pointer affordance; on touch it just leaves the button
+   stuck in its hovered state after a tap. */
+@media (hover: none) {
+  .authshell-btn-primary:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+
+/* "New to Proj Arch?" under the sign-in form: through a school or program,
+   or on your own. */
+.authshell-newhere {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--auth-ink);
+  text-align: center;
+}
+
+.authshell-newhere p {
+  margin: 0;
+}
+
+.authshell-newhere a {
+  color: var(--auth-navy);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* "Continue with Google" and the others: white, outlined, the provider's own
+   mark, full width. Google's and Microsoft's guides both ask for a light
+   button with their unaltered logo and a plain label. */
+.authshell-sso {
+  display: grid;
+  gap: 10px;
+}
+
+.authshell-sso-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid #747775;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1f1f1f;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  text-decoration: none;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.authshell-sso-btn:hover {
+  background: #f8f9fb;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.authshell-sso-btn:focus-visible {
+  outline: 3px solid var(--auth-focus, #1d4ed8);
+  outline-offset: 2px;
+}
+
+.authshell-sso-btn.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.authshell-sso-letter {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* The second choice beside a primary one: outlined in the same navy. */
+.authshell-btn-secondary {
+  background: #ffffff;
+  color: var(--auth-navy);
+  box-shadow: inset 0 0 0 1px var(--auth-navy);
+}
+
+.authshell-btn-secondary:hover:not(:disabled) {
+  background: var(--auth-pale);
+}
+
+/* Several providers on one row: each button its mark and name. */
+.authshell-sso.is-compact {
+  display: grid;
+  gap: 8px;
+}
+
+.authshell-sso.is-compact .authshell-sso-btn {
+  min-height: 42px;
+  padding: 0 10px;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.authshell-sso.is-compact .authshell-sso-btn > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A short aside on the same line, in the hint's colour. */
+.authshell-hint-inline {
+  font-size: 13px;
+  color: var(--auth-muted);
+}
+
+/* Short laptop screens: the whole sign-in, down to its button, without scrolling. */
+@media (min-width: 961px) and (max-height: 760px) {
+  .authshell-panel {
+    padding-top: 40px;
+  }
+
+  .authshell-panel.has-head {
+    padding-top: 20px;
+  }
+
+  .authshell-panel-head {
+    margin-bottom: 16px;
+  }
+
+  .authshell-steps {
+    margin-bottom: 18px;
+  }
+
+  .authshell-desc {
+    margin-top: 6px;
+    line-height: 24px;
+  }
+
+  .authshell-form {
+    margin-top: 18px;
+  }
+
+  .authshell-form,
+  .authshell-form > form {
+    gap: 12px;
+  }
+
+  .authshell-field {
+    gap: 4px;
+  }
+
+  .authshell-sso-btn {
+    min-height: 42px;
+  }
+
+  .authshell-footnote {
+    padding-top: 16px;
+  }
+}
+
+/* Phones: providers two to a row, so every name fits. */
+@media (max-width: 480px) {
+  .authshell-sso.is-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}

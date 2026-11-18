@@ -19,7 +19,7 @@
   --shadow-lg: var(--ark-shadow-lg);
   --shadow-md: var(--ark-shadow-md);
 
-  /* ── Scholar Commons — aliased onto the canonical Proj Arch tokens ───── */
+  /* ── Scholar Dashboard — aliased onto the canonical Proj Arch tokens ───── */
   --ink: var(--ark-text);
   --navy: var(--ark-navy);
   --navy-2: var(--ark-blue);
@@ -1912,7 +1912,7 @@ select {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   Scholar Commons — premium social + editorial platform
+   Scholar Dashboard — premium social + editorial platform
    ═══════════════════════════════════════════════════════════════════════ */
 .sc-shell {
   min-height: 100vh;

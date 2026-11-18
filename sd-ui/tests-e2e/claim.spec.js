@@ -40,7 +40,7 @@ test("a claim link opens without a session, and the account it makes can sign in
   await page.goto(invite.claimPath);
 
   await expect(page).toHaveURL(new RegExp(`${invite.claimPath}$`));
-  await expect(page.locator(".auth-card__identity-name")).toHaveText("Invited Scholar");
+  await expect(page.locator(".authshell-identity-name")).toHaveText("Invited Scholar");
 
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByLabel("Confirm password").fill(PASSWORD);

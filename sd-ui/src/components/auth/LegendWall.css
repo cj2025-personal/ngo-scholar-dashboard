@@ -1,0 +1,168 @@
+/* The wall of legends, copied from the public site (ngo-web frontend
+   src/App.css, "Mission hero wall") with its component; change both together. */
+
+/* ── Mission hero wall ────────────────────────────────────────────────────
+   The right half of the hero grid. Seven columns of small tiles drift past
+   each other behind a soft mask, so the wall reads as continuous rather than
+   as a list that starts and stops. */
+
+.mission-wall {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  height: min(78vh, 680px);
+  overflow: hidden;
+  /* Dissolves the columns into the hero ground so the container edge does not
+     cut the tiles off. Asymmetric: a fade at the top reads as a gap under the
+     navbar, so the wall starts flush and dissolves only at the bottom. */
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 88%, transparent);
+  mask-image: linear-gradient(180deg, #000 0, #000 88%, transparent);
+}
+
+.mission-col {
+  overflow: hidden;
+}
+
+.mission-track {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  /* One gap's worth at the foot, so the track is exactly three sets of
+     tile-plus-gap and a third of it lands precisely on the next set. */
+  padding: 0 0 10px;
+  list-style: none;
+  animation: mission-drift var(--mission-duration, 56s) linear infinite;
+  will-change: transform;
+}
+
+.mission-track-up {
+  animation-direction: reverse;
+}
+
+@keyframes mission-drift {
+  from { transform: translate3d(0, 0, 0); }
+  /* A third: each track holds its column three times (COPIES in
+     MissionHeroWall) so the seam never lands on screen. */
+  to { transform: translate3d(0, calc(-100% / 3), 0); }
+}
+
+/* Pause on hover so a reader can stop on a name and look it up. Do NOT slow
+   down by changing animation-duration instead: the browser re-reads the
+   current time against the new duration and the track jumps to a different
+   offset mid-motion. Pausing holds position exactly where it is. */
+.mission-wall:hover .mission-track,
+.mission-track:focus-within {
+  animation-play-state: paused;
+}
+
+.mission-tile {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #dbe6f2;
+  box-shadow:
+    0 1px 2px rgba(10, 49, 97, 0.06),
+    0 12px 28px -14px rgba(10, 49, 97, 0.28);
+  transition: box-shadow 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mission-portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* The set mixes photographs with painted portraits of scholars who died
+     before photography. Desaturating makes them one collection instead of two,
+     and the slight lift stops the darker archival scans going muddy against a
+     light ground. */
+  filter: grayscale(1) contrast(1.06) brightness(1.02);
+  transition:
+    filter 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mission-tile:hover,
+.mission-tile:focus-within {
+  box-shadow:
+    0 2px 4px rgba(10, 49, 97, 0.08),
+    0 22px 44px -16px rgba(10, 49, 97, 0.42);
+}
+
+.mission-tile:hover .mission-portrait,
+.mission-tile:focus-within .mission-portrait {
+  filter: grayscale(0) contrast(1) brightness(1);
+  transform: scale(1.05);
+}
+
+.mission-tile-caption {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 20px 8px 8px;
+  background: linear-gradient(to top, rgba(6, 26, 52, 0.92), rgba(6, 26, 52, 0));
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mission-tile:hover .mission-tile-caption,
+.mission-tile:focus-within .mission-tile-caption {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.mission-tile-name {
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.mission-tile-meta {
+  color: rgba(226, 236, 248, 0.76);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+/* Five columns on a small laptop, where the wall shares the hero with the
+   copy, and on a tablet, where it is capped at 520px under it. Seven would
+   leave tiles of 60-odd pixels in both. */
+@media (min-width: 901px) and (max-width: 1279px) {
+  .mission-wall { grid-template-columns: repeat(5, 1fr); }
+  .mission-col:nth-child(n + 6) { display: none; }
+}
+
+/* Four columns on a phone: seven would cut a 342px column into 40px tiles, too
+   small to read as faces. The wall is 320px tall here, so four columns already
+   show more faces than fit at once. */
+@media (max-width: 900px) {
+  .mission-wall {
+    grid-template-columns: repeat(4, 1fr);
+    height: 320px;
+    gap: 9px;
+  }
+  .mission-col:nth-child(n + 5) { display: none; }
+  .mission-track { gap: 9px; padding-bottom: 9px; }
+  .mission-tile { border-radius: 10px; }
+}
+
+.mission-wall.is-still .mission-track {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mission-track {
+    animation: none;
+  }
+  .mission-tile-caption {
+    opacity: 1;
+    transform: none;
+  }
+}

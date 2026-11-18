@@ -1,0 +1,45 @@
+/* The studio's additions to the shared sign-in shell (AuthShell.css, copied
+   from the public site): the invitation's "whose account is this" block and
+   the password rules. Same tokens, so they read as the shell's own parts. */
+
+.authshell-banner-detail { margin-top: 2px; }
+
+.authshell-identity {
+  margin: 0 0 22px;
+  padding: 16px 18px;
+  border: 1px solid var(--auth-rule);
+  border-radius: 12px;
+  background: var(--auth-pale);
+}
+.authshell-identity-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--auth-red);
+}
+.authshell-identity-name {
+  margin: 6px 0 0;
+  font-family: var(--auth-display);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--auth-navy);
+}
+.authshell-identity-meta { margin: 2px 0 0; font-size: 15px; color: var(--auth-ink); }
+.authshell-identity-note { margin: 10px 0 0; font-size: 14px; line-height: 1.5; color: var(--auth-ink); }
+
+.authshell-rules {
+  display: grid;
+  gap: 4px;
+  margin: -6px 0 18px;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--auth-muted);
+}
+.authshell-rules li.is-met { color: #166534; }
+
+.authshell-done-title { margin: 0; font-size: 16px; font-weight: 700; }

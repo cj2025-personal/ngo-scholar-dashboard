@@ -1,0 +1,422 @@
+[
+  {
+    "name": "Ahmed Zewail",
+    "field": "Chemistry",
+    "era": "1946–2016",
+    "region": "North Africa",
+    "image": "/media/legends/ahmed-zewail.webp",
+    "licence": "CC BY-SA 3.0",
+    "attribution": "Douglas A. Lockard",
+    "source": "https://commons.wikimedia.org/wiki/File:Ahmed_Zewail_HD2009_Othmer_Gold_Medal_portrait.JPG"
+  },
+  {
+    "name": "Ali Javan",
+    "field": "Physics",
+    "era": "1926–2016",
+    "region": "Middle East",
+    "image": "/media/legends/ali-javan.webp",
+    "licence": "Public domain",
+    "attribution": "Samaksasanian",
+    "source": "https://commons.wikimedia.org/wiki/File:Javan_ali.jpg"
+  },
+  {
+    "name": "Har Gobind Khorana",
+    "field": "Biochemistry",
+    "era": "1922–2011",
+    "region": "South Asia",
+    "image": "/media/legends/har-gobind-khorana.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown authorUnknown author",
+    "source": "https://commons.wikimedia.org/wiki/File:Har_Gobind_Khorana_nobel.jpg"
+  },
+  {
+    "name": "Mario J. Molina",
+    "field": "Chemistry",
+    "era": "1943–2020",
+    "region": "North America",
+    "image": "/media/legends/mario-j-molina.webp",
+    "licence": "CC BY-SA 3.0",
+    "attribution": "Janwikifoto",
+    "source": "https://commons.wikimedia.org/wiki/File:Mario_Molina_1c389_8387.jpg"
+  },
+  {
+    "name": "Alexander von Humboldt",
+    "field": "Natural science",
+    "era": "1769–1859",
+    "region": "Europe",
+    "image": "/media/legends/alexander-von-humboldt.webp",
+    "licence": "Public domain",
+    "attribution": "Joseph Karl Stieler",
+    "source": "https://commons.wikimedia.org/wiki/File:Stieler,_Joseph_Karl_-_Alexander_von_Humboldt_-_1843.jpg"
+  },
+  {
+    "name": "Ada Lovelace",
+    "field": "Computing",
+    "era": "1815–1852",
+    "region": "Europe",
+    "image": "/media/legends/ada-lovelace.webp",
+    "licence": "Public domain",
+    "attribution": "Antoine Claudet",
+    "source": "https://commons.wikimedia.org/wiki/File:Ada_Lovelace_daguerreotype_by_Antoine_Claudet_1843_-_cropped.png"
+  },
+  {
+    "name": "Marie Curie",
+    "field": "Physics & chemistry",
+    "era": "1867–1934",
+    "region": "Europe",
+    "image": "/media/legends/marie-curie.webp",
+    "licence": "Public domain",
+    "attribution": "Henri Manuel",
+    "source": "https://commons.wikimedia.org/wiki/File:Marie_Curie_c._1920s.jpg"
+  },
+  {
+    "name": "Emmy Noether",
+    "field": "Mathematics",
+    "era": "1882–1935",
+    "region": "Europe",
+    "image": "/media/legends/emmy-noether.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown authorUnknown author\n\nPublisher: Mathematical Association of America [3], Brooklyn Museum [4], Agnes Scott College [5], [6]",
+    "source": "https://commons.wikimedia.org/wiki/File:Emmy_Noether_(3x4_cropped).jpg"
+  },
+  {
+    "name": "Srinivasa Ramanujan",
+    "field": "Mathematics",
+    "era": "1887–1920",
+    "region": "South Asia",
+    "image": "/media/legends/srinivasa-ramanujan.webp",
+    "licence": "CC BY 4.0",
+    "attribution": "Unknown authorUnknown author",
+    "source": "https://commons.wikimedia.org/wiki/File:Srinivasa_Ramanujan-Add._MS_a94_version2_(cropped).jpg"
+  },
+  {
+    "name": "C. V. Raman",
+    "field": "Physics",
+    "era": "1888–1970",
+    "region": "South Asia",
+    "image": "/media/legends/c-v-raman.webp",
+    "licence": "Public domain",
+    "attribution": "Nobel Foundation",
+    "source": "https://commons.wikimedia.org/wiki/File:Sir_CV_Raman.JPG"
+  },
+  {
+    "name": "W. E. B. Du Bois",
+    "field": "Sociology",
+    "era": "1868–1963",
+    "region": "North America",
+    "image": "/media/legends/w-e-b-du-bois.webp",
+    "licence": "Public domain",
+    "attribution": "James E. Purdy / Adam Cuerden",
+    "source": "https://commons.wikimedia.org/wiki/File:W.E.B._Du_Bois_by_James_E._Purdy,_1907_(3x4).jpg"
+  },
+  {
+    "name": "George Washington Carver",
+    "field": "Botany",
+    "era": "c. 1864–1943",
+    "region": "North America",
+    "image": "/media/legends/george-washington-carver.webp",
+    "licence": "Public domain",
+    "attribution": "Adam Cuerden",
+    "source": "https://commons.wikimedia.org/wiki/File:George_Washington_Carver_c1910_-_Restoration.jpg"
+  },
+  {
+    "name": "Susan La Flesche Picotte",
+    "field": "Medicine",
+    "era": "1865–1915",
+    "region": "North America",
+    "image": "/media/legends/susan-la-flesche-picotte.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown",
+    "source": "https://commons.wikimedia.org/wiki/File:Doctor.susan.la.flesche.picotte.jpg"
+  },
+  {
+    "name": "Charles R. Drew",
+    "field": "Medicine",
+    "era": "1904–1950",
+    "region": "North America",
+    "image": "/media/legends/charles-r-drew.webp",
+    "licence": "Public domain",
+    "attribution": "Associated Photographic Services, Inc",
+    "source": "https://commons.wikimedia.org/wiki/File:Portrait_of_Charles_Drew.jpg"
+  },
+  {
+    "name": "Katherine Johnson",
+    "field": "Mathematics",
+    "era": "1918–2020",
+    "region": "North America",
+    "image": "/media/legends/katherine-johnson.webp",
+    "licence": "Public domain",
+    "attribution": "NASA",
+    "source": "https://commons.wikimedia.org/wiki/File:Katherine_Johnson_1983.jpg"
+  },
+  {
+    "name": "Chien-Shiung Wu",
+    "field": "Physics",
+    "era": "1912–1997",
+    "region": "East Asia",
+    "image": "/media/legends/chien-shiung-wu.webp",
+    "licence": "No restrictions",
+    "attribution": "Smithsonian Institution from United States",
+    "source": "https://commons.wikimedia.org/wiki/File:Chien-Shiung_Wu_(1912-1997)_in_1958.jpg"
+  },
+  {
+    "name": "Hideki Yukawa",
+    "field": "Physics",
+    "era": "1907–1981",
+    "region": "East Asia",
+    "image": "/media/legends/hideki-yukawa.webp",
+    "licence": "Public domain",
+    "attribution": "Nobel Foundation archive",
+    "source": "https://commons.wikimedia.org/wiki/File:Yukawa.jpg"
+  },
+  {
+    "name": "Subrahmanyan Chandrasekhar",
+    "field": "Astrophysics",
+    "era": "1910–1995",
+    "region": "South Asia",
+    "image": "/media/legends/subrahmanyan-chandrasekhar.webp",
+    "licence": "Attribution",
+    "attribution": "AIP Emilio Segrè Visual Archives, Gift of Kameshwar Wali",
+    "source": "https://commons.wikimedia.org/wiki/File:Subrahmanyan_Chandrasekhar.jpg"
+  },
+  {
+    "name": "Abdus Salam",
+    "field": "Physics",
+    "era": "1926–1996",
+    "region": "South Asia",
+    "image": "/media/legends/abdus-salam.webp",
+    "licence": "CC BY-SA 3.0 nl",
+    "attribution": "Molendijk, Bart / Anefo",
+    "source": "https://commons.wikimedia.org/wiki/File:Abdus_Salam_1987.jpg"
+  },
+  {
+    "name": "Bernardo Houssay",
+    "field": "Physiology",
+    "era": "1887–1971",
+    "region": "South America",
+    "image": "/media/legends/bernardo-houssay.webp",
+    "licence": "Public domain",
+    "attribution": "Desconocido",
+    "source": "https://commons.wikimedia.org/wiki/File:Bernardo_Alberto_Houssay.jpg"
+  },
+  {
+    "name": "Carlos Chagas",
+    "field": "Medicine",
+    "era": "1878–1934",
+    "region": "South America",
+    "image": "/media/legends/carlos-chagas.webp",
+    "licence": "Public domain",
+    "attribution": "[Non identifié]",
+    "source": "https://commons.wikimedia.org/wiki/File:Carlos_Chagas_(cropped).jpg"
+  },
+  {
+    "name": "Ynes Mexia",
+    "field": "Botany",
+    "era": "1870–1938",
+    "region": "North America",
+    "image": "/media/legends/ynes-mexia.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown authorUnknown author",
+    "source": "https://commons.wikimedia.org/wiki/File:Yn%C3%A9s_Mex%C3%ADa_1.jpg"
+  },
+  {
+    "name": "Wangari Maathai",
+    "field": "Environmental science",
+    "era": "1940–2011",
+    "region": "Africa",
+    "image": "/media/legends/wangari-maathai.webp",
+    "licence": "CC BY-SA 2.0",
+    "attribution": "Kingkongphoto & www.celebrity-photos.com from Laurel  Maryland, USA",
+    "source": "https://commons.wikimedia.org/wiki/File:Wangari_Maathai_in_2001.jpg"
+  },
+  {
+    "name": "Cheikh Anta Diop",
+    "field": "History",
+    "era": "1923–1986",
+    "region": "Africa",
+    "image": "/media/legends/cheikh-anta-diop.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown authorUnknown author",
+    "source": "https://commons.wikimedia.org/wiki/File:Cheikh_Anta_Diop,_late_1940s.jpg"
+  },
+  {
+    "name": "Rosalind Franklin",
+    "field": "Chemistry",
+    "era": "1920–1958",
+    "region": "Europe",
+    "image": "/media/legends/rosalind-franklin.webp",
+    "licence": "CC BY-SA 4.0",
+    "attribution": "Rori!",
+    "source": "https://commons.wikimedia.org/wiki/File:Rosalind_Franklin_CC-BY-SA.png"
+  },
+  {
+    "name": "Yuan Longping",
+    "field": "Agricultural science",
+    "era": "1930–2021",
+    "region": "East Asia",
+    "image": "/media/legends/yuan-longping.webp",
+    "licence": "CC BY 3.0",
+    "attribution": "China News Service",
+    "source": "https://commons.wikimedia.org/wiki/File:Yuan_Longping_at_news_conference_(cropped).png"
+  },
+  {
+    "name": "Shinichiro Tomonaga",
+    "field": "Physics",
+    "era": "1906–1979",
+    "region": "East Asia",
+    "image": "/media/legends/shinichiro-tomonaga.webp",
+    "licence": "Public domain",
+    "attribution": "Nobel foundation",
+    "source": "https://commons.wikimedia.org/wiki/File:Tomonaga.jpg"
+  },
+  {
+    "name": "Jagadish Chandra Bose",
+    "field": "Physics & botany",
+    "era": "1858–1937",
+    "region": "South Asia",
+    "image": "/media/legends/jagadish-chandra-bose.webp",
+    "licence": "Public domain",
+    "attribution": "w:Patrick Geddes",
+    "source": "https://commons.wikimedia.org/wiki/File:Sir_Jagadis_C._Bose_(cropped).jpg"
+  },
+  {
+    "name": "Lise Meitner",
+    "field": "Physics",
+    "era": "1878–1968",
+    "region": "Europe",
+    "image": "/media/legends/lise-meitner.webp",
+    "licence": "Public domain",
+    "attribution": "Harris & Ewing",
+    "source": "https://commons.wikimedia.org/wiki/File:Lise_Meitner_NatGeo.jpg"
+  },
+  {
+    "name": "Percy Lavon Julian",
+    "field": "Chemistry",
+    "era": "1899–1975",
+    "region": "North America",
+    "image": "/media/legends/percy-lavon-julian.webp",
+    "licence": "Public domain",
+    "attribution": "AnonymousUnknown author",
+    "source": "https://commons.wikimedia.org/wiki/File:Percy_Lavon_Julian_(1899-1975)_portrait.jpg"
+  },
+  {
+    "name": "Dorothy Vaughan",
+    "field": "Mathematics",
+    "era": "1910–2008",
+    "region": "North America",
+    "image": "/media/legends/dorothy-vaughan.webp",
+    "licence": "Public domain",
+    "attribution": "NASA on The Commons",
+    "source": "https://commons.wikimedia.org/wiki/File:Dorothy_Vaughan_2.jpg"
+  },
+  {
+    "name": "Oswaldo Cruz",
+    "field": "Medicine",
+    "era": "1872–1917",
+    "region": "South America",
+    "image": "/media/legends/oswaldo-cruz.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown",
+    "source": "https://commons.wikimedia.org/wiki/File:Oswaldo_cruz.jpg"
+  },
+  {
+    "name": "Luis Federico Leloir",
+    "field": "Biochemistry",
+    "era": "1906–1987",
+    "region": "South America",
+    "image": "/media/legends/luis-federico-leloir.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown",
+    "source": "https://commons.wikimedia.org/wiki/File:Luis_Federico_Leloir_-_young.jpg"
+  },
+  {
+    "name": "Ernest Rutherford",
+    "field": "Physics",
+    "era": "1871–1937",
+    "region": "Oceania",
+    "image": "/media/legends/ernest-rutherford.webp",
+    "licence": "Public domain",
+    "attribution": "Bain News Service, publisher Restored by: Bammesk",
+    "source": "https://commons.wikimedia.org/wiki/File:Sir_Ernest_Rutherford_LCCN2014716719_-_restoration1.jpg"
+  },
+  {
+    "name": "Taha Hussein",
+    "field": "Literature",
+    "era": "1889–1973",
+    "region": "North Africa",
+    "image": "/media/legends/taha-hussein.webp",
+    "licence": "Public domain",
+    "attribution": "Original uploader was Zerida at en.wikipedia\n\n(Original text: Zerida)",
+    "source": "https://commons.wikimedia.org/wiki/File:TahaHussein.jpg"
+  },
+  {
+    "name": "Hu Shih",
+    "field": "Philosophy",
+    "era": "1891–1962",
+    "region": "East Asia",
+    "image": "/media/legends/hu-shih.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown authorUnknown author",
+    "source": "https://commons.wikimedia.org/wiki/File:Hu_Shih_1960_color_Crop.jpg"
+  },
+  {
+    "name": "Kiyoshi Shiga",
+    "field": "Microbiology",
+    "era": "1871–1957",
+    "region": "East Asia",
+    "image": "/media/legends/kiyoshi-shiga.webp",
+    "licence": "Public domain",
+    "attribution": "anonymous/unknown",
+    "source": "https://commons.wikimedia.org/wiki/File:Kiyoshi_Shiga.jpg"
+  },
+  {
+    "name": "Ernest Everett Just",
+    "field": "Biology",
+    "era": "1883–1941",
+    "region": "North America",
+    "image": "/media/legends/ernest-everett-just.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown, but a different U Chicago post of the photo shows a caption dating the photo to 1925 https://www.uchicagomedicine.org/forefront/biological-sciences-articles/pioneering-biologist-ernest-everett-just",
+    "source": "https://commons.wikimedia.org/wiki/File:ErnestEverettJust1925.jpg"
+  },
+  {
+    "name": "Santiago Ramón y Cajal",
+    "field": "Neuroscience",
+    "era": "1852–1934",
+    "region": "Europe",
+    "image": "/media/legends/santiago-ramon-y-cajal.webp",
+    "licence": "Public domain",
+    "attribution": "Original photo is anonymous although published by Clark University in 1899. Restoration by Garrondo",
+    "source": "https://commons.wikimedia.org/wiki/File:Santiago_Ram%C3%B3n_y_Cajal_(1852-1934)_portrait_(restored).jpg"
+  },
+  {
+    "name": "Max Theiler",
+    "field": "Virology",
+    "era": "1899–1972",
+    "region": "Africa",
+    "image": "/media/legends/max-theiler.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown authorUnknown author",
+    "source": "https://commons.wikimedia.org/wiki/File:Max_Theiler_nobel.jpg"
+  },
+  {
+    "name": "Edward Wilmot Blyden",
+    "field": "Education",
+    "era": "1832–1912",
+    "region": "Africa",
+    "image": "/media/legends/edward-wilmot-blyden.webp",
+    "licence": "Public domain",
+    "attribution": "Johnston, Harry Hamilton, Sir, 1858-1927; Royal Geographical Society (Great Britain)",
+    "source": "https://commons.wikimedia.org/wiki/File:E._W._Blyden_Johnston.png"
+  },
+  {
+    "name": "Meghnad Saha",
+    "field": "Astrophysics",
+    "era": "1893–1956",
+    "region": "South Asia",
+    "image": "/media/legends/meghnad-saha.webp",
+    "licence": "Public domain",
+    "attribution": "Unknown authorUnknown author",
+    "source": "https://commons.wikimedia.org/wiki/File:Dr-Meghnad-Saha.jpg"
+  }
+]
