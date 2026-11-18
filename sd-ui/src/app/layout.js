@@ -1,4 +1,5 @@
 import { Inter } from "next/font/google";
+import { BRAND_NAME, PRODUCT_NAME } from "@/lib/brand";
 import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
 import "./redesign.css";
@@ -28,7 +29,7 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "Proj Arch · Scholar Commons",
+  title: `${BRAND_NAME} · ${PRODUCT_NAME}`,
   description: "Where university scholars publish research, stories, and podcasts.",
   metadataBase: new URL(getSiteUrl()),
 };

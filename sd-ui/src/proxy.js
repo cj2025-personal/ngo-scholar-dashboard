@@ -10,11 +10,18 @@ export function proxy(request) {
   // link has no account yet, so it cannot ask for a session; the one-time
   // token in the path is what it checks. A shared record's link is the
   // scholar's to give and to turn off; its token is what the API checks.
-  if (pathname === "/login" || pathname.startsWith("/stories/") || pathname.startsWith("/claim/") || pathname.startsWith("/record/")) {
+  if (pathname === "/login" || pathname === "/welcome" || pathname.startsWith("/stories/") || pathname.startsWith("/claim/") || pathname.startsWith("/record/")) {
     return NextResponse.next();
   }
 
   const hasSessionCookie = Boolean(request.cookies.get(AUTH_COOKIE_NAME)?.value);
+
+  /* The front door: with no session, the studio's address shows what the
+     studio is (app/welcome), under the same address; signed in, it is the
+     Studio. Every other private page still sends a visitor to sign in. */
+  if (!hasSessionCookie && pathname === "/") {
+    return NextResponse.rewrite(new URL("/welcome", request.url));
+  }
 
   if (!hasSessionCookie) {
     const loginUrl = new URL("/login", request.url);

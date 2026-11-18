@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PRODUCT_NAME } from "@/lib/brand";
 import ReadBeacon from "@/components/editorial/ReadBeacon";
 import ReaderBody from "@/components/editorial/ReaderBody";
 
@@ -93,7 +94,7 @@ export default function PublishedStoryReader({ story }) {
           <div className="public-story-brand">
             <span className="eyebrow">Proj Arch Stories</span>
             <Link href="/" className="public-story-brand-link">
-              Scholar Dashboard
+              {PRODUCT_NAME}
             </Link>
           </div>
 

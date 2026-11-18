@@ -20,7 +20,7 @@ export default function Navbar({ navItems, activeHref }) {
         </Link>
 
         <div className="brand-block">
-          <span className="brand-kicker">Scholar Dashboard</span>
+          <span className="brand-kicker">Inkvyn</span>
           <h1>Scholar media dashboard</h1>
         </div>
       </div>
