@@ -2171,7 +2171,7 @@ select {
 /* Deterministic avatar gradients for the feed's initials tiles */
 .sc-av.g1 { background: linear-gradient(150deg, var(--navy-2), var(--navy)); }
 .sc-av.g2 { background: linear-gradient(150deg, var(--burgundy-2), var(--burgundy)); }
-.sc-av.g3 { background: linear-gradient(150deg, #3b6fd4, var(--ark-blue-deep)); }
+.sc-av.g3 { background: linear-gradient(150deg, #334155, var(--ark-blue-deep)); }
 .sc-av.g4 { background: linear-gradient(150deg, #475569, #1e293b); }
 .sc-av.g5 { background: linear-gradient(150deg, var(--navy), var(--navy-ink)); }
 .sc-author .sc-av { width: 32px; height: 32px; font-size: var(--fs-xs); }
@@ -2190,7 +2190,7 @@ select {
 .sc-cover img { width: 100%; height: 100%; object-fit: cover; }
 .sc-cover.b1 { background: linear-gradient(150deg, var(--navy-2), var(--navy) 60%, var(--navy-ink)); }
 .sc-cover.b2 { background: linear-gradient(150deg, var(--burgundy-2), var(--burgundy)); }
-.sc-cover.b3 { background: linear-gradient(150deg, #3b6fd4, #1e40af); }
+.sc-cover.b3 { background: linear-gradient(150deg, #334155, var(--navy)); }
 .sc-cover.b4 { background: linear-gradient(150deg, #475569, #1e293b); }
 .sc-meta { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--sd-line-soft); font-size: var(--fs-xs); font-weight: var(--weight-regular); line-height: 1.5; color: var(--sd-faint); flex-wrap: wrap; }
 .sc-chip { font-size: var(--fs-xs); font-weight: var(--weight-medium); line-height: 1; color: var(--navy); background: rgba(30, 58, 138, 0.07); padding: 3px 9px; border-radius: 999px; }

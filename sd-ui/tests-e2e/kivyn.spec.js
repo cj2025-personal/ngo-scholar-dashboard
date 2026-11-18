@@ -140,9 +140,10 @@ test.describe("in the studio", () => {
     await expect(kivyn).toHaveAttribute("data-pose", "wave");
     await expect(kivyn).toHaveClass(/kv-react-wave/);
     await expect(actor.locator(".kv-emote")).toHaveAttribute("data-emote", "hi");
-    /* Painted in Kivyn's colours, not the browser's black: a white bubble with a navy line. */
+    /* Painted in Kivyn's colours, not the browser's black: a white bubble with
+       a navy line, the public site's navy #102a56 (app/site-theme.css). */
     await expect(actor.locator(".kv-emote .kv-card")).toHaveCSS("fill", "rgb(255, 255, 255)");
-    await expect(actor.locator(".kv-emote .kv-card")).toHaveCSS("stroke", "rgb(30, 58, 138)");
+    await expect(actor.locator(".kv-emote .kv-card")).toHaveCSS("stroke", "rgb(16, 42, 86)");
     await expect(actor.locator(".sr-only")).toHaveText("Kivyn waves hello.");
     /* The next tap is the next reaction, and a keyboard taps it too. */
     await actor.focus();

@@ -1,32 +1,26 @@
-import { Inter } from "next/font/google";
 import { BRAND_NAME, PRODUCT_NAME } from "@/lib/brand";
+import { publicFontClasses } from "@/lib/publicFonts";
 import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
 import "./redesign.css";
+import "./site-theme.css";
 
 /*
- * Proj Arch type system: Inter, for every surface of the product.
+ * Inkvyn wears the public site's type: Figtree for every word, Newsreader for
+ * titles, loaded once here exactly as projarch.org loads them
+ * (lib/publicFonts.js) and read through `--font-ui` / `--font-display`, which
+ * site-theme.css points at them. The roles (page titles, sections, cards,
+ * controls, the 16px reading register) are the shared ones in
+ * archivyn-tokens.css and archivyn-type.css; site-theme.css gives them the
+ * site's faces and colours, loaded last so it wins.
  *
- * One family, loaded here once as `--font-inter` and read through
- * `--font-ui` / `--font-reading` in archivyn-tokens.css; the stack behind it
- * holds the layout until it arrives. The roles — page titles, sections, cards,
- * controls, the 16px reading register, AI responses — are the shared ones in
- * archivyn-tokens.css and archivyn-type.css, the same in every Proj Arch app.
+ * The variable classes sit on <html> so that everything rendered into <body>,
+ * portals and dialogs included, sees the variables.
  *
- * The variable class sits on <html> so that everything rendered into <body>,
- * portals and dialogs included, sees the variable.
- *
- * No `weight`: leaving it out fetches the variable font, one file for the
- * whole axis, rather than a static cut per weight the sheet uses.
- *
- * The Proj Arch logo is outlined vector (public/brand/, from scripts/brand/archivyn_logo.py) and needs no
- * face of its own: its letters are Figtree, already converted to shapes.
+ * The Proj Arch logo is outlined vector (public/brand/, from
+ * scripts/brand/archivyn_logo.py) and needs no face of its own: its letters
+ * are Figtree, already converted to shapes.
  */
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-});
 
 export const metadata = {
   title: `${BRAND_NAME} · ${PRODUCT_NAME}`,
@@ -36,7 +30,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={publicFontClasses}>
       <body>{children}</body>
     </html>
   );

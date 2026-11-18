@@ -224,18 +224,18 @@
 /* ── The draft being written, with progress at the top ───────────────────── */
 .ws-grid.is-two .ds-stream { padding: 24px 24px 64px; gap: 12px; }
 .ds-progress { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
-.ds-progress__text { font-size: 13px; font-weight: var(--weight-semibold); color: #1e40af; }
+.ds-progress__text { font-size: 13px; font-weight: var(--weight-semibold); color: var(--ark-blue-deep); }
 .ds-progress__bar { width: 180px; height: 6px; border-radius: 3px; background: #e2e8f3; overflow: hidden; display: flex; }
 .ds-progress__bar i { display: block; height: 100%; background: var(--ark-navy); border-radius: 3px; transition: width 400ms ease; }
 .ds-progress__note { font-size: 12px; color: var(--sd-muted); }
 .ds-stream .ds-title { margin: 0; font-size: 32px; font-weight: var(--weight-bold); line-height: 1.2; color: var(--ark-navy-ink); }
 .ds-section { display: flex; flex-direction: column; gap: 10px; }
 .ds-section__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
-.ds-section .ds-heading { margin: 0; font-size: 19px; font-weight: var(--weight-semibold); line-height: 1.35; color: #1e3a8a; }
+.ds-section .ds-heading { margin: 0; font-size: 19px; font-weight: var(--weight-semibold); line-height: 1.35; color: var(--ark-navy); }
 .ds-section.is-waiting .ds-heading { color: #a8b3c7; }
 .ds-chip { font-size: 12px; font-weight: var(--weight-semibold); line-height: 1.5; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
 .ds-chip.is-done { background: #e5f6ec; color: #136b34; }
-.ds-chip.is-now { background: #e3f0fd; color: #1e40af; }
+.ds-chip.is-now { background: var(--ark-info-soft); color: var(--ark-blue-deep); }
 .ds-chip.is-waiting { background: #f6f8fc; color: var(--sd-muted); border: 1px solid #e2e8f3; }
 .ds-skeleton { display: flex; flex-direction: column; gap: 8px; max-width: 740px; }
 .ds-skeleton i { display: block; height: 10px; border-radius: 5px; background: linear-gradient(90deg, #e2e8f3 0%, #eef2f8 50%, #e2e8f3 100%); background-size: 200% 100%; animation: ds-shimmer 1.4s ease-in-out infinite; }

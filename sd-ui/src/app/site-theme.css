@@ -1,0 +1,83 @@
+/*
+ * The public site's theme, for the whole studio (2026-11-18: "everything must
+ * look at the same theme"). Inkvyn wears projarch.org's type and colours:
+ *
+ *   faces    Figtree for every word, Newsreader 600 for titles, loaded as
+ *            the site loads them (lib/publicFonts.js, ngo-web layout.js)
+ *   colours  the site's navy, night, slate text, rules, wash and red
+ *            (ngo-web for-researchers/ForResearchers.css, GlobalNavbar.css)
+ *
+ * Loaded last (layout.js), so it sets the shared tokens' values for this app
+ * only. archivyn-tokens.css and archivyn-type.css stay as the other apps
+ * share them; everything that reads a token follows from here. Change these
+ * values together with the site's.
+ */
+:root {
+  /* ── Faces ──────────────────────────────────────────────────────────── */
+  --font-ui: var(--font-figtree), Figtree, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: var(--font-newsreader), Newsreader, Georgia, serif;
+  --ark-font-serif: var(--font-display);
+
+  /* Titles in the site's display serif, at the weight it loads (600) and its
+     tracking; every other role stays Figtree, as on the site. */
+  --type-display: 600 36px/1.15 var(--font-display);
+  --tracking-display: -0.012em;
+  --type-page-title: 600 30px/1.15 var(--font-display);
+  --tracking-page-title: -0.012em;
+  --type-page-title-compact: 600 26px/1.2 var(--font-display);
+  --tracking-page-title-compact: -0.012em;
+  --type-section: 600 21px/1.3 var(--font-display);
+  --tracking-section: -0.005em;
+  /* Large counts, as the site sets its figures (home.css .home-metric). */
+  --type-metric: 600 30px/1.15 var(--font-display);
+  --tracking-metric: -0.012em;
+
+  /* ── Colours: the site's palette ────────────────────────────────────── */
+  --ark-navy-ink: #0b1f44;      /* the site's night: footer, dark bands */
+  --ark-navy: #102a56;          /* the site's navy: titles, buttons, links */
+  /* The site has no bright blue: actions and links are navy. */
+  --ark-blue: #102a56;
+  --ark-blue-text: #102a56;
+  --ark-blue-deep: #0b1f44;
+  --ark-red: #b22234;
+  --ark-bg: #f5f8fc;            /* the site's wash */
+  --ark-surface: #ffffff;
+  --ark-surface-2: #eef3fb;     /* the site's pale: active nav, chips */
+  --ark-navy-soft: #e9eff8;     /* the end of the site's hero wash */
+  --ark-border: #dfe7f0;
+  --ark-border-soft: #e3e8f2;   /* the site's rule */
+  --ark-text: #334155;          /* the site's body text */
+  --ark-text-muted: #475569;    /* the site's lede and secondary text */
+  /* The site's faintest text is #64748b; it fails AA on the wash (4.48:1),
+     so the studio keeps the darker slate it measured, a shade apart. */
+  --ark-text-faint: #586777;
+  --ark-info: #102a56;
+  --ark-info-strong: #0b1f44;
+  --ark-info-soft: #eef3fb;
+
+  /* Shadows and hairlines tinted with the site's navy, at the site's card
+     shadow (ForResearchers.css --fr-card-shadow / --fr-lift-shadow). */
+  --ark-shadow-sm: 0 1px 2px rgba(16, 42, 86, 0.04), 0 6px 18px -14px rgba(16, 42, 86, 0.14);
+  --ark-shadow-md: 0 1px 2px rgba(16, 42, 86, 0.04), 0 12px 28px -18px rgba(16, 42, 86, 0.18);
+  --ark-shadow-lg: 0 1px 2px rgba(16, 42, 86, 0.04), 0 24px 48px -24px rgba(16, 42, 86, 0.28);
+  --ark-card-line: rgba(16, 42, 86, 0.09);
+  --ark-card-line-strong: rgba(16, 42, 86, 0.16);
+  --ark-card-line-soft: rgba(16, 42, 86, 0.07);
+  --ark-card-lift: 0 1px 2px rgba(16, 42, 86, 0.04), 0 12px 28px -18px rgba(16, 42, 86, 0.18);
+  --ark-card-lift-hover: 0 1px 2px rgba(16, 42, 86, 0.04), 0 24px 48px -24px rgba(16, 42, 86, 0.28);
+}
+
+/* Inter's character variants mean nothing to Figtree; the site's body
+   tracking (ngo-web globals.css) is every word's. */
+body { font-feature-settings: normal; letter-spacing: -0.01em; }
+/* The shared type sheet sets paragraphs and controls to 0; on the site they
+   inherit the body's. :where() keeps this below every class rule. */
+:where(p, button, input, select, textarea) { letter-spacing: inherit; }
+
+/* Titles that set their own size rather than a role: the site's serif too. */
+.ws-outline-plan .ch-outline-title,
+.ds-stream .ds-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}

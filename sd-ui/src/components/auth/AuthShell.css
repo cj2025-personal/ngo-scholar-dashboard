@@ -10,8 +10,8 @@
    Copied from the public site (ngo-web frontend src/components/auth/
    AuthShell.css) so the studio's sign-in and invitation pages are the same
    place as the site's researcher sign-in. Change both together. Here only the
-   two font lines differ: the studio's own interface face is Inter, so the
-   shell names Figtree and Newsreader directly (src/lib/publicFonts.js). */
+   two font lines differ: they name the studio's variables for Figtree and
+   Newsreader (src/lib/publicFonts.js), the same files the site loads. */
 
 .authshell {
   --auth-navy: #102a56;

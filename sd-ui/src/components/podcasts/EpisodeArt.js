@@ -11,11 +11,12 @@
  * Decorative to a screen reader: the card beside it names both people.
  */
 
+/* The public site's navies and slate (projarch.org; app/site-theme.css). */
 const PALETTES = [
-  ["#1E3A8A", "#172554"],
-  ["#1D4ED8", "#1E3A8A"],
-  ["#0F2A5C", "#0A1A3A"],
-  ["#274B9F", "#172554"],
+  ["#102A56", "#0B1F44"],
+  ["#0A3161", "#0B1F44"],
+  ["#334155", "#102A56"],
+  ["#1F3A68", "#0B1F44"],
 ];
 
 function hash(text) {
@@ -56,9 +57,9 @@ export default function EpisodeArt({ id, withName, meName, size = 112, className
       </g>
       {/* Two speakers side by side, just touching: both sets of initials whole. */}
       <circle cx="36" cy="45" r="20" fill="#FFFFFF" fillOpacity="0.14" stroke="#FFFFFF" strokeOpacity="0.5" strokeWidth="1.5" />
-      <text x="36" y="50" textAnchor="middle" fontFamily="Inter, Arial, sans-serif" fontSize="13.5" fontWeight="700" fill="#FFFFFF">{initials(withName)}</text>
-      <circle cx="76" cy="58" r="20" fill="#D52B3F" stroke="#FFFFFF" strokeWidth="2" />
-      <text x="76" y="63" textAnchor="middle" fontFamily="Inter, Arial, sans-serif" fontSize="13.5" fontWeight="700" fill="#FFFFFF">{initials(meName)}</text>
+      <text x="36" y="50" textAnchor="middle" style={{ fontFamily: "var(--font-ui)" }} fontSize="13.5" fontWeight="700" fill="#FFFFFF">{initials(withName)}</text>
+      <circle cx="76" cy="58" r="20" fill="#B22234" stroke="#FFFFFF" strokeWidth="2" />
+      <text x="76" y="63" textAnchor="middle" style={{ fontFamily: "var(--font-ui)" }} fontSize="13.5" fontWeight="700" fill="#FFFFFF">{initials(meName)}</text>
     </svg>
   );
 }

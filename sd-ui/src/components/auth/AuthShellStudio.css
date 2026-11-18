@@ -2,6 +2,10 @@
    from the public site): the invitation's "whose account is this" block and
    the password rules. Same tokens, so they read as the shell's own parts. */
 
+/* What the site's body gives the shell there (ngo-web globals.css,
+   index.css): every word in it inherits these. */
+.authshell { font-size: 16px; line-height: 1.6; letter-spacing: -0.01em; }
+
 .authshell-banner-detail { margin-top: 2px; }
 
 .authshell-identity {
