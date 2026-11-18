@@ -1,121 +1,104 @@
-import Link from "next/link";
-
-import { BRAND_NAME, CONTACT_EMAIL, LOCKUP, PRODUCT_NAME, PUBLIC_SITE_URL } from "@/lib/brand";
+import { BRAND_NAME, CONTACT_EMAIL, PRODUCT_NAME } from "@/lib/brand";
 import { DRAFT_AUDIENCES } from "@/lib/drafting";
+import { READER_NAMES } from "@/lib/readingBands";
 
 import EditionStage from "./EditionStage";
-import HowItsMade from "./HowItsMade";
+import LearningCircles from "./LearningCircles";
+import MeetKivyn from "./MeetKivyn";
+import PressHeader from "./PressHeader";
+import SiteFooter from "./SiteFooter";
 
 const JOIN_HREF = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Joining ${PRODUCT_NAME}`)}`;
 
-/* A count in words, as the page says it ("five editions"); figures past ten. */
-const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-const inWords = (n) => WORDS[n] ?? String(n);
-const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-
-/* Cover colours, in turn, for however many reading ages the table holds. */
+/* Edition colours, in turn, for however many reading ages the table holds. */
 const TONES = ["is-navy", "is-red", "is-slate", "is-night"];
 
 /*
  * The editions are the paper and one per reading age in the studio's own
  * table (DRAFT_AUDIENCES, the mirror of sd-api's lib/audiences.js), with the
- * grade each is written to. Add an age there and it is a cover here.
+ * grade each is written to. Add an age there and it is an edition here.
  */
 function editionsFromAges(ages) {
   return [
-    { key: "paper", label: "The paper", kind: "Original", tone: "is-paper", kicker: "The paper · original", title: "Your paper", by: "By you" },
-    ...ages.map((age, i) => ({
-      key: age.value,
-      label: age.label,
-      kind: "Edition",
-      tone: TONES[i % TONES.length],
-      kicker: `${age.label} · edition`,
-      title: "Your research",
-      by: `Written to grade ${age.grade} · approved by you`,
-    })),
+    { key: "paper", label: "Your paper", kind: "Original", tone: "is-paper", kicker: "The paper · original", title: "Your paper", by: "By you" },
+    ...ages.map((age, i) => {
+      const reader = READER_NAMES[age.value];
+      return {
+        key: age.value,
+        label: reader?.name || age.label,
+        kind: reader ? reader.tag || age.label : "Edition",
+        age: age.label,
+        tone: TONES[i % TONES.length],
+        kicker: `${age.label} · edition`,
+        title: "Your research",
+        by: `Written to grade ${age.grade} · approved by you`,
+        grade: age.grade,
+      };
+    }),
   ];
 }
 
 /*
- * The steps, each as the studio does it: the composer asks "Who is this
- * for?", proposes an outline the scholar approves before drafting, writes per
- * reading age with each claim's source and a check for going beyond it, waits
- * for approval, reports circles as counts only once a circle is past the
- * reader floor, and signs the impact record. Kivyn's pose is the one the
- * studio shows for that step.
- */
-function stepsFor(ages) {
-  const range = ages.length > 1 ? `, from ${ages[0].label.toLowerCase()} to ${ages[ages.length - 1].label.toLowerCase()}` : "";
-  return [
-    { label: "Bring a paper", pose: "reading", text: "Bring one of your papers, or a finding in your own words. Kivyn reads it before anything else happens." },
-    { label: "Agree an outline with Kivyn", pose: "searching", text: "Kivyn asks who the story is for, and agrees an outline with you before a word is drafted." },
-    { label: `${capital(inWords(ages.length))} editions, every sentence sourced`, pose: "writing", text: `A version for each reading age${range}, every sentence carrying the passage it rests on, and checked for going beyond it.` },
-    { label: "You approve, or not", pose: "checking", text: "You read each version beside its passages, change what you like, and approve or discard it. Nothing reaches readers until you do." },
-    { label: "Classes read in circles", pose: "neutral", text: "Classes read your stories in circles. Once enough have read to keep them anonymous, you see how many read and how many understood. No child is named." },
-    { label: "A signed record comes back", pose: "done", text: `A record of what your work reached comes back, signed by ${BRAND_NAME}, for a grant panel or your dean to check.` },
-  ];
-}
-
-/*
- * What a scholar gets with a conversation, as the Podcasts page does it:
+ * What a scholar gets with an AI podcast, as the Podcasts page does it:
  * only released episodes (podcasts.service RELEASED), the AI-voice label
  * (from audio.synthetic), the transcript in the side panel, and "Something’s
  * wrong?" writing to the editors.
  */
-const CONVERSATION_FACTS = [
+const PODCAST_FACTS = [
   ["What you see", "Only released episodes about your work."],
   ["Voices", "AI voices, labelled as AI."],
   ["Transcript", "Beside the player, turn by turn."],
   ["Something wrong?", "One button writes to the editors."],
 ];
 
-function Lockup({ className }) {
-  /* Vector, from the brand kit: sharp at every size. A plain <img>, because
-     next/image has nothing to optimise in an SVG. */
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={LOCKUP.src} alt={BRAND_NAME} width={LOCKUP.width} height={LOCKUP.height} className={className} />;
-}
-
 /**
- * The press: one finding set as editions, the steps of making a story, the
- * conversations, and how to join. Drawn on the landing
- * canvas ("3 · The press") and chosen there on 2026-11-17. Nothing on it is a
- * sample: the editions and counts come from the reading-age table, and every
- * other line says what the studio does.
+ * The press: one finding set as editions, Kivyn at work and what it holds to, the
+ * AI podcasts, and how to join. Drawn on the landing canvas ("3 · The
+ * press") and chosen there on 2026-11-17; dressed in the public site's type
+ * and colours (press.css) so the studio and projarch.org read as one place.
+ * Nothing on it is a sample: the editions and counts come from the
+ * reading-age table, and every other line says what the studio does.
  */
 export default function PressLanding({ className = "" }) {
   const editions = editionsFromAges(DRAFT_AUDIENCES);
-  const steps = stepsFor(DRAFT_AUDIENCES);
 
   return (
     <div className={`pr ${className}`}>
-      <div className="pr-wrap">
-        <header className="pr-top">
-          <Link href="/" className="pr-brand" aria-label={`${BRAND_NAME} ${PRODUCT_NAME}, home`}>
-            <Lockup className="pr-brand__lockup" />
-          </Link>
-          <span className="pr-mono pr-top__name">{PRODUCT_NAME}</span>
-          <span className="pr-mono pr-top__tag">The researchers’ studio</span>
-          <Link className="pr-mono pr-top__signin" href="/login">[ Sign in ]</Link>
-        </header>
-      </div>
+      {/* Where the page starts: once it scrolls out, the header lifts. */}
+      <span id="pr-top-sentinel" className="pr-sentinel" aria-hidden="true" />
+      <PressHeader />
 
       <main>
-        <div className="pr-wrap">
-          <h1 className="sr-only">{PRODUCT_NAME}: your research, written for every reading age</h1>
-          <EditionStage editions={editions} heading={`[ One finding, ${inWords(editions.length)} editions ]`} />
-          <HowItsMade steps={steps} aside={`${capital(inWords(steps.length))} steps, you at each one`} />
-        </div>
+        <section id="editions" className="pr-band--hero" aria-labelledby="pr-title">
+          <EditionStage editions={editions}>
+            {/* The name first, as the product's own title; then what it is for, in
+                the terms of Proj Arch's mission ("from archives to you"). */}
+            <p className="pr-kicker">For scholars</p>
+            <h1 id="pr-title" className="pr-title">
+              <span>{PRODUCT_NAME}</span>
+            </h1>
+            <p className="pr-subtitle">
+              Your research, <span className="pr-accent">written for every reading age.</span>
+            </p>
+            <p className="pr-lede">
+              The invitation-only dashboard where scholars share what they know. Your work leaves the archive and
+              reaches readers of every age: Kivyn writes each version from your paper, and nothing goes out until
+              you approve it.
+            </p>
+          </EditionStage>
+        </section>
 
-        <section className="pr-dark" aria-labelledby="pr-conv-title">
-          <div className="pr-wrap pr-dark__in">
-            <div className="pr-sect pr-sect--dark pr-mono">
-              <span>[ Audio, in AI voices ]</span>
-              <span className="pr-sect__aside">In the studio</span>
-            </div>
-            <h2 id="pr-conv-title" className="pr-giant">Conversations:</h2>
-            <p className="pr-dark__lede">
-              Some research is better heard. {BRAND_NAME} makes conversations about published work, and you hear the
+        <MeetKivyn />
+        <LearningCircles />
+
+        <section id="podcasts" className="pr-dark" aria-labelledby="pr-conv-title">
+          <div className="pr-wrap">
+            <p className="pr-kicker">Audio, in AI voices</p>
+            <h2 id="pr-conv-title" className="pr-h2">
+              AI podcasts <span className="pr-accent">about your work.</span>
+            </h2>
+            <p className="pr-lede">
+              Some research is better heard. {BRAND_NAME} makes AI podcasts about published work, and you hear the
               ones about yours where you write.
             </p>
             <div className="pr-player">
@@ -127,9 +110,9 @@ export default function PressLanding({ className = "" }) {
                 <span style={{ width: "106%", height: "106%" }} />
               </div>
               <dl className="pr-facts">
-                {CONVERSATION_FACTS.map(([term, text]) => (
+                {PODCAST_FACTS.map(([term, text]) => (
                   <div key={term} className="pr-facts__row">
-                    <dt className="pr-mono">{term}</dt>
+                    <dt>{term}</dt>
                     <dd>{text}</dd>
                   </div>
                 ))}
@@ -138,39 +121,28 @@ export default function PressLanding({ className = "" }) {
           </div>
         </section>
 
-        <div className="pr-wrap">
-          <section aria-labelledby="pr-join-title">
-            <div className="pr-sect pr-sect--spaced pr-mono">
-              <h2 id="pr-join-title" className="pr-sect__title">[ Joining ]</h2>
-              <span className="pr-sect__aside">By invitation</span>
-            </div>
-            <div className="pr-join">
-              <p className="pr-closing">
+        <section id="joining" className="pr-band--wash" aria-labelledby="pr-join-title">
+          <div className="pr-wrap pr-join">
+            <div>
+              <p className="pr-kicker">Joining</p>
+              <h2 id="pr-join-title" className="pr-h2">
+                By invitation, <span className="pr-accent">while the pilot runs.</span>
+              </h2>
+              <p className="pr-lede">
                 {PRODUCT_NAME} is the researchers’ studio of {BRAND_NAME}. Stories are drafted by an AI agent, Kivyn,
                 and are yours only once you approve them. Readers are shown as counts; small groups, and every
-                child’s name, never are.
+                reader’s name, never are.
               </p>
-              <div className="pr-join__act">
-                <a className="pr-mono pr-btn pr-btn--ink" href={JOIN_HREF}>[ Ask to join ]</a>
-                <span className="pr-join__note">Joining is by invitation while the pilot runs.</span>
-                <span className="pr-join__note">Have an invitation? Open the link in your email.</span>
-              </div>
             </div>
-          </section>
-        </div>
+            <div className="pr-join__act">
+              <a className="pr-btn" href={JOIN_HREF}>Ask to join</a>
+              <span className="pr-join__note">Have an invitation? Open the link in your email.</span>
+            </div>
+          </div>
+        </section>
       </main>
 
-      <div className="pr-wrap">
-        <footer className="pr-foot">
-          <Link href="/" className="pr-brand" aria-label={`${BRAND_NAME} ${PRODUCT_NAME}, home`}>
-            <Lockup className="pr-brand__lockup pr-brand__lockup--small" />
-          </Link>
-          <span className="pr-mono">© {new Date().getFullYear()} {BRAND_NAME}</span>
-          <a className="pr-mono" href={`${PUBLIC_SITE_URL}/for-researchers`}>For researchers</a>
-          <a className="pr-mono" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
-          <a className="pr-mono" href={`${PUBLIC_SITE_URL}/legal/privacy`}>Privacy</a>
-        </footer>
-      </div>
+      <SiteFooter />
     </div>
   );
 }
